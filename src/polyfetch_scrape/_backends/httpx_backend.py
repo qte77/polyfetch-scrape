@@ -4,9 +4,17 @@ from dataclasses import dataclass
 
 import httpx
 
+from polyfetch_scrape._backends import FingerprintBlock
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, should_retry
+
+_FINGERPRINT_STATUSES: frozenset[int] = frozenset({403})
+
+
+def _is_tls_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "ssl" in msg or "tls" in msg or "certificate" in msg
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,9 +46,13 @@ def attempt(
         if last.retry_status is not None
         else f"transport={last.transport_error!r}"
     )
-    raise FetchError(
-        f"httpx fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
-    ) from last.transport_error
+    msg = f"httpx fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
+
+    if last.retry_status in _FINGERPRINT_STATUSES or (
+        last.transport_error is not None and _is_tls_error(last.transport_error)
+    ):
+        raise FingerprintBlock(msg) from last.transport_error
+    raise FetchError(msg) from last.transport_error
 
 
 def _attempt_once(
@@ -55,7 +67,10 @@ def _attempt_once(
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 
-    if should_retry(http_resp.status_code, policy):
+    if (
+        should_retry(http_resp.status_code, policy)
+        or http_resp.status_code in _FINGERPRINT_STATUSES
+    ):
         return _Attempt(None, http_resp.status_code, None)
 
     return _Attempt(_to_response(http_resp), None, None)
