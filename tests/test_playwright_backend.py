@@ -11,9 +11,7 @@ from polyfetch_scrape.retry import RetryPolicy
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "polyfetch_scrape._backends.playwright_backend.time.sleep", lambda _s: None
-    )
+    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.time.sleep", lambda _s: None)
 
 
 def _make_pw_chain(
@@ -121,9 +119,7 @@ def test_playwright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) 
 def test_playwright_backend_raises_fetcherror_on_persistent_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _make_pw_chain(
-        monkeypatch, goto_side_effect=pw_sync.TimeoutError("perma timeout")
-    )
+    _make_pw_chain(monkeypatch, goto_side_effect=pw_sync.TimeoutError("perma timeout"))
 
     with pytest.raises(FetchError):
         playwright_backend.attempt(

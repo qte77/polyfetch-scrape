@@ -1,7 +1,12 @@
 from collections.abc import Mapping
 from typing import Literal
 
-from polyfetch_scrape._backends import FingerprintBlock, curl_backend, httpx_backend
+from polyfetch_scrape._backends import (
+    FingerprintBlock,
+    curl_backend,
+    httpx_backend,
+    playwright_backend,
+)
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
@@ -19,9 +24,15 @@ def fetch(
     timeout: float = 30.0,
     retry: RetryPolicy | None = None,
     browser: Browser = "chrome",
+    wait_for_selector: str | None = None,
 ) -> Response:
     policy = retry if retry is not None else RetryPolicy()
     try:
         return httpx_backend.attempt(method, url, headers, timeout, policy)
     except FingerprintBlock:
-        return curl_backend.attempt(method, url, headers, timeout, policy, browser=browser)
+        try:
+            return curl_backend.attempt(method, url, headers, timeout, policy, browser=browser)
+        except FingerprintBlock:
+            return playwright_backend.attempt(
+                method, url, headers, timeout, policy, wait_for_selector=wait_for_selector
+            )

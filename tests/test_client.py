@@ -195,8 +195,58 @@ def test_fetch_raises_when_both_backends_fail(monkeypatch: pytest.MonkeyPatch) -
     def fake_curl_attempt(*_a: object, **_kw: object) -> Response:
         raise FetchError("curl exhausted")
 
+    def fake_playwright_attempt(*_a: object, **_kw: object) -> Response:
+        raise FetchError("playwright also gave up")
+
     monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
     monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.playwright_backend.attempt", fake_playwright_attempt
+    )
 
     with pytest.raises(FetchError):
         fetch("https://example.com")
+
+
+def test_fetch_falls_through_to_playwright_when_curl_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pw_resp = Response(
+        url="https://example.com",
+        status=200,
+        headers={},
+        body=b"<html/>",
+        content_type="text/html",
+        backend="playwright",
+    )
+
+    def fake_httpx_attempt(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("httpx blocked")
+
+    def fake_curl_attempt(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("curl blocked")
+
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_playwright_attempt(
+        method: str,
+        url: str,
+        headers: Mapping[str, str] | None,
+        timeout: float,
+        policy: RetryPolicy,
+        wait_for_selector: str | None = None,
+    ) -> Response:
+        captured_kwargs["wait_for_selector"] = wait_for_selector
+        return pw_resp
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.playwright_backend.attempt", fake_playwright_attempt
+    )
+
+    resp = fetch("https://example.com", wait_for_selector="#main")
+
+    assert resp is pw_resp
+    assert resp.backend == "playwright"
+    assert captured_kwargs["wait_for_selector"] == "#main"

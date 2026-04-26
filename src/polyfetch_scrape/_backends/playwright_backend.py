@@ -39,9 +39,7 @@ def attempt(
         browser = pw.chromium.launch(headless=True)
         try:
             for attempt_idx in range(policy.max_attempts):
-                last = _attempt_once(
-                    browser, url, headers, timeout_ms, wait_for_selector
-                )
+                last = _attempt_once(browser, url, headers, timeout_ms, wait_for_selector)
                 if last.response is not None:
                     return last.response
                 if attempt_idx + 1 < policy.max_attempts:
@@ -50,9 +48,7 @@ def attempt(
             browser.close()
 
     detail = (
-        f"status={last.block_status}"
-        if last.block_status is not None
-        else f"error={last.error!r}"
+        f"status={last.block_status}" if last.block_status is not None else f"error={last.error!r}"
     )
     msg = f"playwright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     if last.block_status in _FINGERPRINT_STATUSES:
