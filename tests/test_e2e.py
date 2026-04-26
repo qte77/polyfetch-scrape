@@ -64,17 +64,41 @@ def test_cloudflare_fronted_target_succeeds_via_curl_cffi() -> None:
     assert resp.backend == "curl_cffi", "expected the fallback to engage"
 
 
+def test_playwright_backend_executes_against_real_target() -> None:
+    """Stage 0.3.0: direct-call proof that the Playwright tier executes correctly.
+
+    No public target cleanly distinguishes 'needs Playwright' from 'curl_cffi
+    works' in headless CI (headed Chrome would be needed for hardened
+    Cloudflare per Patchright's own README — see docs/scraping-landscape.md).
+    So we drive playwright_backend.attempt() directly to verify the tier
+    connects, runs JS, and returns a well-formed Response.
+    """
+    from polyfetch_scrape._backends import playwright_backend
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://httpbin.org/html",
+        headers=None,
+        timeout=30.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+    assert resp.status == 200
+    assert resp.backend == "playwright"
+    assert b"<html" in resp.body.lower() or b"<body" in resp.body.lower()
+
+
 @pytest.mark.xfail(
-    reason="g2.com hardened beyond curl_cffi; will drive stage 0.3.0 (Playwright).",
+    reason=(
+        "g2.com is Cloudflare Enterprise; passing requires headed real-Chrome "
+        "(Patchright README → Best Practice), incompatible with headless CI. "
+        "Out of scope for OSS-only toolkit; future fix is commercial bypass or "
+        "headed-browser infra."
+    ),
     strict=False,
     raises=(FetchError, AssertionError),
 )
-def test_g2_demonstrates_0_3_0_gap() -> None:
-    """Documents the gap that stage 0.3.0 (Playwright) will fill.
-
-    Some Cloudflare-protected sites need full JS execution beyond what
-    curl_cffi's TLS impersonation can provide. xfail flips to xpassed if a
-    site stops blocking us, signalling the test is no longer load-bearing.
-    """
+def test_g2_remains_blocked_in_headless_ci() -> None:
+    """Documents the practical ceiling: even Patchright can't beat the hardest
+    Cloudflare tier without headed real-Chrome, which CI doesn't provide."""
     resp = fetch("https://www.g2.com/", retry=RetryPolicy(max_attempts=1))
     assert resp.status == 200
