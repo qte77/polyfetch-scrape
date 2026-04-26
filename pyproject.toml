@@ -31,12 +31,16 @@ packages = ["src/polyfetch_scrape"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
-addopts = "-ra -q"
+addopts = "-ra -q -m 'not e2e'"
 filterwarnings = ["error"]
+markers = [
+  "e2e: hits real network endpoints; opt-in via `pytest -m e2e` or `make test_e2e`",
+]
 
 [tool.coverage.run]
 source = ["src/polyfetch_scrape"]
 branch = true
+omit = ["tests/test_e2e.py"]
 
 [tool.coverage.report]
 show_missing = true

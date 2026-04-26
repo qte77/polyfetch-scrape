@@ -23,10 +23,13 @@ type_check:  ## Static type check with pyright
 complexity:  ## Cognitive complexity with complexipy
 	uv run complexipy -q .
 
-test:  ## Run all tests (verbose)
+test:  ## Run unit tests (verbose; e2e skipped by default)
 	uv run pytest -vv --tb=short
 
-test_coverage:  ## Run tests with coverage threshold (verbose)
+test_e2e:  ## Run e2e tests against real network endpoints
+	uv run pytest -vv --tb=short -m e2e --no-cov
+
+test_coverage:  ## Run unit tests with coverage threshold (verbose)
 	uv run pytest -vv --tb=short --cov --cov-report=term-missing
 
 validate:  ## Full pre-commit validation
