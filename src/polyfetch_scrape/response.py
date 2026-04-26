@@ -10,4 +10,4 @@ class Response:
     headers: Mapping[str, str]
     body: bytes
     content_type: str | None
-    backend: Literal["httpx", "curl_cffi"]
+    backend: Literal["httpx", "curl_cffi", "playwright"]
