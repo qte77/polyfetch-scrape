@@ -1,5 +1,5 @@
-.PHONY: setup_uv setup_dev lint_src lint_tests type_check complexity \
-        test test_coverage validate quick_validate help
+.PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
+        test test_e2e test_coverage validate quick_validate help
 .DEFAULT_GOAL := help
 
 setup_uv:  ## Install uv and sync frozen deps (bootstrap-only pip usage)
@@ -8,6 +8,9 @@ setup_uv:  ## Install uv and sync frozen deps (bootstrap-only pip usage)
 
 setup_dev:  ## Sync dev deps via uv
 	uv sync
+
+setup_browsers:  ## Install Patchright Chromium binary (~300MB; required for e2e)
+	uv run patchright install chromium
 
 lint_src:  ## Format + lint src with ruff
 	uv run ruff format --exclude tests
