@@ -8,9 +8,7 @@ from polyfetch_scrape.retry import RetryPolicy
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "polyfetch_scrape._backends.httpx_backend.time.sleep", lambda _s: None
-    )
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.time.sleep", lambda _s: None)
 
 
 @respx.mock
