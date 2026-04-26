@@ -60,15 +60,9 @@ FetchError    # only public exception
 
 ## Development
 
-```bash
-make setup_dev          # uv sync
-make setup_browsers     # one-off; install Patchright Chromium
-make test               # 39 unit tests, no network
-make test_e2e           # opt-in real-network tests
-make validate           # full pre-commit: lint + pyright + complexipy + cov
-```
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full command reference, dev workflow, and pre-commit checklist. Quick start: `make setup_dev && make validate`.
 
-See [`AGENTS.md`](AGENTS.md) for project conventions and [`CHANGELOG.md`](CHANGELOG.md) for release notes.
+For AI agent behavioural rules, see [`AGENTS.md`](AGENTS.md). For release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Project Outline
 
