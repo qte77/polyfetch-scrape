@@ -10,6 +10,21 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `CONTRIBUTING.md` — technical workflows, complete command reference, coding standards, and CHANGELOG requirements. Mirrors the qte77/Agents-eval three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules).
+- `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]` recipe wrapping `polyfetch bulk`.
+- `probe` recipe extended with `BROWSER=`, `MAX_ATTEMPTS=` overrides.
+
+### Changed
+
+- `README.md` Development section now points to `CONTRIBUTING.md` instead of inlining recipes (single source of truth).
+- `AGENTS.md` references `CONTRIBUTING.md` for commands and adds explicit "always use `make` recipes" rule and `make validate` before-report-complete rule.
+
+### Fixed
+
+- `Makefile` `probe` recipe no longer leaks shell-environment variables (e.g. devcontainer-set `BROWSER=...`) into CLI flags. Flag forwarding now uses `$(origin VAR)` to gate on `command line` / `file` only.
+
 ## [0.3.1] - 2026-04-26
 
 ### Added

@@ -1,10 +1,13 @@
 # Agent Instructions
 
-**Behavioral rules and decision frameworks for AI coding agents working on
-polyfetch-scrape** — a reusable HTTP scraping toolkit.
+**Behavioural rules and decision frameworks for AI coding agents working on
+polyfetch-scrape** — a reusable HTTP scraping toolkit. For technical workflows,
+command reference, and coding standards, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+For project overview, see [`README.md`](README.md).
 
 **External References:**
 
+- @CONTRIBUTING.md - Command reference, dev workflow, coding standards
 - @AGENT_REQUESTS.md - Escalation and human collaboration
 - @AGENT_LEARNINGS.md - Pattern discovery and knowledge sharing
 
@@ -24,6 +27,13 @@ polyfetch-scrape** — a reusable HTTP scraping toolkit.
 - **Request human feedback** in AGENT_REQUESTS.md (concise, laser-focused, streamlined)
 - **Network caution** - This repo fetches from untrusted URLs; never add unconditional
   network calls; always gate behind explicit invocation
+- **Always use `make` recipes** - See [Complete Command Reference](CONTRIBUTING.md#complete-command-reference).
+  Never invoke `pip`, bare `pytest`, bare `ruff`, bare `pyright`, or bare `polyfetch`.
+  The single exception is `pip install uv -q` inside `setup_uv` (bootstrap-only).
+- **Always run `make validate`** before reporting a task complete. Lint, type-check,
+  complexity, and coverage gates must all pass green.
+- **Update `CHANGELOG.md`** `## [Unreleased]` section for non-trivial changes
+  (see [CONTRIBUTING.md → CHANGELOG requirements](CONTRIBUTING.md#changelog-requirements))
 
 ## Decision Framework
 
