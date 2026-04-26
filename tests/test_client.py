@@ -1,15 +1,19 @@
+from collections.abc import Mapping
+
 import httpx
 import pytest
 import respx
 
+from polyfetch_scrape._backends import FingerprintBlock
 from polyfetch_scrape.client import FetchError, fetch
+from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     """Skip real sleeps so retry tests run fast."""
-    monkeypatch.setattr("polyfetch_scrape.client.time.sleep", lambda _s: None)
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.time.sleep", lambda _s: None)
 
 
 @respx.mock
@@ -106,3 +110,93 @@ def test_fetch_does_not_retry_on_404() -> None:
     # Assert: 404 is a terminal status, not retried
     assert resp.status == 404
     assert route.call_count == 1
+
+
+def test_fetch_falls_back_to_curl_on_fingerprintblock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: httpx raises FingerprintBlock; curl returns a Response
+    fallback_resp = Response(
+        url="https://example.com",
+        status=200,
+        headers={},
+        body=b"via-curl",
+        content_type=None,
+        backend="curl_cffi",
+    )
+
+    def fake_httpx_attempt(
+        method: str,
+        url: str,
+        headers: Mapping[str, str] | None,
+        timeout: float,
+        policy: RetryPolicy,
+    ) -> Response:
+        raise FingerprintBlock("blocked")
+
+    curl_calls: list[str] = []
+
+    def fake_curl_attempt(
+        method: str,
+        url: str,
+        headers: Mapping[str, str] | None,
+        timeout: float,
+        policy: RetryPolicy,
+        browser: str,
+    ) -> Response:
+        curl_calls.append(browser)
+        return fallback_resp
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
+
+    # Act
+    resp = fetch("https://example.com")
+
+    # Assert
+    assert resp is fallback_resp
+    assert resp.backend == "curl_cffi"
+    assert curl_calls == ["chrome"]
+
+
+def test_fetch_passes_browser_profile_to_curl(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_httpx_attempt(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("blocked")
+
+    def fake_curl_attempt(
+        method: str,
+        url: str,
+        headers: Mapping[str, str] | None,
+        timeout: float,
+        policy: RetryPolicy,
+        browser: str,
+    ) -> Response:
+        captured["browser"] = browser
+        return Response(
+            url=url, status=200, headers={}, body=b"", content_type=None, backend="curl_cffi"
+        )
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
+
+    # Act
+    fetch("https://example.com", browser="firefox")
+
+    # Assert
+    assert captured["browser"] == "firefox"
+
+
+def test_fetch_raises_when_both_backends_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_httpx_attempt(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("httpx blocked")
+
+    def fake_curl_attempt(*_a: object, **_kw: object) -> Response:
+        raise FetchError("curl exhausted")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
+
+    with pytest.raises(FetchError):
+        fetch("https://example.com")

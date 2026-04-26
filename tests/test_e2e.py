@@ -53,16 +53,28 @@ def test_arxiv_abstract_page_succeeds_on_plain_httpx() -> None:
     assert "html" in resp.content_type.lower()
 
 
+def test_cloudflare_fronted_target_succeeds_via_curl_cffi() -> None:
+    """Stage 0.2.0: curl_cffi TLS fallback unblocks Cloudflare-fronted targets.
+
+    nowsecure.nl is the curl_cffi project's canonical anti-bot demo target.
+    Plain httpx gets 403; curl_cffi with chrome impersonation gets 200.
+    """
+    resp = fetch("https://nowsecure.nl/", retry=RetryPolicy(max_attempts=1))
+    assert resp.status == 200
+    assert resp.backend == "curl_cffi", "expected the fallback to engage"
+
+
 @pytest.mark.xfail(
-    reason="Cloudflare-fronted; expected to fail until stage 0.2.0 (curl_cffi).",
+    reason="g2.com hardened beyond curl_cffi; will drive stage 0.3.0 (Playwright).",
     strict=False,
     raises=(FetchError, AssertionError),
 )
-def test_cloudflare_fronted_target_demonstrates_0_2_0_gap() -> None:
-    """Documents the gap that stage 0.2.0 (curl_cffi TLS fallback) will fill.
+def test_g2_demonstrates_0_3_0_gap() -> None:
+    """Documents the gap that stage 0.3.0 (Playwright) will fill.
 
-    Either: plain httpx is blocked (FetchError or 403) — xfail passes.
-    Or:     site happens to allow us through — xfail flips to xpassed.
+    Some Cloudflare-protected sites need full JS execution beyond what
+    curl_cffi's TLS impersonation can provide. xfail flips to xpassed if a
+    site stops blocking us, signalling the test is no longer load-bearing.
     """
     resp = fetch("https://www.g2.com/", retry=RetryPolicy(max_attempts=1))
     assert resp.status == 200
