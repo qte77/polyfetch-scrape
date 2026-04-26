@@ -1,5 +1,4 @@
-.PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
-        test test_e2e test_coverage validate quick_validate probe help
+.PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \        test test_e2e test_coverage validate quick_validate probe help
 .DEFAULT_GOAL := help
 
 setup_uv:  ## Install uv and sync frozen deps (bootstrap-only pip usage)
