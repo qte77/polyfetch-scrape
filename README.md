@@ -1,1 +1,82 @@
+<!-- markdownlint-disable MD033 -->
 # polyfetch-scrape
+
+> HTTP scraping toolkit: typed `Response`, three-tier fallback chain (httpx → curl_cffi → Patchright), opt-in e2e tests, typer CLI.
+
+Reusable Python library + CLI that abstracts the "which tool beats which anti-bot" decision: callers just `fetch(url)` and get back a typed `Response` regardless of which backend ultimately succeeded. Designed for document-domain scraping (papers, patents, legislation) — see roadmap stages 0.4.0 / 0.5.0.
+
+**I am a:** [Library user](#quick-start-library) | [CLI user](#quick-start-cli) | [Contributor](#development)
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.3.1-informational)](CHANGELOG.md)
+[![Python](https://img.shields.io/badge/python-%3E=3.11-blue)](pyproject.toml)
+[![CodeFactor](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape/badge)](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape)
+[![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
+## Quick Start (library)
+
+```bash
+uv add polyfetch-scrape
+uv run patchright install chromium   # one-off; required only for the Playwright tier
+```
+
+```python
+from polyfetch_scrape import fetch
+
+r = fetch("https://nowsecure.nl/")
+print(r.status, r.backend, len(r.body))     # 200 curl_cffi 179447
+```
+
+## Quick Start (CLI)
+
+```bash
+polyfetch fetch https://example.com
+polyfetch fetch https://example.com --json
+polyfetch bulk urls.txt --workers 4
+polyfetch --help
+```
+
+## Fallback Chain
+
+| Tier | Backend | When it engages |
+|---|---|---|
+| 1 | `httpx` | every request first |
+| 2 | `curl_cffi` (chrome impersonation) | tier 1 returns 403 or hits a TLS error |
+| 3 | Patchright (headless Chromium) | tier 2 also blocked |
+
+`Response.backend` reflects which tier succeeded. See [`docs/scraping-landscape.md`](docs/scraping-landscape.md) for empirical findings (with first-party citations) on what each tier actually beats in practice.
+
+## Public API
+
+```python
+fetch(url, *, method="GET", headers=None, timeout=30.0,
+      retry=None, browser="chrome", wait_for_selector=None) -> Response
+
+Response(url, status, headers, body, content_type, backend)
+RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
+            retry_on_status=frozenset({429, 500, 502, 503, 504}))
+FetchError    # only public exception
+```
+
+## Development
+
+```bash
+make setup_dev          # uv sync
+make setup_browsers     # one-off; install Patchright Chromium
+make test               # 39 unit tests, no network
+make test_e2e           # opt-in real-network tests
+make validate           # full pre-commit: lint + pyright + complexipy + cov
+```
+
+See [`AGENTS.md`](AGENTS.md) for project conventions and [`CHANGELOG.md`](CHANGELOG.md) for release notes.
+
+## Project Outline
+
+Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`). Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
+
+## References
+
+- [Roadmap](docs/roadmap.md) — staged delivery plan (0.1 → 0.5)
+- [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
+- [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
+- [License](LICENSE) (Apache-2.0) and [Notice](NOTICE)
