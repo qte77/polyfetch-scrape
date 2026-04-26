@@ -1,4 +1,5 @@
-.PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \        test test_e2e test_coverage validate quick_validate probe help
+.PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
+        test test_e2e test_coverage validate quick_validate probe probe_bulk help
 .DEFAULT_GOAL := help
 
 setup_uv:  ## Install uv and sync frozen deps (bootstrap-only pip usage)
@@ -47,9 +48,22 @@ quick_validate:  ## Fast dev cycle (no tests)
 	$(MAKE) -s type_check
 	@echo "=== quick_validate: all passed ==="
 
-probe:  ## Probe a single URL via the CLI. Usage: make probe URL=https://example.com [JSON=1]
+# Only treat probe/probe_bulk flag vars as user-supplied when they come from
+# the command line, not from the environment (e.g. shell BROWSER=...).
+_cli = $(filter command\ line file,$(origin $(1)))
+
+probe:  ## Probe a single URL. Usage: make probe URL=https://... [JSON=1] [BROWSER=chrome|firefox] [MAX_ATTEMPTS=N]
 	@if [ -z "$(URL)" ]; then echo "Error: URL required. Usage: make probe URL=https://example.com"; exit 1; fi
-	uv run polyfetch fetch "$(URL)" $(if $(JSON),--json)
+	uv run polyfetch fetch "$(URL)" \
+		$(if $(call _cli,JSON),--json) \
+		$(if $(call _cli,BROWSER),--browser $(BROWSER)) \
+		$(if $(call _cli,MAX_ATTEMPTS),--max-attempts $(MAX_ATTEMPTS))
+
+probe_bulk:  ## Probe URLs from FILE. Usage: make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]
+	@if [ -z "$(FILE)" ]; then echo "Error: FILE required. Usage: make probe_bulk FILE=urls.txt"; exit 1; fi
+	uv run polyfetch bulk "$(FILE)" \
+		$(if $(call _cli,WORKERS),--workers $(WORKERS)) \
+		$(if $(call _cli,TEXT),--text)
 
 help:  ## Show recipes
 	@awk '/^[a-zA-Z0-9_-]+:.*?##/ { sub(/:/,"",$$1); printf "  \033[36m%-16s\033[0m %s\n", $$1, substr($$0, index($$0,"## ")+3) }' $(MAKEFILE_LIST)
