@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 - `Makefile` `probe` recipe no longer leaks shell-env vars (e.g. devcontainer-set `BROWSER=...`); flag forwarding now uses `$(origin VAR)` to gate on `command line`/`file` only.
 
+### Security
+
+- `sources/arxiv.py` parses XML via `defusedxml.ElementTree.fromstring` instead of stdlib `xml.etree.ElementTree.fromstring` to mitigate XML attacks (billion-laughs, external entity expansion). Stdlib `xml.etree.ElementTree.fromstring` on untrusted XML is Bandit B314.
+
 ## [0.3.1] - 2026-04-26
 
 ### Added

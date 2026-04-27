@@ -8,7 +8,9 @@ Public surface: ArxivPaper, get(), ArxivError, ArxivNotFoundError, ArxivParseErr
 
 from dataclasses import dataclass
 from urllib.parse import urlencode
-from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import Element, ParseError
+
+from defusedxml.ElementTree import fromstring as _defused_fromstring
 
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
@@ -51,8 +53,8 @@ def get(arxiv_id: str, *, timeout: float = 30.0) -> ArxivPaper:
 
 def _parse_entry(xml_bytes: bytes) -> ArxivPaper:
     try:
-        root = ET.fromstring(xml_bytes)
-    except ET.ParseError as exc:
+        root = _defused_fromstring(xml_bytes)
+    except ParseError as exc:
         raise ArxivParseError(f"could not parse arxiv response: {exc}") from exc
 
     entry = root.find(f"{_ATOM_NS}entry")
@@ -63,13 +65,9 @@ def _parse_entry(xml_bytes: bytes) -> ArxivPaper:
         return ArxivPaper(
             arxiv_id=_strip_arxiv_id(_text(entry, "id")),
             title=_text(entry, "title").strip(),
-            authors=tuple(
-                _text(a, "name") for a in entry.findall(f"{_ATOM_NS}author")
-            ),
+            authors=tuple(_text(a, "name") for a in entry.findall(f"{_ATOM_NS}author")),
             abstract=_text(entry, "summary").strip(),
-            categories=tuple(
-                c.attrib["term"] for c in entry.findall(f"{_ATOM_NS}category")
-            ),
+            categories=tuple(c.attrib["term"] for c in entry.findall(f"{_ATOM_NS}category")),
             pdf_url=_link(entry, "pdf"),
             abs_url=_link(entry, "alternate"),
             published_at=_text(entry, "published"),
@@ -79,14 +77,14 @@ def _parse_entry(xml_bytes: bytes) -> ArxivPaper:
         raise ArxivParseError(f"missing expected field in arxiv entry: {exc}") from exc
 
 
-def _text(parent: ET.Element, tag: str) -> str:
+def _text(parent: Element, tag: str) -> str:
     el = parent.find(f"{_ATOM_NS}{tag}")
     if el is None or el.text is None:
         raise ArxivParseError(f"missing <{tag}> in arxiv entry")
     return el.text
 
 
-def _link(entry: ET.Element, kind: str) -> str:
+def _link(entry: Element, kind: str) -> str:
     """Return href of <link rel="alternate"/> or <link title="pdf"/>."""
     for link in entry.findall(f"{_ATOM_NS}link"):
         if kind == "pdf" and link.attrib.get("title") == "pdf":

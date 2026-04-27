@@ -48,8 +48,15 @@ def test_arxivpaper_holds_fields() -> None:
 
 def test_arxivpaper_is_frozen() -> None:
     paper = ArxivPaper(
-        arxiv_id="x", title="x", authors=(), abstract="", categories=(),
-        pdf_url="", abs_url="", published_at="", updated_at="",
+        arxiv_id="x",
+        title="x",
+        authors=(),
+        abstract="",
+        categories=(),
+        pdf_url="",
+        abs_url="",
+        published_at="",
+        updated_at="",
     )
     with pytest.raises(FrozenInstanceError):
         paper.title = "mut"  # type: ignore[misc]
