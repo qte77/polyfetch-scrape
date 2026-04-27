@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- **Stage 0.4.0 part 1: arXiv source wrapper** (`polyfetch_scrape.sources.arxiv`):
+  - `ArxivPaper` frozen dataclass: `arxiv_id`, `title`, `authors`, `abstract`, `categories`, `pdf_url`, `abs_url`, `published_at`, `updated_at`.
+  - `get(arxiv_id, *, timeout=30.0) -> ArxivPaper` calls `fetch()` against the arXiv export API and parses Atom XML via `defusedxml.ElementTree` (mitigates Bandit B314).
+  - `ArxivError(FetchError)`, `ArxivNotFoundError`, `ArxivParseError` exception types.
+  - CLI: `polyfetch arxiv get ID [--json]`.
+  - E2e: `test_arxiv_source_get_real_api` against real arXiv API.
+- New top-level `sources/` namespace (vs private `_backends/`); first source.
 - `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator; `containerEnv` maps `GH_PAT` user-secret to `GH_TOKEN`; `postCreateCommand: gh auth setup-git` so `git push` also honours `$GH_PAT`.
 - `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
