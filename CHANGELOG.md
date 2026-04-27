@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
 - `README.md` References now points at `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home for Codespaces auth/git documentation.
 - `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
+- `Makefile` adopts qte77/Agents-eval `# MARK:` section-marker convention (SETUP / QUALITY / APP / HELP) for cross-project muscle memory; `help` recipe now prints recipes grouped under bold section headings via the same awk pattern.
 
 ### Removed
 
