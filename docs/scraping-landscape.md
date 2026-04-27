@@ -6,6 +6,8 @@ updated: 2026-04-26
 urls_validated: 2026-04-23
 ---
 
+# Scraping Landscape
+
 Survey of available tools for HTTP requests, browser automation, AI-native scraping, search APIs, managed platforms, document extraction, and anti-bot bypass. Focused on what's actively maintained and relevant as of 2025-2026.
 
 ## Claude Code Built-in Web Tools
@@ -164,7 +166,7 @@ Probed in-tree while building the 0.2.0 / 0.3.0 fallback chain. Results are poin
 | `tls.peet.ws/api/all` | TLS verify error | TLS verify error | n/a |
 | `g2.com/` | 403 | 403 | **403** |
 
-**Takeaways (with first-party citations):**
+### Takeaways (with first-party citations):
 
 - `curl_cffi` `impersonate="chrome"` (no version suffix) is the documented forward-compatible alias — README: *"To keep using the latest browser version as `curl_cffi` updates, simply set `impersonate=\"chrome\"` without specifying a version"* ([curl_cffi README](https://github.com/lexiforest/curl_cffi#requests-like)). Per-version aliases (`chrome131`, `chrome142`, ...) pin a specific TLS/JA3 fingerprint and may be *easier* to fingerprint as bot traffic on targets that track unusual version distributions.
 - Patchright's main detection patches are **CDP-layer**: `Runtime.enable` leak (the biggest), `Console.enable` leak, and command-flag leaks like `--enable-automation` and the `navigator.webdriver` flag ([Patchright README → Patches](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#patches)). Chromium-only by design ([README](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#usage)).
@@ -191,4 +193,4 @@ Need LLM-ready output?
   ├─ Free/local? → Crawl4AI
   ├─ Managed? → Firecrawl
   └─ Lightweight? → Jina Reader
-```
+```text

@@ -1,5 +1,7 @@
+# README
+
 <!-- markdownlint-disable MD033 -->
-# polyfetch-scrape
+## polyfetch-scrape
 
 > HTTP scraping toolkit: typed `Response`, three-tier fallback chain (httpx → curl_cffi → Patchright), opt-in e2e tests, typer CLI.
 
@@ -18,7 +20,7 @@ Reusable Python library + CLI that abstracts the "which tool beats which anti-bo
 ```bash
 uv add polyfetch-scrape
 uv run patchright install chromium   # one-off; required only for the Playwright tier
-```
+```python
 
 ```python
 from polyfetch_scrape import fetch
@@ -34,7 +36,7 @@ polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
 polyfetch bulk urls.txt --workers 4
 polyfetch --help
-```
+```text
 
 ## Fallback Chain
 

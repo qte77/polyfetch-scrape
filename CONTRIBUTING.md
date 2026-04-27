@@ -1,3 +1,5 @@
+# Contributing
+
 <!-- markdownlint-disable MD024 -->
 ---
 title: Contributing to polyfetch-scrape
@@ -11,18 +13,18 @@ updated: 2026-04-26
 
 ## Instant Commands
 
-**Setup:**
+### Setup:
 
 - `make setup_dev` — sync dev deps via `uv`
 - `make setup_browsers` — one-off; install Patchright Chromium (~300 MB; required only for the playwright tier)
 
-**Inner loop:**
+### Inner loop:
 
 - `make quick_validate` — fast feedback (lint + pyright)
 - `make test` — unit tests (no network)
 - `make validate` — full pre-commit: lint + pyright + complexipy + coverage
 
-**Probing (ad-hoc URL fetches via the CLI):**
+### Probing (ad-hoc URL fetches via the CLI):
 
 - `make probe URL=https://example.com` — single URL, text output
 - `make probe URL=https://example.com JSON=1` — single URL, JSON output
@@ -72,7 +74,7 @@ Direct CLI (when `make` doesn't fit): `uv run polyfetch fetch URL [options]` and
 
 All non-trivial changes update `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). Format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) with sub-sections `### Added / Changed / Deprecated / Removed / Fixed / Security` (only those that apply).
 
-**Requires a CHANGELOG entry:**
+### Requires a CHANGELOG entry:
 
 - New features or public-API changes
 - Breaking changes
@@ -81,7 +83,7 @@ All non-trivial changes update `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md)
 - Dependency additions or version bumps that change behaviour
 - Configuration / Makefile recipe changes
 
-**Does not require a CHANGELOG entry:**
+### Does not require a CHANGELOG entry:
 
 - Comment / typo fixes
 - Pure code formatting
