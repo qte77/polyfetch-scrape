@@ -1,6 +1,7 @@
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Annotated, Any
@@ -11,6 +12,7 @@ from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
+from polyfetch_scrape.sources import arxiv as arxiv_source
 
 app = typer.Typer(
     add_completion=False,
@@ -130,3 +132,34 @@ def bulk(
 
     if any_failed:
         sys.exit(1)
+
+
+# --- arxiv source subcommand ---
+
+arxiv_app = typer.Typer(help="arXiv API wrappers", no_args_is_help=True)
+app.add_typer(arxiv_app, name="arxiv")
+
+
+@arxiv_app.command("get")
+def arxiv_get(
+    arxiv_id: str,
+    timeout: float = 30.0,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of text")] = False,
+) -> None:
+    """Fetch an arXiv paper's metadata by id (e.g. 2301.00001)."""
+    try:
+        paper = arxiv_source.get(arxiv_id, timeout=timeout)
+    except FetchError as exc:
+        typer.echo(f"{type(exc).__name__}: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(asdict(paper)))
+        return
+
+    typer.echo(f"arxiv:{paper.arxiv_id} — {paper.title!r}")
+    typer.echo(f"authors: {', '.join(paper.authors)}")
+    typer.echo(f"categories: {', '.join(paper.categories)}")
+    typer.echo(f"published: {paper.published_at}")
+    typer.echo(f"abs:     {paper.abs_url}")
+    typer.echo(f"pdf:     {paper.pdf_url}")
