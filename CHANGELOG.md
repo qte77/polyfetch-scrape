@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- **Stage 0.4.0 part 1: arXiv source wrapper** (`polyfetch_scrape.sources.arxiv`):
+  - `ArxivPaper` frozen dataclass: `arxiv_id`, `title`, `authors`, `abstract`, `categories`, `pdf_url`, `abs_url`, `published_at`, `updated_at`.
+  - `get(arxiv_id, *, timeout=30.0) -> ArxivPaper` calls `fetch()` against the arXiv export API and parses Atom XML via `defusedxml.ElementTree` (mitigates Bandit B314).
+  - `ArxivError(FetchError)`, `ArxivNotFoundError`, `ArxivParseError` exception types.
+  - CLI: `polyfetch arxiv get ID [--json]`.
+  - E2e: `test_arxiv_source_get_real_api` against real arXiv API.
+- New top-level `sources/` namespace (vs private `_backends/`); first source.
 - `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator; `containerEnv` maps `GH_PAT` user-secret to `GH_TOKEN`; `postCreateCommand: gh auth setup-git` so `git push` also honours `$GH_PAT`.
 - `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
@@ -21,6 +28,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
 - `README.md` References now points at `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home for Codespaces auth/git documentation.
 - `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
+- `Makefile` adopts qte77/Agents-eval `# MARK:` section-marker convention (SETUP / QUALITY / APP / HELP) for cross-project muscle memory; `help` recipe now prints recipes grouped under bold section headings via the same awk pattern.
 
 ### Removed
 
@@ -29,6 +37,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Fixed
 
 - `Makefile` `probe` recipe no longer leaks shell-env vars (e.g. devcontainer-set `BROWSER=...`); flag forwarding now uses `$(origin VAR)` to gate on `command line`/`file` only.
+
+### Security
+
+- `sources/arxiv.py` parses XML via `defusedxml.ElementTree.fromstring` instead of stdlib `xml.etree.ElementTree.fromstring` to mitigate XML attacks (billion-laughs, external entity expansion). Stdlib `xml.etree.ElementTree.fromstring` on untrusted XML is Bandit B314.
 
 ## [0.3.1] - 2026-04-26
 

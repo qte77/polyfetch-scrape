@@ -33,6 +33,7 @@ print(r.status, r.backend, len(r.body))     # 200 curl_cffi 179447
 polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
 polyfetch bulk urls.txt --workers 4
+polyfetch arxiv get 2301.00001 --json
 polyfetch --help
 ```
 
@@ -66,7 +67,7 @@ For AI agent behavioural rules, see [`AGENTS.md`](AGENTS.md). For release notes,
 
 ## Project Outline
 
-Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`). Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
+Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in private `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`); per-source domain wrappers live in public `sources/` (currently `arxiv.py`; more in 0.4.0). Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
 
 ## References
 
