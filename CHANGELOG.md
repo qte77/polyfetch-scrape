@@ -12,21 +12,20 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
-- `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator. Maps `${localEnv:GH_PAT}` (Codespaces user secret) to both `GH_PAT` and `GH_TOKEN` so `gh pr merge` and similar GitHub-API operations work out of the box. `postCreateCommand: gh auth setup-git` installs gh as a URL-scoped credential helper for github.com so `git push` also uses `$GH_PAT` (no second plaintext copy of the token). Sets `RTK_TELEMETRY_DISABLED=1`. `onCreateCommand: make setup_dev`. VSCode extensions match the cross-qte77 baseline.
-- `docs/codespaces-auth.md` — documents env-var precedence (`GH_TOKEN` > `GITHUB_TOKEN` > `~/.config/gh/hosts.yml` for `gh`; URL-scoped `gh auth git-credential` for `git push` after `gh auth setup-git`), the plaintext reality of tokens in `/proc/*/environ` and `hosts.yml`, available mitigations, required PAT scopes per operation, the `gh-gpgsign` flow + recovery steps, why env + `gh auth setup-git` is the local optimum, and an appendix of other Codespaces auth facts (user-secret build-time exclusion, stop+restart for new secrets, capacity limits, read-only-triggers-fork). All non-trivial claims sourced to first-party `docs.github.com/en/codespaces/...` URLs.
-- `docs/codespaces-git-defaults.md` — non-auth git-config defaults baked by Codespaces. Documents git config layering (system/global/local/worktree) and the inherited `commit.template=/home/vscode/.gitmessage` default, with the local-scope opt-in to override per-repo (e.g. when shipping a `./.gitmessage` Conventional-Commits scaffold). Sibling to `codespaces-auth.md`.
-- `CONTRIBUTING.md` — technical workflows, complete command reference, coding standards, and CHANGELOG requirements. Mirrors the qte77/Agents-eval three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules).
-- `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]` recipe wrapping `polyfetch bulk`.
-- `probe` recipe extended with `BROWSER=`, `MAX_ATTEMPTS=` overrides.
+- `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator; `containerEnv` maps `GH_PAT` user-secret to `GH_TOKEN`; `postCreateCommand: gh auth setup-git` so `git push` also honours `$GH_PAT`.
+- `docs/codespaces-auth.md` — env-var precedence, plaintext reality, PAT scopes table, `gh-gpgsign` flow & recovery, mitigations. 1p-cited.
+- `docs/codespaces-git-defaults.md` — git config layering and per-repo overrides for inherited Codespaces defaults (`commit.template`).
+- `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
+- `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
 
 ### Changed
 
-- `README.md` Development section now points to `CONTRIBUTING.md` instead of inlining recipes (single source of truth).
-- `AGENTS.md` references `CONTRIBUTING.md` for commands and adds explicit "always use `make` recipes" rule and `make validate` before-report-complete rule.
+- `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
+- `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
 
 ### Fixed
 
-- `Makefile` `probe` recipe no longer leaks shell-environment variables (e.g. devcontainer-set `BROWSER=...`) into CLI flags. Flag forwarding now uses `$(origin VAR)` to gate on `command line` / `file` only.
+- `Makefile` `probe` recipe no longer leaks shell-env vars (e.g. devcontainer-set `BROWSER=...`); flag forwarding now uses `$(origin VAR)` to gate on `command line`/`file` only.
 
 ## [0.3.1] - 2026-04-26
 
