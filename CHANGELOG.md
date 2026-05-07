@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Added
 
 - `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator. Maps `${localEnv:GH_PAT}` (Codespaces user secret) to both `GH_PAT` and `GH_TOKEN` so `gh pr merge` and similar GitHub-API operations work out of the box. Sets `RTK_TELEMETRY_DISABLED=1`. `onCreateCommand: make setup_dev`. VSCode extensions match the cross-qte77 baseline.
-- `docs/codespaces-auth.md` — documents env-var precedence (`GH_TOKEN` > `GITHUB_TOKEN` > `~/.config/gh/hosts.yml` for `gh`; `credential.helper` short-circuit for `git`), the plaintext reality of tokens in `/proc/*/environ` and `hosts.yml`, available mitigations (keyring service, `pass`, `credential.helper=cache`, device-flow), and why this project sticks with env-only mapping.
+- `docs/codespaces-auth.md` — documents env-var precedence (`GH_TOKEN` > `GITHUB_TOKEN` > `~/.config/gh/hosts.yml` for `gh`; `credential.helper` short-circuit for `git`), the plaintext reality of tokens in `/proc/*/environ` and `hosts.yml`, available mitigations (keyring service, `pass`, `credential.helper=cache`, device-flow), required PAT scopes per operation, the `gh-gpgsign` flow + recovery steps, and why this project sticks with env-only mapping.
 - `CONTRIBUTING.md` — technical workflows, complete command reference, coding standards, and CHANGELOG requirements. Mirrors the qte77/Agents-eval three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules).
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]` recipe wrapping `polyfetch bulk`.
 - `probe` recipe extended with `BROWSER=`, `MAX_ATTEMPTS=` overrides.
