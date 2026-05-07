@@ -74,4 +74,5 @@ Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under 
 - [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
 - [Codespaces auth](docs/codespaces-auth.md) — env-var precedence, plaintext reality, mitigations
+- [Codespaces git defaults](docs/codespaces-git-defaults.md) — git config layering and per-repo overrides for inherited Codespaces defaults (e.g. `commit.template`)
 - [License](LICENSE) (Apache-2.0) and [Notice](NOTICE)

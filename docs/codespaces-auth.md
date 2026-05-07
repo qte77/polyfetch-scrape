@@ -247,6 +247,10 @@ Symptom: `git push origin` succeeds but pushes to your fork; `git push upstream`
 - [Org/repo Codespaces secrets](https://docs.github.com/en/codespaces/managing-codespaces-for-your-organization/managing-development-environment-secrets-for-your-repository-or-organization) — libsodium sealed-box encryption
 - [REST API: Codespaces secrets](https://docs.github.com/en/rest/codespaces/secrets) — public-key encryption flow
 
+### Sibling docs in this repo
+
+- [`codespaces-git-defaults.md`](codespaces-git-defaults.md) — non-auth git-config defaults baked by Codespaces (e.g. `commit.template`) and how to override per-repo
+
 ### qte77 cross-repo
 
 - qte77/polyforge-orchestrator#36 — PAT scope requirements (docs)
