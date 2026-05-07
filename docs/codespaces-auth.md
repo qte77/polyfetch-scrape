@@ -104,14 +104,39 @@ Steps:
 3. Add this repo to the trusted list (the trust list is per-user, shared with Settings Sync).
 4. Rebuild any running Codespace for the change to take effect (`Cmd-Shift-P` → *Codespaces: Rebuild Container*).
 
-### Verifying it works
+### Diagnostic audit (run this first)
+
+This one-liner shows every key that affects Codespaces signing **and where each value comes from**, so you can spot dotfiles overrides at a glance:
 
 ```bash
-git config --get gpg.program          # expect: /.codespaces/bin/gh-gpgsign
-git config --get commit.gpgsign       # expect: true
-git config --get user.name            # should match your GitHub profile
+for k in commit.gpgsign gpg.program gpg.format user.signingkey credential.helper user.name user.email; do
+  printf '%-22s %s\n' "$k" "$(git config --show-origin --get "$k" 2>/dev/null || echo '<unset>')"
+done
+```
+
+A **healthy** Codespaces config looks like (this codespace, 2026-04):
+
+```
+commit.gpgsign         file:/home/vscode/.gitconfig    true
+gpg.program            file:/etc/gitconfig             /.codespaces/bin/gh-gpgsign
+gpg.format             file:/home/vscode/.gitconfig    openpgp
+user.signingkey        <unset>
+credential.helper      file:/etc/gitconfig             /.codespaces/bin/gitcredential_github.sh
+user.name              file:/etc/gitconfig             qte77
+user.email             file:/etc/gitconfig             ...@users.noreply.github.com
+```
+
+What to look for:
+
+- `gpg.program` and `credential.helper` **must** come from `/etc/gitconfig` (system-level, set by Codespaces). If they come from `~/.gitconfig` or `.git/config` instead, your dotfiles are overriding them — that's GitHub's documented cause #2.
+- `user.signingkey` should be `<unset>` — `gh-gpgsign` signs via the Codespaces identity, not a local GPG key. If it's set, you've configured a local key that gh-gpgsign won't use; harmless but misleading.
+- `commit.gpgsign` can come from any scope; only its value matters.
+
+### Verifying signing actually works
+
+```bash
 git commit --allow-empty -m "sign probe"   # should succeed; no "No secret key" error
-git log -1 --show-signature           # expect: Good signature from "GitHub <noreply@github.com>"
+git log -1 --show-signature                # expect: Good signature from "GitHub <noreply@github.com>"
 ```
 
 ### What GitHub officially documents as causes when signing fails
@@ -122,7 +147,19 @@ Per [GPG troubleshooting](https://docs.github.com/en/codespaces/troubleshooting/
 2. **Conflicting Git configuration from dotfiles.** Codespaces requires the three system-level settings above (`gpg.program`, `credential.helper`, `user.name`); dotfiles can clobber them. Fix: `git config --global --unset` the conflicting keys, or guard your dotfiles with `[ -n "$CODESPACES" ]`.
 3. **VS Code "Enables commit signing with GPG or X.509" setting.** If GPG verification isn't enabled for the repo, deselect this in VS Code preferences.
 
-**Note**: GitHub's troubleshooting docs do **not** cover the `gpg: skipped "GitHub <noreply@github.com>": No secret key` failure mode observed in agent/automation shells. That symptom is tracked at qte77/polyforge-orchestrator#64 — likely a Codespaces-platform regression worth escalating to GitHub.
+**Note**: GitHub's troubleshooting docs do **not** cover the `gpg: skipped "GitHub <noreply@github.com>": No secret key` failure mode observed at qte77/polyforge-orchestrator#64. The reproduction conditions for that symptom may be specific to a particular shell / codespace state — see below.
+
+### Status in this codespace (probe results)
+
+Probed 2026-05-07: `git commit --allow-empty -m "sign probe"` succeeded. `git log -1 --show-signature` showed the commit signed with RSA key `B5690EEEBB952194` (GitHub's identity-service signing key for this codespace). The local message `gpg: Can't check signature: No public key` is benign — your local gpg keyring doesn't have GitHub's public key, but GitHub will verify the signature server-side when you push.
+
+This is **inconsistent** with polyforge#64's reported `No secret key` failure. Possible explanations:
+
+- The underlying Codespaces regression has been fixed by GitHub since #64 was filed.
+- The failure is intermittent or shell-context dependent (e.g. happens in some agent/SSH shells but not the one running this probe).
+- Specific config drift in the codespace where #64 was observed.
+
+If you reproduce the `No secret key` symptom, run the diagnostic audit above and capture the full output before applying any fix — that's the data #64 is missing.
 
 ### Mitigations while the helper is broken (least to most invasive)
 
