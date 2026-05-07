@@ -207,6 +207,36 @@ If you reproduce the `No secret key` symptom, run the diagnostic audit above and
    - Re-probe.
 4. If still broken: disable local signing for this clone (`git config --local commit.gpgsign false`) and continue working unsigned. Update polyforge#64.
 
+## Other Codespaces auth facts worth knowing
+
+Pulled directly from GitHub's first-party docs; don't depend on this doc to relay them, click through if you need authority.
+
+### User secrets: build-time exclusion (explains why we use `containerEnv`)
+
+Per [user secrets docs](https://docs.github.com/en/codespaces/managing-your-codespaces/managing-secrets-for-your-codespaces): user secrets *"cannot be used during codespace build time (that is, within a Dockerfile or custom entry point)"* or within dev container features. They're only available post-build, exposed as env vars in shell sessions.
+
+This is why our `.devcontainer/devcontainer.json` uses `containerEnv` (post-build env mapping) rather than baking secrets into image layers or feature options. Trying to read `$GH_PAT` from a `Dockerfile RUN` step would silently fail.
+
+### Stop+restart required to pick up new secrets
+
+If you add or change a Codespaces user secret while a codespace is running, **the running codespace will not see the new value** until you stop and restart it. Per the docs: *"stop the codespace and then restart it"* — a full rebuild isn't required, just a stop+start cycle.
+
+This is the most common gotcha when first wiring up `GH_PAT`: people set the secret, expect `echo $GH_PAT` to work in the existing terminal, and conclude the secret didn't save.
+
+### Capacity limits
+
+- 100 secrets per organization
+- 100 secrets per repository
+- Each secret: max 48 KB
+
+Source: [org/repo secrets docs](https://docs.github.com/en/codespaces/managing-codespaces-for-your-organization/managing-development-environment-secrets-for-your-repository-or-organization). Effectively unbounded for our use; documented for capacity planning if you ever store certificates or larger blobs.
+
+### Read-only repo access triggers automatic forking
+
+Per [security docs](https://docs.github.com/en/codespaces/reference/security-in-github-codespaces): when you create a codespace from a repository where you only have read access, the codespace **automatically forks the repository to your account** and the auto-injected `GITHUB_TOKEN` is scoped to your fork, not the upstream.
+
+Symptom: `git push origin` succeeds but pushes to your fork; `git push upstream` fails with `Permission denied` even though you can read upstream. Cross-check this if you ever see "Permission denied to qte77" type errors when you expect to be working on a repo you have write access to.
+
 ## Cross-references
 
 ### GitHub first-party docs
