@@ -42,16 +42,31 @@ The first source that resolves wins; later sources are ignored.
 | Tool | Precedence order |
 |---|---|
 | `gh` CLI | `GH_TOKEN` → `GITHUB_TOKEN` → stored config (`~/.config/gh/hosts.yml`) |
-| `git` push/fetch | `credential.helper` (in Codespaces: `/.codespaces/bin/gitcredential_github.sh`). Env vars are **not** read directly. |
+| `git` push/fetch (default Codespaces, no `gh auth setup-git`) | global `credential.helper=/.codespaces/bin/gitcredential_github.sh`. Env vars are **not** read directly. |
+| `git` push/fetch (after `gh auth setup-git`) | URL-scoped `credential.https://github.com.helper=!/usr/bin/gh auth git-credential` — delegates to `gh`'s precedence above |
 | `git` over HTTPS, no helper | URL-embedded `https://x-access-token:TOKEN@github.com/...` (one-shot) |
 | GitHub Actions runner | `${{ secrets.GITHUB_TOKEN }}` injected by runner; lifecycle ≠ Codespaces |
 
+### Why `gh auth setup-git` matters
+
+By default in Codespaces, `git push` to GitHub goes through `/.codespaces/bin/gitcredential_github.sh`, which fetches the auto-injected `GITHUB_TOKEN` from the metadata service — **regardless of what you set `GH_TOKEN` to**. Env-var overrides have no effect on `git push`.
+
+`gh auth setup-git` rewrites git's global config to add **URL-scoped helper overrides** for `github.com` and `gist.github.com`:
+
+```
+credential.https://github.com.helper=                              # reset
+credential.https://github.com.helper=!/usr/bin/gh auth git-credential
+```
+
+The empty first entry **resets any inherited helpers** (including the Codespaces system-level one), and the second entry delegates to `gh auth git-credential`. Since `gh` honours `GH_TOKEN` env > `GITHUB_TOKEN` env > stored config, your `containerEnv` mapping now actually flows through to `git push`.
+
+**Cost**: zero net plaintext exposure if `GH_TOKEN` is set. `gh auth git-credential` reads env first, so `~/.config/gh/hosts.yml` stays empty unless you also ran `gh auth login --with-token` (which we don't recommend without a keyring service).
+
 ### Implications
 
-- Setting `GH_TOKEN=$GH_PAT` makes `gh pr merge` use `$GH_PAT` regardless of what's in `hosts.yml` or `GITHUB_TOKEN`.
-- Setting `GH_TOKEN` does **not** affect `git push` — the credential helper short-circuits before env vars matter. To make `git push` use `$GH_PAT`, either:
-  - register `gh` as the credential helper: `gh auth setup-git` (writes a config that delegates to `gh`'s stored token, which adds a *second* plaintext copy of the token to `~/.config/gh/hosts.yml`); or
-  - bypass the helper for one push: `git -c credential.helper= push "https://x-access-token:$GH_PAT@github.com/..."`.
+- Setting `GH_TOKEN=$GH_PAT` makes `gh pr merge` use `$GH_PAT` regardless of `hosts.yml` or `GITHUB_TOKEN`.
+- Setting `GH_TOKEN` propagates to `git push` **only after** `gh auth setup-git` has been run in this codespace. This is automatic via `postCreateCommand` in our `.devcontainer/devcontainer.json`.
+- Without `gh auth setup-git`: bypass the helper one-shot via `git -c credential.helper= push "https://x-access-token:$GH_PAT@github.com/..."`.
 
 ## Where tokens are plaintext
 
@@ -75,11 +90,16 @@ Per GitHub's [org/repo Codespaces secrets docs](https://docs.github.com/en/codes
 | Device-flow login per session (`gh auth login --web`) | No long-lived secret in env | Manual interactive step on every codespace rebuild. |
 | **Env-only (this project's choice)** | One source of truth; no extra plaintext copy | `/proc/*/environ` exposure is what it is — same blast radius as any other env var |
 
-## Why this project sticks with env-only
+## What this project actually does (env + `gh auth setup-git`)
 
-Adding `gh auth login --with-token` to a `postCreateCommand` would *write a second plaintext copy* of `$GH_PAT` to `~/.config/gh/hosts.yml` without removing the first (the env var). That's strictly worse than env-only unless a keyring service is also installed.
+Two layers, both automated by the devcontainer:
 
-If/when the qte77 baseline devcontainer adds a keyring service, the trade-off changes and this project should follow.
+1. **`containerEnv` mapping** — `GH_TOKEN=${localEnv:GH_PAT}` injected from the Codespaces user secret. Fixes `gh pr merge` and any `gh` op that reads env vars.
+2. **`postCreateCommand: gh auth setup-git`** — installs gh as the URL-scoped git credential helper for `github.com`. Fixes `git push` by routing it through gh's token resolution.
+
+Net result: a single source of truth (`$GH_PAT`) flows to both `gh` and `git push` operations on GitHub URLs. No second plaintext copy in `~/.config/gh/hosts.yml` (gh reads env first; hosts.yml stays untouched as long as you don't `gh auth login --with-token`).
+
+If/when the qte77 baseline devcontainer adds a keyring service, the trade-off shifts again toward `gh auth login --with-token` (encrypted at rest, no env-var plaintext exposure). For now, env + setup-git is the local optimum.
 
 ## GPG signing in Codespaces (gh-gpgsign)
 
@@ -206,8 +226,8 @@ If you reproduce the `No secret key` symptom, run the diagnostic audit above and
 
 ## TL;DR
 
-- `GH_TOKEN=$GH_PAT` in `containerEnv` fixes `gh pr merge` and similar.
-- `git push` still goes through the Codespaces credential helper. Use `gh auth setup-git` if you want `git push` to use `$GH_PAT` too — at the cost of a second plaintext copy.
-- All tokens in a running container are plaintext in `/proc/*/environ`. Encryption-at-rest only applies to the GitHub side and to specific keyring-backed configs you explicitly opt into.
+- `GH_TOKEN=$GH_PAT` in `containerEnv` fixes `gh pr merge` and any other `gh` op.
+- `gh auth setup-git` (run once via `postCreateCommand`) makes `git push` use `$GH_PAT` too — by delegating git's URL-scoped credential helper to `gh`. **No** second plaintext copy of the token (gh reads env first).
+- All tokens in a running container are plaintext in `/proc/*/environ`. Encryption-at-rest applies on GitHub's side and to keyring-backed configs you explicitly opt into.
 - Required PAT scopes vary by operation; see the table above. `gh pr merge` needs `Pull requests: write`; `git push` needs `Contents: write`.
 - For `gh pr merge --auto` to work without `--admin`, GPG signing via `gh-gpgsign` must be functional. Enable Codespaces GPG verification at <https://github.com/settings/codespaces>, add this repo to the trusted list, and rebuild.
