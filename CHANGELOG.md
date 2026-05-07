@@ -13,15 +13,18 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Added
 
 - `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator; `containerEnv` maps `GH_PAT` user-secret to `GH_TOKEN`; `postCreateCommand: gh auth setup-git` so `git push` also honours `$GH_PAT`.
-- `docs/codespaces-auth.md` — env-var precedence, plaintext reality, PAT scopes table, `gh-gpgsign` flow & recovery, mitigations. 1p-cited.
-- `docs/codespaces-git-defaults.md` — git config layering and per-repo overrides for inherited Codespaces defaults (`commit.template`).
 - `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
 
 ### Changed
 
 - `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
+- `README.md` References now points at `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home for Codespaces auth/git documentation.
 - `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
+
+### Removed
+
+- `docs/codespaces-auth.md` and `docs/codespaces-git-defaults.md` — content merged into `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home (single source of truth across qte77 ecosystem). README links now point there.
 
 ### Fixed
 
