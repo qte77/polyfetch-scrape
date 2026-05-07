@@ -12,18 +12,20 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
-- `CONTRIBUTING.md` — technical workflows, complete command reference, coding standards, and CHANGELOG requirements. Mirrors the qte77/Agents-eval three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules).
-- `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]` recipe wrapping `polyfetch bulk`.
-- `probe` recipe extended with `BROWSER=`, `MAX_ATTEMPTS=` overrides.
+- `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator; `containerEnv` maps `GH_PAT` user-secret to `GH_TOKEN`; `postCreateCommand: gh auth setup-git` so `git push` also honours `$GH_PAT`.
+- `docs/codespaces-auth.md` — env-var precedence, plaintext reality, PAT scopes table, `gh-gpgsign` flow & recovery, mitigations. 1p-cited.
+- `docs/codespaces-git-defaults.md` — git config layering and per-repo overrides for inherited Codespaces defaults (`commit.template`).
+- `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
+- `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
 
 ### Changed
 
-- `README.md` Development section now points to `CONTRIBUTING.md` instead of inlining recipes (single source of truth).
-- `AGENTS.md` references `CONTRIBUTING.md` for commands and adds explicit "always use `make` recipes" rule and `make validate` before-report-complete rule.
+- `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
+- `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
 
 ### Fixed
 
-- `Makefile` `probe` recipe no longer leaks shell-environment variables (e.g. devcontainer-set `BROWSER=...`) into CLI flags. Flag forwarding now uses `$(origin VAR)` to gate on `command line` / `file` only.
+- `Makefile` `probe` recipe no longer leaks shell-env vars (e.g. devcontainer-set `BROWSER=...`); flag forwarding now uses `$(origin VAR)` to gate on `command line`/`file` only.
 
 ## [0.3.1] - 2026-04-26
 
