@@ -38,5 +38,6 @@
     "WAKATIME_API_KEY": "${localEnv:WAKATIME_API_KEY}",
     "RTK_TELEMETRY_DISABLED": "1"
   },
-  "onCreateCommand": "make setup_dev"
+  "onCreateCommand": "make setup_dev",
+  "postCreateCommand": "gh auth setup-git"
 }
