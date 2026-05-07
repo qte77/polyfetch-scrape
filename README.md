@@ -73,4 +73,5 @@ Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under 
 - [Roadmap](docs/roadmap.md) — staged delivery plan (0.1 → 0.5)
 - [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
+- [Codespaces auth](docs/codespaces-auth.md) — env-var precedence, plaintext reality, mitigations
 - [License](LICENSE) (Apache-2.0) and [Notice](NOTICE)
