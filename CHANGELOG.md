@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator. Maps `${localEnv:GH_PAT}` (Codespaces user secret) to both `GH_PAT` and `GH_TOKEN` so `gh pr merge` and similar GitHub-API operations work out of the box. Sets `RTK_TELEMETRY_DISABLED=1`. `onCreateCommand: make setup_dev`. VSCode extensions match the cross-qte77 baseline.
 - `CONTRIBUTING.md` — technical workflows, complete command reference, coding standards, and CHANGELOG requirements. Mirrors the qte77/Agents-eval three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules).
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]` recipe wrapping `polyfetch bulk`.
 - `probe` recipe extended with `BROWSER=`, `MAX_ATTEMPTS=` overrides.
