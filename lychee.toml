@@ -10,7 +10,15 @@
 #   - www.epo.org — intermittent HTTP/2 protocol error from the upstream
 #     server (referenced once from docs/scraping-landscape.md). Not under
 #     our control.
+#
+#   - exa.ai/websets, www.lens.org — referenced from
+#     docs/scraping-landscape.md as documented anti-bot / rate-limited
+#     targets. These returning 429/403 to a CI link checker is the
+#     expected behaviour the doc is itself describing; checking them on
+#     every PR is noise.
 exclude = [
     "https://github\\.com/qte77/polyfetch-scrape/(compare|releases/tag)/",
     "https://www\\.epo\\.org/",
+    "https://exa\\.ai/",
+    "https://www\\.lens\\.org/",
 ]
