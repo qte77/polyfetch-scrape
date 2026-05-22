@@ -4,6 +4,7 @@ import respx
 
 from polyfetch_scrape._backends import FingerprintBlock, httpx_backend
 from polyfetch_scrape.retry import RetryPolicy
+from polyfetch_scrape.utils.http_ua import STABLE_USER_AGENT
 
 
 @pytest.fixture(autouse=True)
@@ -62,3 +63,54 @@ def test_httpx_backend_does_not_block_on_generic_connect_error() -> None:
             policy=RetryPolicy(max_attempts=1),
         )
     assert not isinstance(exc_info.value, FingerprintBlock)
+
+
+@respx.mock
+def test_httpx_backend_sets_default_user_agent_when_caller_omits() -> None:
+    url = "https://example.com/ua-default"
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+
+    httpx_backend.attempt(
+        method="GET",
+        url=url,
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    sent = route.calls.last.request
+    assert sent.headers["user-agent"] == STABLE_USER_AGENT
+
+
+@respx.mock
+def test_httpx_backend_preserves_caller_supplied_user_agent() -> None:
+    url = "https://example.com/ua-supplied"
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+
+    httpx_backend.attempt(
+        method="GET",
+        url=url,
+        headers={"User-Agent": "MyCustom/1.0"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    sent = route.calls.last.request
+    assert sent.headers["user-agent"] == "MyCustom/1.0"
+
+
+@respx.mock
+def test_httpx_backend_preserves_caller_supplied_user_agent_case_insensitive() -> None:
+    url = "https://example.com/ua-lowercase"
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+
+    httpx_backend.attempt(
+        method="GET",
+        url=url,
+        headers={"user-agent": "lower/1.0"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    sent = route.calls.last.request
+    assert sent.headers["user-agent"] == "lower/1.0"
