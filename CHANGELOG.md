@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Fixed
 
 - `Makefile` `probe` recipe no longer leaks shell-env vars (e.g. devcontainer-set `BROWSER=...`); flag forwarding now uses `$(origin VAR)` to gate on `command line`/`file` only.
+- `CONTRIBUTING.md` — replaced YAML frontmatter with a proper `# Contributing to polyfetch-scrape` H1 so `markdownlint-cli2` MD041 / MD022 / MD003 all pass (frontmatter wasn't rendered by GitHub anyway).
+- `lychee.toml` — new local lychee config narrowly excluding (a) `compare/` + `releases/tag/` URLs to v0.1.0..v0.3.1 that CHANGELOG references but were never pushed as tags, (b) `www.epo.org` which intermittently returns HTTP/2 protocol errors. Both block every PR on `main` until addressed; the real fix for (a) is to push the tags retroactively.
 
 ### Security
 

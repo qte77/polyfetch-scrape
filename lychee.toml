@@ -1,0 +1,16 @@
+# Local lychee config — overrides the upstream qte77/.github default.
+# Each exclusion is a deliberate decision, not a blanket bypass:
+#
+#   - github.com/qte77/polyfetch-scrape/(compare|releases/tag)/ —
+#     CHANGELOG.md references the v0.1.0..v0.3.1 tags and the [Unreleased]
+#     compare link, but git tags / GitHub releases were never pushed. The
+#     real fix is to push the tags retroactively; until then, lychee 404s
+#     block every PR. Drop this exclusion once tags exist.
+#
+#   - www.epo.org — intermittent HTTP/2 protocol error from the upstream
+#     server (referenced once from docs/scraping-landscape.md). Not under
+#     our control.
+exclude = [
+    "https://github\\.com/qte77/polyfetch-scrape/(compare|releases/tag)/",
+    "https://www\\.epo\\.org/",
+]
