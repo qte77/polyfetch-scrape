@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
+- `pyproject.toml` — ruff `[tool.ruff.lint] select` graduated per py-harden-ruff §1: adds baseline `I, N, W, UP` and near-free quality + security `B, S, SIM, RUF, PT, PGH` (deferred for follow-ups: `ANN`, `D`, `TC`, `TRY`, `C90`). `tests/**` ignores `S101` (asserts are pytest's primary contract). Closes #21.
 - `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
 - `README.md` References now points at `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home for Codespaces auth/git documentation.
 - `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
