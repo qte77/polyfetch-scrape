@@ -8,6 +8,7 @@ from polyfetch_scrape._backends import FingerprintBlock
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, should_retry
+from polyfetch_scrape.utils.http_ua import STABLE_USER_AGENT
 
 _FINGERPRINT_STATUSES: frozenset[int] = frozenset({403})
 
@@ -63,7 +64,7 @@ def _attempt_once(
     policy: RetryPolicy,
 ) -> _Attempt:
     try:
-        http_resp = client.request(method, url, headers=dict(headers) if headers else None)
+        http_resp = client.request(method, url, headers=_with_default_ua(headers))
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 
@@ -74,6 +75,19 @@ def _attempt_once(
         return _Attempt(None, http_resp.status_code, None)
 
     return _Attempt(_to_response(http_resp), None, None)
+
+
+def _with_default_ua(headers: Mapping[str, str] | None) -> dict[str, str]:
+    """Inject ``STABLE_USER_AGENT`` if the caller didn't supply a User-Agent.
+
+    httpx's default ``python-httpx/X.Y.Z`` UA is an immediate bot tell on
+    some endpoints, defeating the cheap httpx tier before TLS-fingerprint
+    fallback would even matter. Caller-supplied UA (any case) wins.
+    """
+    merged: dict[str, str] = dict(headers) if headers else {}
+    if not any(k.lower() == "user-agent" for k in merged):
+        merged["User-Agent"] = STABLE_USER_AGENT
+    return merged
 
 
 def _to_response(http_resp: httpx.Response) -> Response:

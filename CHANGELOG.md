@@ -22,10 +22,12 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator; `containerEnv` maps `GH_PAT` user-secret to `GH_TOKEN`; `postCreateCommand: gh auth setup-git` so `git push` also honours `$GH_PAT`.
 - `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
+- `polyfetch_scrape.utils.http_ua` — generalized port of `qte77/scrape-stock-kpi/src/utils/http_ua.py` (no pydantic-settings dep): `USER_AGENTS` tuple of 5 desktop browser UAs (refresh quarterly from useragents.me/), `STABLE_USER_AGENT = USER_AGENTS[0]` for endpoints that profile per-UA over time, `pick_user_agent(rng=None)` for rotation with optional seeded RNG. The sibling repo's `require_https()` guard is intentionally not ported (incompatible with this project's "fetch any URL" contract).
 
 ### Changed
 
-- `pyproject.toml` — ruff `[tool.ruff.lint] select` graduated per py-harden-ruff §1: adds baseline `I, N, W, UP` and near-free quality + security `B, S, SIM, RUF, PT, PGH` (deferred for follow-ups: `ANN`, `D`, `TC`, `TRY`, `C90`). `tests/**` ignores `S101` (asserts are pytest's primary contract). Closes #21.
+- `_backends/httpx_backend.py` — outbound `User-Agent` now defaults to `STABLE_USER_AGENT` (Chrome-on-Windows desktop) when the caller doesn't supply one; httpx's `python-httpx/X.Y.Z` default was an immediate bot tell on hardened endpoints, defeating the cheap httpx tier before TLS-fingerprint fallback would even matter. Caller-supplied `User-Agent` (any case) wins. Closes #16.
+- `pyproject.toml` — ruff `[tool.ruff.lint] select` graduated per py-harden-ruff §1: adds baseline `I, N, W, UP` and near-free quality + security `B, S, SIM, RUF, PT, PGH` (deferred for follow-ups: `ANN`, `D`, `TC`, `TRY`, `C90`). `tests/**` ignores `S101` (asserts) and `S311` (seeded `random.Random()` for determinism, not crypto). Closes #21.
 - `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
 - `README.md` References now points at `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home for Codespaces auth/git documentation.
 - `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
