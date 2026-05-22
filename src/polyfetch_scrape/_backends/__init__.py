@@ -9,5 +9,5 @@ other terminal failure after exhausting retries.
 from polyfetch_scrape.errors import FetchError
 
 
-class FingerprintBlock(FetchError):
+class FingerprintBlock(FetchError):  # noqa: N818 — control-flow sentinel, never surfaced to callers
     """Signal to the orchestrator that the next backend should be tried."""
