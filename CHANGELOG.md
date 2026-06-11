@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- `easter_hunt` contrib module (`src/polyfetch_scrape/contrib/easter_hunt/`) — opt-in page-artifact scanner built on the public `fetch()`. Three pure detectors (`html_comments` recruiting/novelty comments, `weird_headers` curated header table, `wellknown_present` with a soft-404 body sniff), a `hunt()` orchestrator, and a `polyfetch easter-hunt scan` CLI subcommand (`--seeds-file`, `--include-wellknown`, `--json`). Contrib is an unsupported extra: core never imports it and removing the directory leaves the core CLI functional.
 - `CONTRIBUTING.md` — technical workflows, complete command reference, coding standards, and CHANGELOG requirements. Mirrors the qte77/Agents-eval three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules).
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]` recipe wrapping `polyfetch bulk`.
 - `probe` recipe extended with `BROWSER=`, `MAX_ATTEMPTS=` overrides.
@@ -24,6 +25,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Fixed
 
 - `Makefile` `probe` recipe no longer leaks shell-environment variables (e.g. devcontainer-set `BROWSER=...`) into CLI flags. Flag forwarding now uses `$(origin VAR)` to gate on `command line` / `file` only.
+
+### Security
+
+- `easter_hunt.hunt()` enforces a literal-IP SSRF guard before every fetch: a seed whose host is a private, loopback, link-local, unspecified, reserved, or multicast IP raises `ValueError` (surfaced as exit 2 by the CLI) before any network call. Literal-IP only — DNS-based SSRF and obfuscated IP encodings (decimal/hex/octal) are documented as out of scope for v0.1.
 
 ## [0.3.1] - 2026-04-26
 

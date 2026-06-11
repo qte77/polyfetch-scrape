@@ -45,7 +45,7 @@ src/polyfetch_scrape/contrib/
     finding.py                         # frozen Finding dataclass
     seeds.py                           # SEEDS, WELL_KNOWN_PATHS
     detectors.py                       # html_comments, weird_headers, wellknown_present
-    hunt.py                            # orchestrator + literal-IP SSRF guard
+    orchestrator.py                    # orchestrator + literal-IP SSRF guard
 tests/contrib/easter_hunt/
   fixtures/                            # added per test as needed (not pre-staged)
   test_detectors.py                    # all three detectors (one file until it grows)
@@ -81,7 +81,7 @@ class Finding:
 Detector = Callable[[Response], list[Finding]]
 DETECTORS: tuple[Detector, ...] = (html_comments, weird_headers, wellknown_present)
 
-# contrib/easter_hunt/hunt.py
+# contrib/easter_hunt/orchestrator.py
 def hunt(
     seeds: Iterable[str],
     *,
@@ -180,7 +180,7 @@ Listed so they don't sneak in:
 **New** (all under `src/polyfetch_scrape/contrib/easter_hunt/` and
 `tests/contrib/easter_hunt/`): `contrib/__init__.py`,
 `easter_hunt/__init__.py`, `easter_hunt/finding.py`,
-`easter_hunt/seeds.py`, `easter_hunt/detectors.py`, `easter_hunt/hunt.py`,
+`easter_hunt/seeds.py`, `easter_hunt/detectors.py`, `easter_hunt/orchestrator.py`,
 plus 4 test files.
 
 **Edited (small):**
