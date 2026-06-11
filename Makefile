@@ -2,6 +2,10 @@
         test test_e2e test_coverage validate quick_validate probe probe_bulk hunt help
 .DEFAULT_GOAL := help
 
+
+# MARK: SETUP
+
+
 setup_uv:  ## Install uv and sync frozen deps (bootstrap-only pip usage)
 	pip install uv -q
 	uv sync --frozen
@@ -11,6 +15,10 @@ setup_dev:  ## Sync dev deps via uv
 
 setup_browsers:  ## Install Patchright Chromium binary (~300MB; required for e2e)
 	uv run patchright install chromium
+
+
+# MARK: QUALITY
+
 
 lint_src:  ## Format + lint src with ruff
 	uv run ruff format --exclude tests
@@ -48,6 +56,10 @@ quick_validate:  ## Fast dev cycle (no tests)
 	$(MAKE) -s type_check
 	@echo "=== quick_validate: all passed ==="
 
+
+# MARK: APP
+
+
 # Only treat probe/probe_bulk flag vars as user-supplied when they come from
 # the command line, not from the environment (e.g. shell BROWSER=...).
 _cli = $(filter command\ line file,$(origin $(1)))
@@ -65,6 +77,7 @@ probe_bulk:  ## Probe URLs from FILE. Usage: make probe_bulk FILE=urls.txt [WORK
 		$(if $(call _cli,WORKERS),--workers $(WORKERS)) \
 		$(if $(call _cli,TEXT),--text)
 
+
 SEEDS ?= examples/easter-hunt-seeds.txt
 
 hunt:  ## Scan for page artifacts. Usage: make hunt [URL=https://...] [SEEDS=file] [JSON=1] [WELLKNOWN=1]
@@ -73,5 +86,22 @@ hunt:  ## Scan for page artifacts. Usage: make hunt [URL=https://...] [SEEDS=fil
 		$(if $(call _cli,JSON),--json) \
 		$(if $(call _cli,WELLKNOWN),--include-wellknown)
 
-help:  ## Show recipes
-	@awk '/^[a-zA-Z0-9_-]+:.*?##/ { sub(/:/,"",$$1); printf "  \033[36m%-16s\033[0m %s\n", $$1, substr($$0, index($$0,"## ")+3) }' $(MAKEFILE_LIST)
+
+# MARK: HELP
+
+
+help:  ## Show available recipes grouped by section
+	@echo "Usage: make [recipe]"
+	@echo ""
+	@awk '/^# MARK:/ { \
+		section = substr($$0, index($$0, ":")+2); \
+		printf "\n\033[1m%s\033[0m\n", section \
+	} \
+	/^[a-zA-Z0-9_-]+:.*?##/ { \
+		helpMessage = match($$0, /## (.*)/); \
+		if (helpMessage) { \
+			recipe = $$1; \
+			sub(/:/, "", recipe); \
+			printf "  \033[36m%-16s\033[0m %s\n", recipe, substr($$0, RSTART + 3, RLENGTH) \
+		} \
+	}' $(MAKEFILE_LIST)

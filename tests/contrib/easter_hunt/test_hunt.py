@@ -1,8 +1,8 @@
 """Orchestrator + SSRF-guard tests.
 
-The fetch seam is monkeypatched at ``...easter_hunt.hunt.fetch`` (the name bound
-in hunt.py's namespace) for logic tests; one respx-backed test drives the real
-fetch chain end to end.
+The fetch seam is monkeypatched at ``...easter_hunt.orchestrator.fetch`` (the name
+bound in orchestrator.py's namespace) for logic tests; one respx-backed test drives
+the real fetch chain end to end.
 """
 
 import httpx
@@ -293,4 +293,4 @@ def test_hunt_default_detectors_are_the_three_detectors() -> None:
         wellknown_present,
     )
 
-    assert DETECTORS == (html_comments, weird_headers, wellknown_present)
+    assert (html_comments, weird_headers, wellknown_present) == DETECTORS

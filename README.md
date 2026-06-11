@@ -33,6 +33,7 @@ print(r.status, r.backend, len(r.body))     # 200 curl_cffi 179447
 polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
 polyfetch bulk urls.txt --workers 4
+polyfetch arxiv get 2301.00001 --json
 polyfetch --help
 ```
 
@@ -66,11 +67,12 @@ For AI agent behavioural rules, see [`AGENTS.md`](AGENTS.md). For release notes,
 
 ## Project Outline
 
-Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`). Opt-in extras live under `src/polyfetch_scrape/contrib/` (e.g. `easter_hunt`, a page-artifact scanner exposed as `polyfetch easter-hunt scan`); they consume the public `fetch()` and are unsupported — core never depends on them. Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
+Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in private `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`); per-source domain wrappers live in public `sources/` (currently `arxiv.py`; more in 0.4.0); opt-in extras live under `contrib/` (e.g. `easter_hunt`, a page-artifact scanner exposed as `polyfetch easter-hunt scan`) and consume the public `fetch()` — unsupported, core never depends on them. Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
 
 ## References
 
 - [Roadmap](docs/roadmap.md) — staged delivery plan (0.1 → 0.5)
 - [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
+- [Codespaces — qte77/polyforge-orchestrator/docs/codespaces.md](https://github.com/qte77/polyforge-orchestrator/blob/main/docs/codespaces.md) — canonical cross-qte77 reference for Codespaces auth, token precedence, GPG signing, devcontainer lifecycle
 - [License](LICENSE) (Apache-2.0) and [Notice](NOTICE)

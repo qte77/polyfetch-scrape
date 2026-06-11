@@ -12,22 +12,41 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
-- `easter_hunt` contrib module (`src/polyfetch_scrape/contrib/easter_hunt/`) — opt-in page-artifact scanner built on the public `fetch()`. Three pure detectors (`html_comments` recruiting/novelty comments, `weird_headers` curated header table, `wellknown_present` with a soft-404 body sniff), a `hunt()` orchestrator, and a `polyfetch easter-hunt scan` CLI subcommand (`--seeds-file`, `--include-wellknown`, `--json`). Contrib is an unsupported extra: core never imports it and removing the directory leaves the core CLI functional.
-- `CONTRIBUTING.md` — technical workflows, complete command reference, coding standards, and CHANGELOG requirements. Mirrors the qte77/Agents-eval three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules).
-- `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]` recipe wrapping `polyfetch bulk`.
-- `probe` recipe extended with `BROWSER=`, `MAX_ATTEMPTS=` overrides.
+- `easter_hunt` contrib module (`src/polyfetch_scrape/contrib/easter_hunt/`) — opt-in page-artifact scanner built on the public `fetch()`. Three pure detectors (`html_comments` recruiting/novelty comments, `weird_headers` curated header table, `wellknown_present` with a soft-404 body sniff), a `hunt()` orchestrator, a `polyfetch easter-hunt scan` CLI subcommand (`--seeds-file`, `--include-wellknown`, `--json`), and a `make hunt` recipe + `examples/easter-hunt-seeds.txt`. Contrib is an unsupported extra: core never imports it and removing the directory leaves the core CLI functional.
+- **Stage 0.4.0 part 1: arXiv source wrapper** (`polyfetch_scrape.sources.arxiv`):
+  - `ArxivPaper` frozen dataclass: `arxiv_id`, `title`, `authors`, `abstract`, `categories`, `pdf_url`, `abs_url`, `published_at`, `updated_at`.
+  - `get(arxiv_id, *, timeout=30.0) -> ArxivPaper` calls `fetch()` against the arXiv export API and parses Atom XML via `defusedxml.ElementTree` (mitigates Bandit B314).
+  - `ArxivError(FetchError)`, `ArxivNotFoundError`, `ArxivParseError` exception types.
+  - CLI: `polyfetch arxiv get ID [--json]`.
+  - E2e: `test_arxiv_source_get_real_api` against real arXiv API.
+- New top-level `sources/` namespace (vs private `_backends/`); first source.
+- `.devcontainer/devcontainer.json` — Codespaces config mirroring qte77/polyforge-orchestrator; `containerEnv` maps `GH_PAT` user-secret to `GH_TOKEN`; `postCreateCommand: gh auth setup-git` so `git push` also honours `$GH_PAT`.
+- `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
+- `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
+- `polyfetch_scrape.utils.http_ua` — generalized port of `qte77/scrape-stock-kpi/src/utils/http_ua.py` (no pydantic-settings dep): `USER_AGENTS` tuple of 5 desktop browser UAs (refresh quarterly from useragents.me/), `STABLE_USER_AGENT = USER_AGENTS[0]` for endpoints that profile per-UA over time, `pick_user_agent(rng=None)` for rotation with optional seeded RNG. The sibling repo's `require_https()` guard is intentionally not ported (incompatible with this project's "fetch any URL" contract).
 
 ### Changed
 
-- `README.md` Development section now points to `CONTRIBUTING.md` instead of inlining recipes (single source of truth).
-- `AGENTS.md` references `CONTRIBUTING.md` for commands and adds explicit "always use `make` recipes" rule and `make validate` before-report-complete rule.
+- `_backends/httpx_backend.py` — outbound `User-Agent` now defaults to `STABLE_USER_AGENT` (Chrome-on-Windows desktop) when the caller doesn't supply one; httpx's `python-httpx/X.Y.Z` default was an immediate bot tell on hardened endpoints, defeating the cheap httpx tier before TLS-fingerprint fallback would even matter. Caller-supplied `User-Agent` (any case) wins. Closes #16.
+- `pyproject.toml` — ruff `[tool.ruff.lint] select` graduated per py-harden-ruff §1: adds baseline `I, N, W, UP` and near-free quality + security `B, S, SIM, RUF, PT, PGH` (deferred for follow-ups: `ANN`, `D`, `TC`, `TRY`, `C90`). `tests/**` ignores `S101` (asserts) and `S311` (seeded `random.Random()` for determinism, not crypto). Closes #21.
+- `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
+- `README.md` References now points at `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home for Codespaces auth/git documentation.
+- `AGENTS.md` cross-refs `CONTRIBUTING.md` and mandates `make` recipes + `make validate` before reporting task complete.
+- `Makefile` adopts qte77/Agents-eval `# MARK:` section-marker convention (SETUP / QUALITY / APP / HELP) for cross-project muscle memory; `help` recipe now prints recipes grouped under bold section headings via the same awk pattern.
+
+### Removed
+
+- `docs/codespaces-auth.md` and `docs/codespaces-git-defaults.md` — content merged into `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home (single source of truth across qte77 ecosystem). README links now point there.
 
 ### Fixed
 
-- `Makefile` `probe` recipe no longer leaks shell-environment variables (e.g. devcontainer-set `BROWSER=...`) into CLI flags. Flag forwarding now uses `$(origin VAR)` to gate on `command line` / `file` only.
+- `Makefile` `probe` recipe no longer leaks shell-env vars (e.g. devcontainer-set `BROWSER=...`); flag forwarding now uses `$(origin VAR)` to gate on `command line`/`file` only.
+- `CONTRIBUTING.md` — replaced YAML frontmatter with a proper `# Contributing to polyfetch-scrape` H1 so `markdownlint-cli2` MD041 / MD022 / MD003 all pass (frontmatter wasn't rendered by GitHub anyway).
+- `lychee.toml` — new local lychee config narrowly excluding (a) `compare/` + `releases/tag/` URLs to v0.1.0..v0.3.1 that CHANGELOG references but were never pushed as tags, (b) `www.epo.org` which intermittently returns HTTP/2 protocol errors. Both block every PR on `main` until addressed; the real fix for (a) is to push the tags retroactively.
 
 ### Security
 
+- `sources/arxiv.py` parses XML via `defusedxml.ElementTree.fromstring` instead of stdlib `xml.etree.ElementTree.fromstring` to mitigate XML attacks (billion-laughs, external entity expansion). Stdlib `xml.etree.ElementTree.fromstring` on untrusted XML is Bandit B314.
 - `easter_hunt.hunt()` enforces a literal-IP SSRF guard before every fetch: a seed whose host is a private, loopback, link-local, unspecified, reserved, or multicast IP raises `ValueError` (surfaced as exit 2 by the CLI) before any network call. Literal-IP only — DNS-based SSRF and obfuscated IP encodings (decimal/hex/octal) are documented as out of scope for v0.1.
 
 ## [0.3.1] - 2026-04-26

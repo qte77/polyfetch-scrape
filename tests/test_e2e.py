@@ -53,6 +53,18 @@ def test_arxiv_abstract_page_succeeds_on_plain_httpx() -> None:
     assert "html" in resp.content_type.lower()
 
 
+def test_arxiv_source_get_real_api() -> None:
+    """Stage 0.4.0: source wrapper round-trips against the real arXiv API."""
+    from polyfetch_scrape.sources.arxiv import get as arxiv_get
+
+    paper = arxiv_get("2301.00001")
+    assert paper.arxiv_id.startswith("2301.00001")
+    assert paper.title  # non-empty
+    assert len(paper.authors) >= 1
+    assert paper.pdf_url.startswith("https://arxiv.org/pdf/")
+    assert paper.abs_url.startswith("https://arxiv.org/abs/")
+
+
 def test_cloudflare_fronted_target_succeeds_via_curl_cffi() -> None:
     """Stage 0.2.0: curl_cffi TLS fallback unblocks Cloudflare-fronted targets.
 

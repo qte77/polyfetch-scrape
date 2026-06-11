@@ -9,6 +9,7 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "qte77"}]
 dependencies = [
     "curl-cffi>=0.15.0",
+    "defusedxml>=0.7.1",
     "httpx>=0.28.1",
     "patchright>=1.58.2",
     "typer>=0.25.0",
@@ -55,6 +56,20 @@ fail_under = 90
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Graduated per py-harden-ruff §1 (sibling-repo recipe). Baseline + near-free quality + S (bandit).
+# Deferred for follow-ups: ANN, D, TC, TRY, C90.
+select = [
+    "E", "F", "I", "N", "W", "UP",      # baseline
+    "B", "S", "SIM", "RUF", "PT", "PGH" # near-free quality + security
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",  # asserts are pytest's primary contract
+    "S311",  # seeded random.Random() in tests is for determinism, not crypto
+]
 
 [tool.pyright]
 include = ["src"]

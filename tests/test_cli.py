@@ -127,3 +127,61 @@ def test_version_prints_and_exits_0() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.strip()
+
+
+# --- arxiv subcommand ---
+
+
+def _arxiv_paper() -> object:
+    from polyfetch_scrape.sources.arxiv import ArxivPaper
+
+    return ArxivPaper(
+        arxiv_id="2301.00001v1",
+        title="NFTrig",
+        authors=("Jordan Thompson", "Ryan Benac"),
+        abstract="An abstract.",
+        categories=("cs.HC",),
+        pdf_url="https://arxiv.org/pdf/2301.00001v1",
+        abs_url="https://arxiv.org/abs/2301.00001v1",
+        published_at="2022-12-21T18:07:06Z",
+        updated_at="2022-12-21T18:07:06Z",
+    )
+
+
+def test_arxiv_get_text_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.arxiv_source.get", lambda _id, **_kw: _arxiv_paper())
+
+    result = runner.invoke(app, ["arxiv", "get", "2301.00001"])
+
+    assert result.exit_code == 0
+    assert "arxiv:2301.00001v1" in result.stdout
+    assert "NFTrig" in result.stdout
+    assert "Jordan Thompson" in result.stdout
+    assert "cs.HC" in result.stdout
+
+
+def test_arxiv_get_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.arxiv_source.get", lambda _id, **_kw: _arxiv_paper())
+
+    result = runner.invoke(app, ["arxiv", "get", "2301.00001", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["arxiv_id"] == "2301.00001v1"
+    assert payload["title"] == "NFTrig"
+    assert payload["authors"] == ["Jordan Thompson", "Ryan Benac"]
+    assert payload["categories"] == ["cs.HC"]
+
+
+def test_arxiv_get_exits_1_on_fetcherror(monkeypatch: pytest.MonkeyPatch) -> None:
+    from polyfetch_scrape.sources.arxiv import ArxivNotFoundError
+
+    def boom(*_a: object, **_kw: object) -> object:
+        raise ArxivNotFoundError("nope")
+
+    monkeypatch.setattr("polyfetch_scrape.cli.arxiv_source.get", boom)
+
+    result = runner.invoke(app, ["arxiv", "get", "9999.99999"])
+
+    assert result.exit_code == 1
+    assert "nope" in (result.stderr or "") + result.stdout

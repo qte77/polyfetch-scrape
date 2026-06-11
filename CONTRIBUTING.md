@@ -1,11 +1,5 @@
 <!-- markdownlint-disable MD024 -->
----
-title: Contributing to polyfetch-scrape
-description: Technical development workflows, coding standards, and command reference
-version: 1.0.0
-created: 2026-04-26
-updated: 2026-04-26
----
+# Contributing to polyfetch-scrape
 
 **This document contains technical development workflows, coding standards, and command reference shared by both human developers and AI coding agents.** For AI agent behavioural rules, see [`AGENTS.md`](AGENTS.md). For project overview and navigation, see [`README.md`](README.md).
 

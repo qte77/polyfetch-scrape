@@ -1,4 +1,4 @@
-"""Orchestrator: fetch each seed×path through the public fetch() and run detectors.
+"""Orchestrator: fetch each seed x path through the public fetch() and run detectors.
 
 Named ``orchestrator`` (not ``hunt``) so the module name never collides with the
 public ``hunt`` function re-exported on the package.
@@ -54,7 +54,7 @@ def hunt(
     detectors: Iterable[Detector] = DETECTORS,
     timeout: float = 10.0,
 ) -> list[Finding]:
-    """Scan every seed×path with each detector, returning aggregated Findings.
+    """Scan every seed x path with each detector, returning aggregated Findings.
 
     Materialise ``paths``/``detectors`` once so single-use iterables survive every
     seed. A blocked literal IP raises ValueError (not swallowed); a per-URL fetch

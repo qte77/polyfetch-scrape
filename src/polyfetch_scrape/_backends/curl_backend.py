@@ -67,7 +67,7 @@ def _attempt_once(
             headers=dict(headers) if headers else None,
             timeout=timeout,
         )
-    except Exception as exc:  # noqa: BLE001 — curl_cffi raises a wide error hierarchy
+    except Exception as exc:  # curl_cffi raises a wide error hierarchy
         return _Attempt(None, None, exc)
 
     status = int(http_resp.status_code)

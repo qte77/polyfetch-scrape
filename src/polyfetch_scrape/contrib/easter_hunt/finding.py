@@ -14,5 +14,5 @@ class Finding:
     severity: str  # info | notable | warn
     location: str  # e.g. "header:p3p" | "body:comment[3]" | "path:/.git/HEAD"
     snippet: str
-    confidence: float  # 0.0–1.0
+    confidence: float  # 0.0-1.0
     url: str
