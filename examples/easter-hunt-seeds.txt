@@ -1,0 +1,22 @@
+# easter_hunt example seeds — illustrative targets that exposed page artifacts when
+# this list was assembled (2026-06). Live sites change; some hits may drift over time.
+#
+#   make hunt                 scans "/" of each seed with html_comments + weird_headers
+#   make hunt WELLKNOWN=1     also sweeps humans.txt / security.txt / robots.txt / .git / ...
+#   make hunt URL=https://... scans a single URL instead of this file
+#
+# Lines starting with '#' and blank lines are ignored.
+
+# Homepage artifacts (found on "/"):
+#   wakatime.com   novelty: ASCII-art turtle in an HTML comment
+#   mozilla.org    recruiting HTML comment + X-Clacks-Overhead (GNU Terry Pratchett) header
+#   netflix.com    X-Request-Id stack-disclosure header
+https://wakatime.com/
+https://www.mozilla.org/
+https://www.netflix.com/
+
+# Best explored with WELLKNOWN=1 (well-known paths):
+#   google.com     humans.txt, security.txt, robots.txt, sitemap.xml
+#   github.com     security.txt, robots.txt, manifest.json
+https://www.google.com/
+https://github.com/

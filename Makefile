@@ -1,5 +1,5 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
-        test test_e2e test_coverage validate quick_validate probe probe_bulk help
+        test test_e2e test_coverage validate quick_validate probe probe_bulk hunt help
 .DEFAULT_GOAL := help
 
 setup_uv:  ## Install uv and sync frozen deps (bootstrap-only pip usage)
@@ -64,6 +64,14 @@ probe_bulk:  ## Probe URLs from FILE. Usage: make probe_bulk FILE=urls.txt [WORK
 	uv run polyfetch bulk "$(FILE)" \
 		$(if $(call _cli,WORKERS),--workers $(WORKERS)) \
 		$(if $(call _cli,TEXT),--text)
+
+SEEDS ?= examples/easter-hunt-seeds.txt
+
+hunt:  ## Scan for page artifacts. Usage: make hunt [URL=https://...] [SEEDS=file] [JSON=1] [WELLKNOWN=1]
+	uv run polyfetch easter-hunt scan \
+		$(if $(URL),"$(URL)",--seeds-file "$(SEEDS)") \
+		$(if $(call _cli,JSON),--json) \
+		$(if $(call _cli,WELLKNOWN),--include-wellknown)
 
 help:  ## Show recipes
 	@awk '/^[a-zA-Z0-9_-]+:.*?##/ { sub(/:/,"",$$1); printf "  \033[36m%-16s\033[0m %s\n", $$1, substr($$0, index($$0,"## ")+3) }' $(MAKEFILE_LIST)
