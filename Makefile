@@ -1,5 +1,5 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
-        test test_e2e test_coverage validate quick_validate probe probe_bulk help
+        test test_e2e test_coverage validate quick_validate probe probe_bulk hunt help
 .DEFAULT_GOAL := help
 
 
@@ -76,6 +76,15 @@ probe_bulk:  ## Probe URLs from FILE. Usage: make probe_bulk FILE=urls.txt [WORK
 	uv run polyfetch bulk "$(FILE)" \
 		$(if $(call _cli,WORKERS),--workers $(WORKERS)) \
 		$(if $(call _cli,TEXT),--text)
+
+
+SEEDS ?= examples/easter-hunt-seeds.txt
+
+hunt:  ## Scan for page artifacts. Usage: make hunt [URL=https://...] [SEEDS=file] [JSON=1] [WELLKNOWN=1]
+	uv run polyfetch easter-hunt scan \
+		$(if $(URL),"$(URL)",--seeds-file "$(SEEDS)") \
+		$(if $(call _cli,JSON),--json) \
+		$(if $(call _cli,WELLKNOWN),--include-wellknown)
 
 
 # MARK: HELP

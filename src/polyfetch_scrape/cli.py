@@ -134,6 +134,82 @@ def bulk(
         sys.exit(1)
 
 
+# --------------------------------------------------------------------------- #
+# Contrib: easter-hunt. The single point where core references contrib — wrapped
+# in try/except so removing src/polyfetch_scrape/contrib/ leaves the core CLI
+# fully functional. Core never imports contrib anywhere else.
+# --------------------------------------------------------------------------- #
+try:
+    from polyfetch_scrape.contrib.easter_hunt import Finding, hunt
+    from polyfetch_scrape.contrib.easter_hunt.seeds import WELL_KNOWN_PATHS
+
+    easter_hunt_app = typer.Typer(
+        no_args_is_help=True, help="Scan fetched pages for notable artifacts."
+    )
+
+    def _resolve_seeds(url: str | None, seeds_file: Path | None) -> list[str]:
+        if url is not None and seeds_file is not None:
+            raise typer.BadParameter("Provide a URL or --seeds-file, not both")
+        if seeds_file is not None:
+            try:
+                text = seeds_file.read_text()
+            except OSError as exc:
+                raise typer.BadParameter(f"Cannot read seeds file: {exc}") from exc
+            stripped = (line.strip() for line in text.splitlines())
+            seeds = [line for line in stripped if line and not line.startswith("#")]
+        elif url is not None:
+            seeds = [url]
+        else:
+            raise typer.BadParameter("Provide a URL or --seeds-file")
+        if not seeds:
+            raise typer.BadParameter("No seeds to scan")
+        for seed in seeds:
+            if not seed.startswith(("http://", "https://")):
+                raise typer.BadParameter(f"URL must be http(s): {seed}")
+        return seeds
+
+    def _format_finding(f: "Finding") -> str:
+        # URL first (mirrors the fetch/bulk text format) so each line names its source.
+        return (
+            f"{f.url}  [{f.severity}] {f.category} @ {f.location}  "
+            f"({f.confidence:.0%})  {f.snippet}"
+        )
+
+    @easter_hunt_app.command()
+    def scan(
+        url: Annotated[str | None, typer.Argument(help="Single URL to scan")] = None,
+        seeds_file: Annotated[
+            Path | None, typer.Option("--seeds-file", help="File of URLs, one per line")
+        ] = None,
+        include_wellknown: Annotated[
+            bool,
+            typer.Option(
+                "--include-wellknown", help='Also sweep well-known paths (on top of the "/" probe)'
+            ),
+        ] = False,
+        json_output: Annotated[
+            bool, typer.Option("--json", help="Emit JSON instead of text")
+        ] = False,
+    ) -> None:
+        """Scan one or more URLs for notable page artifacts."""
+        seeds = _resolve_seeds(url, seeds_file)
+        paths = ("/", *WELL_KNOWN_PATHS) if include_wellknown else ("/",)
+        try:
+            findings = hunt(seeds, paths=paths)
+        except ValueError as exc:  # SSRF guard: literal internal IP
+            raise typer.BadParameter(str(exc)) from exc
+
+        if json_output:
+            typer.echo(json.dumps([asdict(f) for f in findings]))
+        else:
+            for finding in findings:
+                typer.echo(_format_finding(finding))
+
+    app.add_typer(easter_hunt_app, name="easter-hunt")
+except ModuleNotFoundError:  # pragma: no cover - contrib is an optional extra
+    pass
+
+
 # --- arxiv source subcommand ---
 
 arxiv_app = typer.Typer(help="arXiv API wrappers", no_args_is_help=True)
