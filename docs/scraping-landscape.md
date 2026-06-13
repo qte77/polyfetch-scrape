@@ -43,6 +43,8 @@ See [CC Web Scraping Plugins Analysis](https://github.com/qte77/ai-agents-resear
 | [Nodriver](https://github.com/ultrafunkamsterdam/nodriver) | MIT | General anti-bot | No driver binary; avoids detection vectors entirely |
 | [Botasaurus](https://github.com/omkarcloud/botasaurus) | MIT | Cloudflare, DataDome | Passes nowsecure.nl + g2.com benchmarks |
 | [Camoufox](https://camoufox.com/) | MPL-2.0 | Engine-level fingerprint | Modified Firefox build; C++-level patching; experimental |
+| [Selenium](https://www.selenium.dev/) | Apache-2.0 | None built-in | Cross-browser W3C WebDriver; IDE + Grid |
+| [Puppeteer](https://pptr.dev/) | Apache-2.0 | None built-in | Google's Chrome/Firefox DevTools control (Node) |
 
 **When to use what**: Playwright for JS rendering without anti-bot. Patchright or Nodriver when detection is an issue. Botasaurus for the hardest targets.
 
@@ -56,11 +58,19 @@ See [CC Web Scraping Plugins Analysis](https://github.com/qte77/ai-agents-resear
 | [ScrapFly](https://scrapfly.io/) | SaaS | API | Managed anti-bot bypass; from $30/mo |
 | [ZenRows](https://www.zenrows.com/) | SaaS | API | JS rendering + premium proxies; from $69/mo |
 
+## HTML Parsing & Lightweight Libraries
+
+| Tool | License | JS Rendering | Differentiator |
+|------|---------|-------------|----------------|
+| [BeautifulSoup](https://www.crummy.com/software/BeautifulSoup/) | MIT | No | Pythonic HTML/XML parse-tree navigation over lxml/html5lib |
+| [MechanicalSoup](https://github.com/MechanicalSoup/MechanicalSoup) | MIT | No | Requests + BeautifulSoup with auto cookie/form handling |
+| [Requests-HTML](https://github.com/psf/requests-html) | MIT | Yes (pyppeteer) | HTML parsing + JS rendering; unmaintained since 2019 |
+
 ## AI/LLM-Native Scrapers
 
 | Tool | License | Pricing | Differentiator |
 |------|---------|---------|----------------|
-| [Crawl4AI](https://github.com/unclecode/crawl4ai) | Apache-2.0 | Free | Fully local, no API keys, Markdown/JSON output |
+| [Crawl4AI](https://github.com/unclecode/crawl4ai) | Apache-2.0 | Free | Fully local, no API keys, Markdown/JSON output, MCP server |
 | [Firecrawl](https://www.firecrawl.dev/) | AGPL-3.0 | Free–$333/mo | One API call = clean Markdown; self-hostable |
 | [ScrapeGraphAI](https://scrapegraphai.com/) | MIT | Free–$500/mo | Natural language prompts build scraping pipelines |
 | [Jina Reader](https://jina.ai/reader/) | Apache-2.0 | 50K free/mo | HTML→Markdown via SLM (ReaderLM-v2) |
@@ -77,6 +87,7 @@ See [CC Web Scraping Plugins Analysis](https://github.com/qte77/ai-agents-resear
 | [Serper](https://serper.dev/) | 2.5K | ~$50/mo | Google SERP proxy with knowledge graphs |
 | [SerpAPI](https://serpapi.com/) | Limited | $10-25/1K | Multi-engine (Google, Bing, Baidu, Yandex) |
 | [Brave Search](https://brave.com/search/api/) | 2K/mo | From $5/mo | Independent index (35B+ pages); privacy-focused |
+| [SearXNG](https://github.com/searxng/searxng) | Self-hosted | Free (AGPL-3.0) | Self-hostable metasearch; ~268 engines, no API keys |
 
 **When to use what**: Exa for semantic/RAG retrieval. Tavily for factual accuracy. Brave for privacy-conscious search.
 
@@ -90,6 +101,9 @@ See [CC Web Scraping Plugins Analysis](https://github.com/qte77/ai-agents-resear
 | [ScrapingBee](https://www.scrapingbee.com/) | $49/mo | No | Simple API; 84% success rate |
 | [Bright Data](https://brightdata.com/) | $1.50/1K req | No | 98.4% success rate; largest proxy network |
 | [Oxylabs](https://oxylabs.io/) | $49/mo | No | 98.1% success rate; Web Scraper AI product |
+| [Zyte](https://www.zyte.com/) | Free trial ($200) | No | AI-powered unblock + extraction API |
+| [ScraperAPI](https://www.scraperapi.com/) | Free tier; paid | No | Proxy-rotation + JS rendering API at scale |
+| [Decodo](https://decodo.com/) | Free tier; from $0.09/1K | No | 125M+ IP network; formerly Smartproxy |
 
 ## Document-Specific Extraction
 
