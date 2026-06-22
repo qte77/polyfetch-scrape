@@ -1,5 +1,6 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
-        test test_e2e test_coverage validate quick_validate probe probe_bulk hunt help
+        test test_e2e test_coverage validate quick_validate probe probe_bulk hunt \
+        demo_tiers help
 .DEFAULT_GOAL := help
 
 
@@ -85,6 +86,10 @@ hunt:  ## Scan for page artifacts. Usage: make hunt [URL=https://...] [SEEDS=fil
 		$(if $(URL),"$(URL)",--seeds-file "$(SEEDS)") \
 		$(if $(call _cli,JSON),--json) \
 		$(if $(call _cli,WELLKNOWN),--include-wellknown)
+
+
+demo_tiers:  ## Exemplify all 3 fallback tiers: httpx/curl_cffi JA3 diff + playwright render+shot
+	uv run python examples/fallback_tiers_demo.py
 
 
 # MARK: HELP
