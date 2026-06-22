@@ -7,7 +7,13 @@ blends the egress with regular visitor traffic and keeps the cheap
 ``curl_cffi`` (which solves a different problem — TLS fingerprint).
 
 Refresh :data:`USER_AGENTS` quarterly from https://useragents.me/ — pick
-top entries from the "Most common desktop user-agents" table.
+top entries from the "Most common desktop user-agents" table. Background on
+choosing UAs: https://hasdata.com/blog/user-agents-for-web-scraping
+
+To confirm which UA actually leaves the wire, fetch a header-echo endpoint and
+print the body: ``polyfetch fetch https://httpbin.org/user-agent --show-body``
+(also ``https://postman-echo.com/headers`` for all headers, or
+``https://ifconfig.me/ua`` for the bare UA).
 
 Generalized port of ``qte77/scrape-stock-kpi/src/utils/http_ua.py``,
 inlined here (no pydantic-settings dependency). The ``require_https``

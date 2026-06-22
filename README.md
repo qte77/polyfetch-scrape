@@ -32,6 +32,7 @@ print(r.status, r.backend, len(r.body))     # 200 curl_cffi 179447
 ```bash
 polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
+polyfetch fetch https://httpbin.org/user-agent --show-body   # verify the UA you send
 polyfetch bulk urls.txt --workers 4
 polyfetch arxiv get 2301.00001 --json
 polyfetch --help

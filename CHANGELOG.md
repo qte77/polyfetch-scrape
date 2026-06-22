@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `CONTRIBUTING.md` — three-file separation (README orientation / CONTRIBUTING commands+standards / AGENTS.md AI-rules) per qte77/Agents-eval.
 - `make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]`; `make probe` gains `BROWSER=`, `MAX_ATTEMPTS=` overrides.
 - `polyfetch_scrape.utils.http_ua` — generalized port of `qte77/scrape-stock-kpi/src/utils/http_ua.py` (no pydantic-settings dep): `USER_AGENTS` tuple of 5 desktop browser UAs (refresh quarterly from useragents.me/), `STABLE_USER_AGENT = USER_AGENTS[0]` for endpoints that profile per-UA over time, `pick_user_agent(rng=None)` for rotation with optional seeded RNG. The sibling repo's `require_https()` guard is intentionally not ported (incompatible with this project's "fetch any URL" contract).
+- `polyfetch fetch --show-body` — prints the raw response body instead of the summary; handy for verifying the outbound `User-Agent` against a header-echo endpoint (e.g. `polyfetch fetch https://httpbin.org/user-agent --show-body`; also `postman-echo.com/headers` or `ifconfig.me/ua`). Takes precedence over `--json`.
 
 ### Changed
 
