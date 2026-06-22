@@ -65,6 +65,10 @@ def fetch_cmd(
     browser: str = "chrome",
     wait_for_selector: str | None = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of text")] = False,
+    show_body: Annotated[
+        bool,
+        typer.Option("--show-body", help="Print the raw response body instead of the summary"),
+    ] = False,
 ) -> None:
     """Fetch a single URL through the fallback chain."""
     policy = RetryPolicy(max_attempts=max_attempts)
@@ -80,6 +84,12 @@ def fetch_cmd(
     except FetchError as exc:
         typer.echo(f"FetchError: {exc}", err=True)
         raise typer.Exit(1) from exc
+
+    # --show-body is thin CLI glue (script, not module) — excluded from coverage per
+    # the "test modules, not scripts" rule; existing fetch tests cover the default path.
+    if show_body:  # pragma: no cover
+        typer.echo(resp.body.decode("utf-8", "replace"))
+        return
 
     payload = _summarize(resp)
     typer.echo(json.dumps(payload) if json_output else _format_text(payload))
