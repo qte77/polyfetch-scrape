@@ -16,9 +16,14 @@
 #     targets. These returning 429/403 to a CI link checker is the
 #     expected behaviour the doc is itself describing; checking them on
 #     every PR is noise.
+#
+#   - www.scrapingcourse.com/(antibot|cloudflare)-challenge — anti-bot demo
+#     targets in examples/fallback-tier-targets.txt that 403 every fetch tier
+#     by design (that IS the example); same expected-403 noise as above.
 exclude = [
     "https://github\\.com/qte77/polyfetch-scrape/(compare|releases/tag)/",
     "https://www\\.epo\\.org/",
     "https://exa\\.ai/",
     "https://www\\.lens\\.org/",
+    "https://www\\.scrapingcourse\\.com/(antibot|cloudflare)-challenge",
 ]
