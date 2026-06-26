@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Removed
 
 - `docs/codespaces-auth.md` and `docs/codespaces-git-defaults.md` — content merged into `qte77/polyforge-orchestrator/docs/codespaces.md` as the canonical cross-qte77 home (single source of truth across qte77 ecosystem). README links now point there.
+- `docs/scraping-landscape.md` — the full scraping/crawling/extraction tool catalog; reduced to a pointer stub at the `ai-agents-research` SSOT (`docs/non-cc/web-scraping-extraction-landscape.md`, moved 2026-06-16 via `ai-agents-research#248`). Retains only this repo's own `httpx → curl_cffi → Patchright` fallback-chain probe findings. Closes #52.
 
 ### Fixed
 
