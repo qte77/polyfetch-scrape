@@ -50,6 +50,26 @@ def test_fetch_json_flag_emits_valid_json(monkeypatch: pytest.MonkeyPatch) -> No
     assert payload["bytes"] == len(b"<html/>")
 
 
+def test_fetch_show_body_writes_raw_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Non-UTF-8 + NUL bytes: the old decode("utf-8","replace") path mangled these and
+    # emitted nothing on non-UTF-8 stdout. The fix writes the raw bytes verbatim (#66).
+    body = b"\xff\xfe\x00<html>caf\xc3\xa9</html>"
+    resp = Response(
+        url="https://x.test",
+        status=200,
+        headers={"content-type": "text/html"},
+        body=body,
+        content_type="text/html",
+        backend="httpx",
+    )
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", lambda *a, **kw: resp)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--show-body"])
+
+    assert result.exit_code == 0
+    assert result.stdout_bytes == body
+
+
 def test_fetch_exits_1_on_fetcherror(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(*_a: object, **_kw: object) -> Response:
         raise FetchError("simulated")
