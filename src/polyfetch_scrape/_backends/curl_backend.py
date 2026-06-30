@@ -8,7 +8,7 @@ from curl_cffi import requests as curl_requests
 from polyfetch_scrape._backends import FingerprintBlock
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
-from polyfetch_scrape.retry import RetryPolicy, should_retry
+from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
 
 Browser = Literal["chrome", "firefox"]
 
@@ -20,6 +20,7 @@ class _Attempt:
     response: Response | None
     retry_status: int | None
     transport_error: Exception | None
+    retry_after: float | None = None
 
 
 def attempt(
@@ -39,7 +40,7 @@ def attempt(
             if last.response is not None:
                 return last.response
             if attempt_idx + 1 < policy.max_attempts:
-                time.sleep(policy.backoff_initial * (policy.backoff_factor**attempt_idx))
+                time.sleep(next_delay(last.retry_after, policy, attempt_idx))
 
     detail = (
         f"status={last.retry_status}"
@@ -72,7 +73,8 @@ def _attempt_once(
 
     status = int(http_resp.status_code)
     if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
-        return _Attempt(None, status, None)
+        retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
+        return _Attempt(None, status, None, retry_after)
 
     return _Attempt(_to_response(http_resp, url), None, None)
 

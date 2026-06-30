@@ -133,6 +133,29 @@ def test_curl_backend_raises_fetcherror_after_exhaust(
         )
 
 
+def test_curl_backend_honors_retry_after_on_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.curl_backend.time.sleep", lambda s: slept.append(s)
+    )
+    fakes = [
+        _fake_response(status=503, headers={"retry-after": "3"}),
+        _fake_response(status=200, body=b"ok"),
+    ]
+    _install_session(monkeypatch, side_effect=fakes)
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=2),
+    )
+
+    assert resp.status == 200
+    assert slept == [3.0]
+
+
 def test_curl_backend_raises_fingerprintblock_on_persistent_403(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
