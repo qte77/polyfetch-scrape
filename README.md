@@ -48,6 +48,8 @@ polyfetch --help
 
 `Response.backend` reflects which tier succeeded. See [`docs/scraping-landscape.md`](docs/scraping-landscape.md) for empirical findings (with first-party citations) on what each tier actually beats in practice.
 
+**Try it:** `make demo_tiers` drives each backend directly to show what its tier uniquely provides (a TLS/JA3 fingerprint diff + a JS render). [`examples/fallback-tier-targets.txt`](examples/fallback-tier-targets.txt) lists ToS-safe targets per tier difficulty (Tier 1 → Ceiling) — run the whole ladder with `make probe_bulk FILE=examples/fallback-tier-targets.txt`.
+
 ## Public API
 
 ```python
