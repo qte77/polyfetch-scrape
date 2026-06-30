@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Mapping
 
 import httpx
@@ -250,3 +251,30 @@ def test_fetch_falls_through_to_playwright_when_curl_blocked(
     assert resp is pw_resp
     assert resp.backend == "playwright"
     assert captured_kwargs["wait_for_selector"] == "#main"
+
+
+def test_fetch_logs_tier_escalation(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def fake_httpx_attempt(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("httpx blocked")
+
+    def fake_curl_attempt(*_a: object, **_kw: object) -> Response:
+        return Response(
+            url="https://example.com",
+            status=200,
+            headers={},
+            body=b"ok",
+            content_type=None,
+            backend="curl_cffi",
+        )
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
+
+    with caplog.at_level(logging.INFO, logger="polyfetch_scrape"):
+        resp = fetch("https://example.com")
+
+    assert resp.backend == "curl_cffi"
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("curl_cffi" in r.getMessage() for r in info_records)

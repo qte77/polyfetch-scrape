@@ -3,7 +3,7 @@ import pytest
 import respx
 
 from polyfetch_scrape._backends import FingerprintBlock, httpx_backend
-from polyfetch_scrape.retry import RetryPolicy
+from polyfetch_scrape.retry import RETRY_AFTER_CAP_S, RetryPolicy
 from polyfetch_scrape.utils.http_ua import STABLE_USER_AGENT
 
 
@@ -150,3 +150,46 @@ def test_httpx_backend_preserves_caller_supplied_accept_headers() -> None:
     sent = route.calls.last.request
     assert sent.headers["accept"] == "application/json"
     assert sent.headers["accept-language"] == "de-DE"
+
+
+@respx.mock
+def test_httpx_backend_honors_retry_after_on_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.httpx_backend.time.sleep", lambda s: slept.append(s)
+    )
+    url = "https://example.com/throttled"
+    respx.get(url).mock(
+        side_effect=[
+            httpx.Response(503, headers={"Retry-After": "2"}),
+            httpx.Response(200, content=b"ok"),
+        ]
+    )
+
+    resp = httpx_backend.attempt(
+        method="GET", url=url, headers=None, timeout=5.0, policy=RetryPolicy(max_attempts=2)
+    )
+
+    assert resp.status == 200
+    assert slept == [2.0]
+
+
+@respx.mock
+def test_httpx_backend_caps_excessive_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.httpx_backend.time.sleep", lambda s: slept.append(s)
+    )
+    url = "https://example.com/abusive"
+    respx.get(url).mock(
+        side_effect=[
+            httpx.Response(503, headers={"Retry-After": "99999"}),
+            httpx.Response(200, content=b"ok"),
+        ]
+    )
+
+    httpx_backend.attempt(
+        method="GET", url=url, headers=None, timeout=5.0, policy=RetryPolicy(max_attempts=2)
+    )
+
+    assert slept == [RETRY_AFTER_CAP_S]

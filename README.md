@@ -62,6 +62,8 @@ RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
 FetchError    # only public exception
 ```
 
+The library logs tier escalations on the `polyfetch_scrape` logger (silent by default via a `NullHandler`) — configure logging in your app to observe which tier each request escalated through.
+
 ## Development
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full command reference, dev workflow, and pre-commit checklist. Quick start: `make setup_dev && make validate`.

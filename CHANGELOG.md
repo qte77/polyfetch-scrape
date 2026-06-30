@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- Tier-escalation logging: `fetch()` emits an `INFO` record on the `polyfetch_scrape` logger each time it escalates a tier (httpx → curl_cffi → playwright). The package attaches a `NullHandler`, so it stays silent until the application configures logging — observability for "why did this request reach the browser tier?". Closes #44.
 - `easter_hunt` contrib module (`src/polyfetch_scrape/contrib/easter_hunt/`) — opt-in page-artifact scanner built on the public `fetch()`. Three pure detectors (`html_comments` recruiting/novelty comments, `weird_headers` curated header table, `wellknown_present` with a soft-404 body sniff), a `hunt()` orchestrator, a `polyfetch easter-hunt scan` CLI subcommand (`--seeds-file`, `--include-wellknown`, `--json`), and a `make hunt` recipe + `examples/easter-hunt-seeds.txt`. Contrib is an unsupported extra: core never imports it and removing the directory leaves the core CLI functional.
 - **Stage 0.4.0 part 1: arXiv source wrapper** (`polyfetch_scrape.sources.arxiv`):
   - `ArxivPaper` frozen dataclass: `arxiv_id`, `title`, `authors`, `abstract`, `categories`, `pdf_url`, `abs_url`, `published_at`, `updated_at`.
@@ -30,6 +31,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
+- Retry/backoff now honors a server `Retry-After` header on retryable responses (429/503/5xx): `_backends/{httpx,curl}_backend` parse `Retry-After` (delta-seconds or HTTP-date via `retry.parse_retry_after`) and wait that long — capped at `RETRY_AFTER_CAP_S` (60s) by `retry.next_delay` to avoid a pathological hang — instead of the exponential backoff, falling back to exponential when the header is absent/unparseable. Prevents the fixed backoff from retrying before the server's cooldown elapses (which can escalate a 429 to a hard block). Closes #29.
 - `polyfetch bulk FILE` (and `make probe_bulk`) now skip blank lines and `#`-prefixed comments when reading the URL file, matching `easter-hunt scan --seeds-file`. `examples/fallback-tier-targets.txt` is now runnable as a whole: `make probe_bulk FILE=examples/fallback-tier-targets.txt`.
 - `README.md` + `CONTRIBUTING.md` — surface the demo recipes: README Fallback-Chain section now points to `make demo_tiers` and `examples/fallback-tier-targets.txt` (ToS-safe targets per tier difficulty, runnable via `make probe_bulk`); CONTRIBUTING command reference gains `make demo_tiers` and `make hunt` rows. Closes #62.
 - `make probe_bulk` now forwards `MAX_ATTEMPTS=N` to `polyfetch bulk` (matching `make probe`), so the tier ladder can fail fast on the Ceiling 403s.
