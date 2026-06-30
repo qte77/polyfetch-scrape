@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
+- `_backends/httpx_backend.py` — now also injects browser-default `Accept` and `Accept-Language` headers when the caller omits them (helper renamed `_with_default_ua` → `_with_default_headers`). httpx's `Accept: */*` and absent `Accept-Language` were additional bot tells on the cheap httpx tier; caller-supplied values (any case) still win. Closes #26.
 - `_backends/httpx_backend.py` — outbound `User-Agent` now defaults to `STABLE_USER_AGENT` (Chrome-on-Windows desktop) when the caller doesn't supply one; httpx's `python-httpx/X.Y.Z` default was an immediate bot tell on hardened endpoints, defeating the cheap httpx tier before TLS-fingerprint fallback would even matter. Caller-supplied `User-Agent` (any case) wins. Closes #16.
 - `pyproject.toml` — ruff `[tool.ruff.lint] select` graduated per py-harden-ruff §1: adds baseline `I, N, W, UP` and near-free quality + security `B, S, SIM, RUF, PT, PGH` (deferred for follow-ups: `ANN`, `D`, `TC`, `TRY`, `C90`). `tests/**` ignores `S101` (asserts) and `S311` (seeded `random.Random()` for determinism, not crypto). Closes #21.
 - `README.md` Development section delegates to `CONTRIBUTING.md` (single source of truth).
@@ -44,6 +45,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Fixed
 
+- `polyfetch fetch --show-body` now writes the raw response **bytes** via `sys.stdout.buffer` instead of decoding to text first. The old `typer.echo(body.decode("utf-8", "replace"))` emitted nothing when stdout was redirected/piped under a non-UTF-8 locale and mangled binary bodies; the byte-level write preserves the exact server response on every stdout type. Closes #66.
 - `Makefile` `probe` recipe no longer leaks shell-env vars (e.g. devcontainer-set `BROWSER=...`); flag forwarding now uses `$(origin VAR)` to gate on `command line`/`file` only.
 - `CONTRIBUTING.md` — replaced YAML frontmatter with a proper `# Contributing to polyfetch-scrape` H1 so `markdownlint-cli2` MD041 / MD022 / MD003 all pass (frontmatter wasn't rendered by GitHub anyway).
 - `lychee.toml` — new local lychee config narrowly excluding (a) `compare/` + `releases/tag/` URLs to v0.1.0..v0.3.1 that CHANGELOG references but were never pushed as tags, (b) `www.epo.org` which intermittently returns HTTP/2 protocol errors. Both block every PR on `main` until addressed; the real fix for (a) is to push the tags retroactively.
