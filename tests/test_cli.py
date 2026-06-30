@@ -98,6 +98,23 @@ def test_bulk_emits_one_jsonline_per_url(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert {p["url"] for p in payloads} == set(urls)
 
 
+def test_bulk_skips_comment_and_blank_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    listfile = tmp_path / "targets.txt"
+    listfile.write_text(
+        "# a comment\n\nhttps://a.test\n  # indented comment\nhttps://b.test\n   \n"
+    )
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", lambda url, **_kw: _ok(url=url, status=200))
+
+    result = runner.invoke(app, ["bulk", str(listfile)])
+
+    assert result.exit_code == 0
+    emitted = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+    assert {p["url"] for p in emitted} == {"https://a.test", "https://b.test"}
+
+
 def test_bulk_continues_on_error_and_exits_1(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

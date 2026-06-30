@@ -118,8 +118,9 @@ def bulk(
         bool, typer.Option("--json/--text", help="JSON-lines (default) or human text")
     ] = True,
 ) -> None:
-    """Fetch URLs read from FILE (one per line); emit one record per URL."""
-    urls = [line.strip() for line in file.read_text().splitlines() if line.strip()]
+    """Fetch URLs from FILE (one per line; blank lines and ``#`` comments skipped)."""
+    stripped = (line.strip() for line in file.read_text().splitlines())
+    urls = [line for line in stripped if line and not line.startswith("#")]
     any_failed = False
 
     def _emit(payload: dict[str, Any]) -> None:
