@@ -1,6 +1,6 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
         test test_e2e test_coverage validate quick_validate probe probe_bulk hunt \
-        demo_tiers help
+        demo_tiers render help
 .DEFAULT_GOAL := help
 
 
@@ -90,6 +90,12 @@ hunt:  ## Scan for page artifacts. Usage: make hunt [URL=https://...] [SEEDS=fil
 
 demo_tiers:  ## Exemplify all 3 fallback tiers: httpx/curl_cffi JA3 diff + playwright render+shot
 	uv run python examples/fallback_tiers_demo.py
+
+
+render:  ## Render a dynamic page + full/viewport screenshots via Patchright. Usage: make render [URL=https://...] [OUT=dir]
+	uv run python examples/render_screenshot.py \
+		$(if $(URL),"$(URL)") \
+		$(if $(call _cli,OUT),--out-dir "$(OUT)")
 
 
 # MARK: HELP
