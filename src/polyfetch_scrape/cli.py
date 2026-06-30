@@ -64,6 +64,14 @@ def fetch_cmd(
     max_attempts: int = 3,
     browser: str = "chrome",
     wait_for_selector: str | None = None,
+    tier: Annotated[
+        str | None,
+        typer.Option(
+            "--tier",
+            help="Pin one backend (httpx|curl_cffi|playwright) and skip the fallback chain. "
+            "--wait-for-selector only applies when the playwright tier runs.",
+        ),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of text")] = False,
     show_body: Annotated[
         bool,
@@ -80,6 +88,7 @@ def fetch_cmd(
             retry=policy,
             browser=browser,  # type: ignore[arg-type]
             wait_for_selector=wait_for_selector,
+            tier=tier,  # type: ignore[arg-type]
         )
     except FetchError as exc:
         typer.echo(f"FetchError: {exc}", err=True)

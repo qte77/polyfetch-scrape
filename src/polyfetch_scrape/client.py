@@ -15,6 +15,7 @@ from polyfetch_scrape.retry import RetryPolicy
 __all__ = ["FetchError", "fetch"]
 
 Browser = Literal["chrome", "firefox"]
+Tier = Literal["httpx", "curl_cffi", "playwright"]
 
 _log = logging.getLogger(__name__)
 
@@ -28,8 +29,13 @@ def fetch(
     retry: RetryPolicy | None = None,
     browser: Browser = "chrome",
     wait_for_selector: str | None = None,
+    tier: Tier | None = None,
 ) -> Response:
     policy = retry if retry is not None else RetryPolicy()
+    if tier is not None:
+        return _run_single_tier(
+            tier, method, url, headers, timeout, policy, browser, wait_for_selector
+        )
     try:
         return httpx_backend.attempt(method, url, headers, timeout, policy)
     except FingerprintBlock:
@@ -41,3 +47,23 @@ def fetch(
             return playwright_backend.attempt(
                 method, url, headers, timeout, policy, wait_for_selector=wait_for_selector
             )
+
+
+def _run_single_tier(
+    tier: Tier,
+    method: str,
+    url: str,
+    headers: Mapping[str, str] | None,
+    timeout: float,
+    policy: RetryPolicy,
+    browser: Browser,
+    wait_for_selector: str | None,
+) -> Response:
+    """Pinned tier: dispatch to one backend; its error propagates (no escalation)."""
+    if tier == "httpx":
+        return httpx_backend.attempt(method, url, headers, timeout, policy)
+    if tier == "curl_cffi":
+        return curl_backend.attempt(method, url, headers, timeout, policy, browser=browser)
+    return playwright_backend.attempt(
+        method, url, headers, timeout, policy, wait_for_selector=wait_for_selector
+    )

@@ -33,6 +33,7 @@ print(r.status, r.backend, len(r.body))     # 200 curl_cffi 179447
 polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
 polyfetch fetch https://httpbin.org/user-agent --show-body   # verify the UA you send
+polyfetch fetch https://quotes.toscrape.com/js/ --tier playwright   # force the JS-render tier
 polyfetch bulk urls.txt --workers 4
 polyfetch arxiv get 2301.00001 --json
 polyfetch --help
@@ -53,8 +54,9 @@ polyfetch --help
 ## Public API
 
 ```python
-fetch(url, *, method="GET", headers=None, timeout=30.0,
-      retry=None, browser="chrome", wait_for_selector=None) -> Response
+fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
+      browser="chrome", wait_for_selector=None,
+      tier=None) -> Response   # tier="httpx"|"curl_cffi"|"playwright" pins one backend
 
 Response(url, status, headers, body, content_type, backend)
 RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
