@@ -85,10 +85,11 @@ def fetch_cmd(
         typer.echo(f"FetchError: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    # --show-body is thin CLI glue (script, not module) — excluded from coverage per
-    # the "test modules, not scripts" rule; existing fetch tests cover the default path.
-    if show_body:  # pragma: no cover
-        typer.echo(resp.body.decode("utf-8", "replace"))
+    if show_body:
+        # Write the raw bytes verbatim: decoding to str dropped output on non-UTF-8 /
+        # non-TTY stdout (redirect/pipe) and mangled binary bodies (#66).
+        sys.stdout.buffer.write(resp.body)
+        sys.stdout.buffer.flush()
         return
 
     payload = _summarize(resp)
