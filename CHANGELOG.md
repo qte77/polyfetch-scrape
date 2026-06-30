@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- Tier-escalation logging: `fetch()` emits an `INFO` record on the `polyfetch_scrape` logger each time it escalates a tier (httpx → curl_cffi → playwright). The package attaches a `NullHandler`, so it stays silent until the application configures logging — observability for "why did this request reach the browser tier?". Closes #44.
 - `easter_hunt` contrib module (`src/polyfetch_scrape/contrib/easter_hunt/`) — opt-in page-artifact scanner built on the public `fetch()`. Three pure detectors (`html_comments` recruiting/novelty comments, `weird_headers` curated header table, `wellknown_present` with a soft-404 body sniff), a `hunt()` orchestrator, a `polyfetch easter-hunt scan` CLI subcommand (`--seeds-file`, `--include-wellknown`, `--json`), and a `make hunt` recipe + `examples/easter-hunt-seeds.txt`. Contrib is an unsupported extra: core never imports it and removing the directory leaves the core CLI functional.
 - **Stage 0.4.0 part 1: arXiv source wrapper** (`polyfetch_scrape.sources.arxiv`):
   - `ArxivPaper` frozen dataclass: `arxiv_id`, `title`, `authors`, `abstract`, `categories`, `pdf_url`, `abs_url`, `published_at`, `updated_at`.
