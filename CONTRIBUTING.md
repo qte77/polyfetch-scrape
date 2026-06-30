@@ -46,6 +46,7 @@
 | `make quick_validate` | Fast inner-loop validation | lint + types only |
 | `make probe URL=... [JSON=1] [BROWSER=chrome\|firefox] [MAX_ATTEMPTS=N]` | Probe a single URL via CLI | Wraps `polyfetch fetch` |
 | `make probe_bulk FILE=... [WORKERS=N] [TEXT=1]` | Probe URLs from a file | Wraps `polyfetch bulk` |
+| `make render [URL=... ] [OUT=dir]` | Render a dynamic page + full/viewport screenshots via Patchright | Wraps `examples/render_screenshot.py`; needs `make setup_browsers` |
 | `make help` | Show all recipes | |
 
 Direct CLI (when `make` doesn't fit): `uv run polyfetch fetch URL [options]` and `uv run polyfetch bulk FILE [options]`. Run `uv run polyfetch --help` for the full surface.
