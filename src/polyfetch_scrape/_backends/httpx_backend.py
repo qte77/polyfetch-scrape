@@ -64,7 +64,7 @@ def _attempt_once(
     policy: RetryPolicy,
 ) -> _Attempt:
     try:
-        http_resp = client.request(method, url, headers=_with_default_ua(headers))
+        http_resp = client.request(method, url, headers=_with_default_headers(headers))
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 
@@ -77,16 +77,26 @@ def _attempt_once(
     return _Attempt(_to_response(http_resp), None, None)
 
 
-def _with_default_ua(headers: Mapping[str, str] | None) -> dict[str, str]:
-    """Inject ``STABLE_USER_AGENT`` if the caller didn't supply a User-Agent.
+_DEFAULT_ACCEPT = (
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+)
+_DEFAULT_ACCEPT_LANGUAGE = "en-US,en;q=0.9"
 
-    httpx's default ``python-httpx/X.Y.Z`` UA is an immediate bot tell on
-    some endpoints, defeating the cheap httpx tier before TLS-fingerprint
-    fallback would even matter. Caller-supplied UA (any case) wins.
+
+def _with_default_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
+    """Inject browser-default ``User-Agent``/``Accept``/``Accept-Language`` when omitted.
+
+    httpx's defaults (``python-httpx/X.Y.Z`` UA, ``Accept: */*``, no ``Accept-Language``)
+    are immediate bot tells that defeat the cheap httpx tier before TLS-fingerprint
+    fallback would even matter. Caller-supplied values (any case) win.
     """
     merged: dict[str, str] = dict(headers) if headers else {}
     if not any(k.lower() == "user-agent" for k in merged):
         merged["User-Agent"] = STABLE_USER_AGENT
+    if not any(k.lower() == "accept" for k in merged):
+        merged["Accept"] = _DEFAULT_ACCEPT
+    if not any(k.lower() == "accept-language" for k in merged):
+        merged["Accept-Language"] = _DEFAULT_ACCEPT_LANGUAGE
     return merged
 
 
