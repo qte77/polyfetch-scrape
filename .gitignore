@@ -9,3 +9,7 @@ build/
 .mypy_cache/
 .coverage
 htmlcov/
+
+# Generated render screenshots (keep the one committed demo sample)
+examples/screenshots/*.png
+!examples/screenshots/tier3-scrapingcourse-js.png
