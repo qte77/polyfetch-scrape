@@ -10,6 +10,5 @@ build/
 .coverage
 htmlcov/
 
-# Generated render screenshots (keep the one committed demo sample)
+# Generated screenshots from the example scripts (regenerable via make demo_tiers / make render)
 examples/screenshots/*.png
-!examples/screenshots/tier3-scrapingcourse-js.png

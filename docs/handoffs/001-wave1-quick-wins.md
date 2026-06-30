@@ -1,6 +1,6 @@
 # Handoff — 001 Wave-1 quick wins
 
-**Branch:** `feat/wave1-quick-wins` · **Plan:** `docs/plans/001-wave1-quick-wins.md`
+**Branch:** `feat/wave1-quick-wins` · **Plan:** `docs/plans/001-wave1-quick-wins.md` · **Tracking (§3/§4):** [#75](https://github.com/qte77/polyfetch-scrape/issues/75)
 
 ## Goal
 
@@ -16,7 +16,7 @@ Ship the non-breaking P0 quick wins now; gate the breaking/feature P0 work behin
 | §3 | #27+#28 typed terminal-status errors, wired (**breaking**) | **GATED — not started** |
 | §4 | #47+#70 tier control (force/cap fallback) | **GATED — after §3** |
 
-`make validate` green on §1+§2. PR held until the checkpoint decisions below.
+§1+§2 shipped in PR #74 (merged to `main`). §3/§4 remain gated — tracked in [#75](https://github.com/qte77/polyfetch-scrape/issues/75); see the decisions below.
 
 ## Decisions still open (the checkpoint, before §3)
 
