@@ -72,10 +72,11 @@ probe:  ## Probe a single URL. Usage: make probe URL=https://... [JSON=1] [BROWS
 		$(if $(call _cli,BROWSER),--browser $(BROWSER)) \
 		$(if $(call _cli,MAX_ATTEMPTS),--max-attempts $(MAX_ATTEMPTS))
 
-probe_bulk:  ## Probe URLs from FILE. Usage: make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1]
+probe_bulk:  ## Probe URLs from FILE. Usage: make probe_bulk FILE=urls.txt [WORKERS=N] [TEXT=1] [MAX_ATTEMPTS=N]
 	@if [ -z "$(FILE)" ]; then echo "Error: FILE required. Usage: make probe_bulk FILE=urls.txt"; exit 1; fi
 	uv run polyfetch bulk "$(FILE)" \
 		$(if $(call _cli,WORKERS),--workers $(WORKERS)) \
+		$(if $(call _cli,MAX_ATTEMPTS),--max-attempts $(MAX_ATTEMPTS)) \
 		$(if $(call _cli,TEXT),--text)
 
 
