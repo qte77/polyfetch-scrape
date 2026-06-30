@@ -278,3 +278,78 @@ def test_fetch_logs_tier_escalation(
     assert resp.backend == "curl_cffi"
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
     assert any("curl_cffi" in r.getMessage() for r in info_records)
+
+
+def _backend_response(backend: str) -> Response:
+    return Response(
+        url="https://example.com",
+        status=200,
+        headers={},
+        body=b"<html/>",
+        content_type="text/html",
+        backend=backend,  # type: ignore[arg-type]
+    )
+
+
+def test_fetch_tier_pin_forces_playwright(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"httpx": 0, "curl": 0, "pw": 0}
+
+    def fake_httpx(*_a: object, **_kw: object) -> Response:
+        calls["httpx"] += 1
+        return _backend_response("httpx")
+
+    def fake_curl(*_a: object, **_kw: object) -> Response:
+        calls["curl"] += 1
+        return _backend_response("curl_cffi")
+
+    def fake_pw(*_a: object, **_kw: object) -> Response:
+        calls["pw"] += 1
+        return _backend_response("playwright")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
+    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+
+    resp = fetch("https://example.com", tier="playwright")
+
+    assert resp.backend == "playwright"
+    assert calls == {"httpx": 0, "curl": 0, "pw": 1}
+
+
+def test_fetch_tier_pin_httpx_does_not_escalate(monkeypatch: pytest.MonkeyPatch) -> None:
+    curl_called = False
+
+    def fake_httpx(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("blocked")
+
+    def fake_curl(*_a: object, **_kw: object) -> Response:
+        nonlocal curl_called
+        curl_called = True
+        return _backend_response("curl_cffi")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
+
+    with pytest.raises(FingerprintBlock):
+        fetch("https://example.com", tier="httpx")
+    assert curl_called is False
+
+
+def test_fetch_tier_pin_forces_curl(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"httpx": 0, "curl": 0}
+
+    def fake_httpx(*_a: object, **_kw: object) -> Response:
+        calls["httpx"] += 1
+        return _backend_response("httpx")
+
+    def fake_curl(*_a: object, **_kw: object) -> Response:
+        calls["curl"] += 1
+        return _backend_response("curl_cffi")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
+
+    resp = fetch("https://example.com", tier="curl_cffi")
+
+    assert resp.backend == "curl_cffi"
+    assert calls == {"httpx": 0, "curl": 1}
