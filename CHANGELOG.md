@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- Typed terminal-status errors `AuthRequired` (401/407), `GoneError` (404/410), and `LegalBlock` (451) — all `FetchError` subclasses, exported from the package root alongside `FetchError`. A shared `raise_for_terminal_status()` in `_backends/` maps each status to its type. Closes #27.
 - `fetch(url, *, etag=..., last_modified=...)` — conditional requests for polling callers: sets `If-None-Match` / `If-Modified-Since` so an unchanged resource returns `Response(status=304)` (empty body) and the caller skips re-downloading/re-parsing. Caller-supplied conditional headers (any case) win; on-disk validator cache out of scope. Closes #48.
 - `README.md` "When to reach for this" section framing polyfetch-scrape against Claude Code's WebFetch ceiling (no header control, default UA 403s on hardened sites, no TLS-fingerprint control, no JS rendering). Closes #35.
 - `fetch(url, *, tier="httpx"|"curl_cffi"|"playwright")` and `polyfetch fetch --tier ...` — pin a single backend and skip the fallback chain: force the browser tier for known-JS pages (#70) or fail fast on the cheap httpx tier without escalating to the slow browser tier (#47). The pinned backend's error propagates directly (no escalation); `wait_for_selector` only applies when the playwright tier runs. Closes #47, #70.
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
+- **BREAKING:** terminal HTTP statuses now **raise** a typed error instead of returning a `Response`. 401/407 → `AuthRequired`, 404/410 → `GoneError`, 451 → `LegalBlock`, raised on the first attempt in all three backends (httpx, curl_cffi, playwright) with no retry and no tier escalation — 451 in particular never reaches the fingerprint tiers (RFC 7725). Callers that previously inspected `resp.status == 404` must now catch `GoneError` (or its base `FetchError`). Closes #28, #30, #34, #75.
 - Retry/backoff now honors a server `Retry-After` header on retryable responses (429/503/5xx): `_backends/{httpx,curl}_backend` parse `Retry-After` (delta-seconds or HTTP-date via `retry.parse_retry_after`) and wait that long — capped at `RETRY_AFTER_CAP_S` (60s) by `retry.next_delay` to avoid a pathological hang — instead of the exponential backoff, falling back to exponential when the header is absent/unparseable. Prevents the fixed backoff from retrying before the server's cooldown elapses (which can escalate a 429 to a hard block). Closes #29.
 - `polyfetch bulk FILE` (and `make probe_bulk`) now skip blank lines and `#`-prefixed comments when reading the URL file, matching `easter-hunt scan --seeds-file`. `examples/fallback-tier-targets.txt` is now runnable as a whole: `make probe_bulk FILE=examples/fallback-tier-targets.txt`.
 - `README.md` + `CONTRIBUTING.md` — surface the demo recipes: README Fallback-Chain section now points to `make demo_tiers` and `examples/fallback-tier-targets.txt` (ToS-safe targets per tier difficulty, runnable via `make probe_bulk`); CONTRIBUTING command reference gains `make demo_tiers` and `make hunt` rows. Closes #62.

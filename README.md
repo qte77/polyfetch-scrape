@@ -67,7 +67,13 @@ fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
 Response(url, status, headers, body, content_type, backend)
 RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
             retry_on_status=frozenset({429, 500, 502, 503, 504}))
-FetchError    # only public exception
+
+# Public exceptions (all subclass FetchError). Terminal statuses raise on the first
+# attempt in every tier — no retry, no escalation:
+FetchError       # base: retries exhausted on every tier
+AuthRequired     # 401 / 407
+GoneError        # 404 / 410
+LegalBlock       # 451 (RFC 7725) — never escalated to the fingerprint tiers
 ```
 
 The library logs tier escalations on the `polyfetch_scrape` logger (silent by default via a `NullHandler`) — configure logging in your app to observe which tier each request escalated through.

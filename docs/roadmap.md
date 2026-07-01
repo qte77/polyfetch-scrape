@@ -36,6 +36,9 @@ Patch-stage refinements to the existing three-tier fallback so that
 non-fingerprint failure modes (auth, gone, rate-limit, legal block) are
 handled per RFC 9110 semantics instead of being retried/escalated blindly.
 
+**Status (2026-07):** #26, #27, #28, #29, #30, and #34 have shipped. Only **#31**
+(surfacing permanent redirects) remains before 0.3.x closes and v0.4.0 can be cut.
+
 **Goals** (each tracked as its own issue):
 
 - Send `Accept` and `Accept-Language` defaults from the httpx tier — [#26](https://github.com/qte77/polyfetch-scrape/issues/26)
