@@ -26,7 +26,9 @@ For project overview, see [`README.md`](README.md).
 - **Document new patterns** in AGENT_LEARNINGS.md (concise, laser-focused, streamlined)
 - **Request human feedback** in AGENT_REQUESTS.md (concise, laser-focused, streamlined)
 - **Network caution** - This repo fetches from untrusted URLs; never add unconditional
-  network calls; always gate behind explicit invocation
+  network calls; always gate behind explicit invocation. Parse third-party XML/RSS with
+  `defusedxml`, never stdlib `xml.etree.ElementTree` — see AGENT_LEARNINGS.md "Parse
+  untrusted XML/RSS with defusedxml"
 - **Always use `make` recipes** - See [Complete Command Reference](CONTRIBUTING.md#complete-command-reference).
   Never invoke `pip`, bare `pytest`, bare `ruff`, bare `pyright`, or bare `polyfetch`.
   The single exception is `pip install uv -q` inside `setup_uv` (bootstrap-only).
