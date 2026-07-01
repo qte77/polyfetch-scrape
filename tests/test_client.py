@@ -113,6 +113,62 @@ def test_fetch_does_not_retry_on_404() -> None:
     assert route.call_count == 1
 
 
+@respx.mock
+def test_fetch_sends_if_none_match_when_etag_given() -> None:
+    # Arrange
+    url = "https://example.com/etag"
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    # Act
+    fetch(url, etag='"abc123"')
+
+    # Assert
+    sent = route.calls.last.request
+    assert sent.headers["if-none-match"] == '"abc123"'
+
+
+@respx.mock
+def test_fetch_sends_if_modified_since_when_last_modified_given() -> None:
+    # Arrange
+    url = "https://example.com/last-modified"
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    # Act
+    fetch(url, last_modified="Wed, 21 Oct 2015 07:28:00 GMT")
+
+    # Assert
+    sent = route.calls.last.request
+    assert sent.headers["if-modified-since"] == "Wed, 21 Oct 2015 07:28:00 GMT"
+
+
+@respx.mock
+def test_fetch_returns_304_without_retry() -> None:
+    # Arrange
+    url = "https://example.com/poll"
+    route = respx.get(url).mock(return_value=httpx.Response(304))
+
+    # Act
+    resp = fetch(url, etag='"abc123"')
+
+    # Assert: 304 passes through as a Response, not retried/escalated
+    assert resp.status == 304
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_fetch_caller_conditional_header_wins_over_kwarg() -> None:
+    # Arrange
+    url = "https://example.com/both"
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    # Act: caller supplies If-None-Match explicitly AND passes etag kwarg
+    fetch(url, headers={"If-None-Match": '"caller"'}, etag='"kwarg"')
+
+    # Assert: caller-supplied header wins
+    sent = route.calls.last.request
+    assert sent.headers["if-none-match"] == '"caller"'
+
+
 def test_fetch_falls_back_to_curl_on_fingerprintblock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

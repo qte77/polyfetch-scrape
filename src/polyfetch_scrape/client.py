@@ -30,8 +30,11 @@ def fetch(
     browser: Browser = "chrome",
     wait_for_selector: str | None = None,
     tier: Tier | None = None,
+    etag: str | None = None,
+    last_modified: str | None = None,
 ) -> Response:
     policy = retry if retry is not None else RetryPolicy()
+    headers = _with_conditional_headers(headers, etag, last_modified)
     if tier is not None:
         return _run_single_tier(
             tier, method, url, headers, timeout, policy, browser, wait_for_selector
@@ -47,6 +50,27 @@ def fetch(
             return playwright_backend.attempt(
                 method, url, headers, timeout, policy, wait_for_selector=wait_for_selector
             )
+
+
+def _with_conditional_headers(
+    headers: Mapping[str, str] | None,
+    etag: str | None,
+    last_modified: str | None,
+) -> Mapping[str, str] | None:
+    """Inject If-None-Match / If-Modified-Since validators for conditional GETs.
+
+    A caller-supplied conditional header (any case) always wins over the kwarg.
+    Returns ``headers`` unchanged when neither validator is requested.
+    """
+    if etag is None and last_modified is None:
+        return headers
+    merged = dict(headers) if headers is not None else {}
+    present = {key.lower() for key in merged}
+    if etag is not None and "if-none-match" not in present:
+        merged["If-None-Match"] = etag
+    if last_modified is not None and "if-modified-since" not in present:
+        merged["If-Modified-Since"] = last_modified
+    return merged
 
 
 def _run_single_tier(
