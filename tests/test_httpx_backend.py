@@ -3,6 +3,7 @@ import pytest
 import respx
 
 from polyfetch_scrape._backends import FingerprintBlock, httpx_backend
+from polyfetch_scrape.errors import AuthRequired, GoneError, LegalBlock
 from polyfetch_scrape.retry import RETRY_AFTER_CAP_S, RetryPolicy
 from polyfetch_scrape.utils.http_ua import STABLE_USER_AGENT
 
@@ -27,6 +28,28 @@ def test_httpx_backend_raises_fingerprintblock_on_403() -> None:
             timeout=5.0,
             policy=RetryPolicy(max_attempts=1),
         )
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("status", "exc_type"),
+    [(401, AuthRequired), (404, GoneError), (451, LegalBlock)],
+)
+def test_httpx_backend_raises_terminal_status(status: int, exc_type: type[Exception]) -> None:
+    # Arrange
+    url = "https://example.com/terminal"
+    route = respx.get(url).mock(return_value=httpx.Response(status))
+
+    # Act / Assert: terminal status raises its typed error on the first attempt (no retry)
+    with pytest.raises(exc_type):
+        httpx_backend.attempt(
+            method="GET",
+            url=url,
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=3),
+        )
+    assert route.call_count == 1
 
 
 @respx.mock

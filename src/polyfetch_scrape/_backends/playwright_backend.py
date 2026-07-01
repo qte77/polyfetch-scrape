@@ -6,7 +6,7 @@ from typing import Any
 from patchright.sync_api import TimeoutError as PwTimeoutError
 from patchright.sync_api import sync_playwright
 
-from polyfetch_scrape._backends import FingerprintBlock
+from polyfetch_scrape._backends import FingerprintBlock, raise_for_terminal_status
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
@@ -79,6 +79,8 @@ def _attempt_once(
         status = int(response.status)
         if status in _FINGERPRINT_STATUSES:
             return _Attempt(None, status, None)
+
+        raise_for_terminal_status(status, url)
 
         if wait_for_selector is not None:
             page.wait_for_selector(wait_for_selector, timeout=timeout_ms)
