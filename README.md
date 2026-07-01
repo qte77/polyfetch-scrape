@@ -13,6 +13,10 @@ Reusable Python library + CLI that abstracts the "which tool beats which anti-bo
 [![CodeFactor](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape/badge)](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape)
 [![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+## When to reach for this
+
+Claude Code's built-in WebFetch tool exposes no header parameters in its public schema, so callers cannot customize `User-Agent`, `Accept`, or `Referer`. Empirically its default UA is rejected (HTTP 403) by sites with non-trivial bot detection — `hamiltoncompany.com`, `thingiverse.com`, `web.archive.org` are concrete examples observed in agent sessions. `polyfetch-scrape` is the next rung: browser-shape headers in the cheap tier, real TLS impersonation in the middle tier, headless Chromium with anti-detection patches in the fallback tier.
+
 ## Quick Start (library)
 
 ```bash
@@ -55,8 +59,10 @@ polyfetch --help
 
 ```python
 fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
-      browser="chrome", wait_for_selector=None,
-      tier=None) -> Response   # tier="httpx"|"curl_cffi"|"playwright" pins one backend
+      browser="chrome", wait_for_selector=None, tier=None,
+      etag=None, last_modified=None) -> Response
+      # tier pins one backend: "httpx"|"curl_cffi"|"playwright"
+      # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
 
 Response(url, status, headers, body, content_type, backend)
 RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
