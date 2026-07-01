@@ -13,6 +13,14 @@ description: Non-obvious patterns that prevent repeated mistakes across sprints
 
 ## Learned Patterns
 
+### Parse untrusted XML/RSS with defusedxml, never stdlib ElementTree
+
+- **Context**: Any source/feed path that parses third-party XML/RSS/Atom fetched from an untrusted URL (e.g. `sources/arxiv.py`, future feed wrappers).
+- **Problem**: Python's stdlib `xml.etree.ElementTree` is vulnerable to XXE (external-entity expansion) and billion-laughs entity-expansion DoS on untrusted input — flagged by Bandit B314.
+- **Solution**: Parse untrusted XML with `defusedxml` (e.g. `defusedxml.ElementTree.fromstring`), or plain-regex extraction for trivial cases; never call `xml.etree.ElementTree` on untrusted payloads. Standing rule — pairs with the AGENTS.md "Network caution" bullet.
+- **Example**: `sources/arxiv.py` parses the arXiv Atom response via `defusedxml.ElementTree.fromstring(...)` instead of `xml.etree.ElementTree.fromstring(...)`.
+- **References**: `src/polyfetch_scrape/sources/arxiv.py`; AGENTS.md "Core Rules & AI Behavior → Network caution". Issue #42.
+
 ### Verify single-subagent claims before propagating
 
 - **Context**: Spawning a subagent (Task tool, or any nested agent) to gather facts about external vendors, products, or third-party code that the subagent cannot fetch directly.
