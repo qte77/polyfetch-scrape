@@ -1,6 +1,6 @@
 # 002 — 0.3.x status-code milestone + safe quick wins (two PRs)
 
-> Status: **planned, not started.** Handoff: `docs/handoffs/002-status-code-milestone-and-quickwins.md`.
+> Status: **shipped** — PR A ([#81](https://github.com/qte77/polyfetch-scrape/pull/81)) + PR B ([#82](https://github.com/qte77/polyfetch-scrape/pull/82)), both merged 2026-07-02. Only #31 (redirects) remains in 0.3.x. Handoff: `docs/handoffs/002-status-code-milestone-and-quickwins.md`.
 
 ## Context
 
