@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-02
+
 ### Added
 
 - Typed terminal-status errors `AuthRequired` (401/407), `GoneError` (404/410), and `LegalBlock` (451) — all `FetchError` subclasses, exported from the package root alongside `FetchError`. A shared `raise_for_terminal_status()` in `_backends/` maps each status to its type. Closes #27.
@@ -122,7 +124,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `pyproject.toml` — `pytest filterwarnings = ["error"]`, branch coverage with `fail_under = 90`, pyright `typeCheckingMode = "strict"`.
 - Opt-in `e2e` pytest marker + `make test_e2e` recipe (httpbin / arxiv smoke tests, no network in default `make test`).
 
-[Unreleased]: https://github.com/qte77/polyfetch-scrape/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/qte77/polyfetch-scrape/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/qte77/polyfetch-scrape/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.1.0...v0.2.0
