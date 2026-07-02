@@ -6,7 +6,7 @@ import pytest
 from curl_cffi import requests as curl_requests
 
 from polyfetch_scrape._backends import FingerprintBlock, curl_backend
-from polyfetch_scrape.errors import FetchError
+from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.retry import RetryPolicy
 
 
@@ -154,6 +154,26 @@ def test_curl_backend_honors_retry_after_on_503(monkeypatch: pytest.MonkeyPatch)
 
     assert resp.status == 200
     assert slept == [3.0]
+
+
+@pytest.mark.parametrize(
+    ("status", "exc_type"),
+    [(401, AuthRequired), (404, GoneError), (451, LegalBlock)],
+)
+def test_curl_backend_raises_terminal_status(
+    monkeypatch: pytest.MonkeyPatch, status: int, exc_type: type[Exception]
+) -> None:
+    fake = _fake_response(status=status)
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(exc_type):
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=3),
+        )
 
 
 def test_curl_backend_raises_fingerprintblock_on_persistent_403(

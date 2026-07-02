@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from polyfetch_scrape._backends import FingerprintBlock
+from polyfetch_scrape._backends import FingerprintBlock, raise_for_terminal_status
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
@@ -76,6 +76,7 @@ def _attempt_once(
         retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
         return _Attempt(None, http_resp.status_code, None, retry_after)
 
+    raise_for_terminal_status(http_resp.status_code, url)
     return _Attempt(_to_response(http_resp), None, None)
 
 

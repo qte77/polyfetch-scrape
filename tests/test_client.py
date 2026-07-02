@@ -7,6 +7,7 @@ import respx
 
 from polyfetch_scrape._backends import FingerprintBlock
 from polyfetch_scrape.client import FetchError, fetch
+from polyfetch_scrape.errors import GoneError, LegalBlock
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
@@ -100,16 +101,26 @@ def test_fetch_raises_after_persistent_transport_error() -> None:
 
 
 @respx.mock
-def test_fetch_does_not_retry_on_404() -> None:
+def test_fetch_raises_goneerror_on_404() -> None:
     # Arrange
     url = "https://example.com/missing"
     route = respx.get(url).mock(return_value=httpx.Response(404, content=b"nope"))
 
-    # Act
-    resp = fetch(url)
+    # Act / Assert: 404 is terminal — raises GoneError, not retried
+    with pytest.raises(GoneError):
+        fetch(url)
+    assert route.call_count == 1
 
-    # Assert: 404 is a terminal status, not retried
-    assert resp.status == 404
+
+@respx.mock
+def test_fetch_raises_legalblock_on_451_without_escalation() -> None:
+    # Arrange
+    url = "https://example.com/blocked-legally"
+    route = respx.get(url).mock(return_value=httpx.Response(451))
+
+    # Act / Assert: 451 raises LegalBlock from the httpx tier — never escalates (RFC 7725)
+    with pytest.raises(LegalBlock):
+        fetch(url)
     assert route.call_count == 1
 
 

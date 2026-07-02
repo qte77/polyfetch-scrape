@@ -12,6 +12,21 @@ The scraping / crawling / extraction **tool catalog** (HTTP clients, browser aut
 
 This repo retains only its own implementation-specific probe data below.
 
+## Status-code taxonomy
+
+How `fetch()` maps HTTP status codes to behaviour and exception types (RFC 9110 / RFC 7725 semantics). Terminal statuses raise on the first attempt in every backend — no retry, no tier escalation — so callers get the same typed error regardless of which tier served the request.
+
+| Status | Meaning | polyfetch-scrape behaviour | Type |
+|---|---|---|---|
+| 200 | OK | returned | `Response` |
+| 301 / 308 | Permanent redirect | followed by the HTTP client; surfacing the final URL on `Response` is planned | — (see [#31](https://github.com/qte77/polyfetch-scrape/issues/31)) |
+| 304 | Not Modified | returned unchanged (conditional GET via `etag` / `last_modified`) | `Response(status=304)` |
+| 401 / 407 | Unauthorized / Proxy Auth Required | terminal — raises, not retried/escalated | `AuthRequired` |
+| 403 | Forbidden | fingerprint signal — escalates to the next tier | `FingerprintBlock` (internal) |
+| 404 / 410 | Not Found / Gone | terminal — raises, not retried/escalated | `GoneError` |
+| 429 / 5xx | Rate-limit / server errors | retried (honouring `Retry-After`), then raises after exhaustion | `FetchError` |
+| 451 | Unavailable For Legal Reasons | terminal — raises, never escalated to fingerprint tiers | `LegalBlock` |
+
 ## Empirical findings — polyfetch-scrape probes (2026-04)
 
 Probed in-tree while building the 0.2.0 / 0.3.0 fallback chain. Results are point-in-time and decay — re-run before relying on them.

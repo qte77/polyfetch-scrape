@@ -6,7 +6,7 @@ Run via `make test_e2e` or `uv run pytest -m e2e`.
 
 import pytest
 
-from polyfetch_scrape import FetchError, RetryPolicy, fetch
+from polyfetch_scrape import FetchError, GoneError, RetryPolicy, fetch
 
 pytestmark = pytest.mark.e2e
 
@@ -34,12 +34,10 @@ def test_httpbin_503_retries_then_raises() -> None:
         fetch("https://httpbin.org/status/503", retry=policy)
 
 
-def test_httpbin_404_is_returned_not_retried() -> None:
-    # Act
-    resp = fetch("https://httpbin.org/status/404")
-
-    # Assert: 404 is terminal, not retried
-    assert resp.status == 404
+def test_httpbin_404_raises_goneerror() -> None:
+    # Act / Assert: 404 is terminal — raises GoneError, not retried
+    with pytest.raises(GoneError):
+        fetch("https://httpbin.org/status/404")
 
 
 # --- Layer B: real-world targets the roadmap cares about ---
