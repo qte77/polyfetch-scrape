@@ -1,6 +1,6 @@
 # Handoff — 002 status-code milestone + safe quick wins
 
-**Plan:** `docs/plans/002-status-code-milestone-and-quickwins.md` · **Status:** planned, not started.
+**Plan:** `docs/plans/002-status-code-milestone-and-quickwins.md` · **Status:** shipped — PR A #81, PR B #82 (both merged 2026-07-02).
 
 ## Goal
 
