@@ -2,10 +2,10 @@
 # Each exclusion is a deliberate decision, not a blanket bypass:
 #
 #   - github.com/qte77/polyfetch-scrape/(compare|releases/tag)/ —
-#     CHANGELOG.md references the v0.1.0..v0.3.1 tags and the [Unreleased]
-#     compare link, but git tags / GitHub releases were never pushed. The
-#     real fix is to push the tags retroactively; until then, lychee 404s
-#     block every PR. Drop this exclusion once tags exist.
+#     v0.3.1 and v0.4.0 are tagged, but the pre-0.3.1 versions
+#     (v0.1.0/v0.2.0/v0.3.0) were never tagged releases — they exist only as
+#     retroactive CHANGELOG history, so their compare/releases links 404 by
+#     design. This exclusion is intentional and permanent (kept broad).
 #
 #   - www.epo.org — intermittent HTTP/2 protocol error from the upstream
 #     server (referenced once from docs/scraping-landscape.md). Not under

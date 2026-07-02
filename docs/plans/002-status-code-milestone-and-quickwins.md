@@ -69,5 +69,5 @@ roadmap + scraping-landscape updated in PR B. CONTRIBUTING / architecture / user
 
 ## Out of scope (deferred)
 
-#48 on-disk cache (non-goal); #31 redirects (heavier, stays in 0.3.x); #80 min/max tier range; the
-v0.4.0 release itself; #46/#49/#67/#68/#71/#72/#32/#33/#36/#39/#41/#55/#59/#60.
+#48 on-disk cache (non-goal); #31 redirects (heavier, stays in 0.3.x); #80 min/max tier range;
+#46/#49/#67/#68/#71/#72/#32/#33/#36/#39/#41/#55/#59/#60.
