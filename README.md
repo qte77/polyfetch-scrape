@@ -59,10 +59,14 @@ polyfetch --help
 ```python
 fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
-      etag=None, last_modified=None, screenshot=None) -> Response
+      etag=None, last_modified=None, render=None) -> Response
       # tier pins one backend: "httpx"|"curl_cffi"|"playwright"
       # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
-      # screenshot="viewport"|"<css-selector>" → PNG bytes on Response.screenshot (playwright tier)
+      # render=RenderOptions(...) → playwright-tier wait/screenshot controls
+
+RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selector=None,
+              wait_for_function=None, screenshot=None)
+      # playwright tier only; screenshot="viewport"|"<css-selector>" → Response.screenshot (PNG bytes)
 
 Response(url, status, headers, body, content_type, backend,
          permanent_redirect_to=None, screenshot=None)
