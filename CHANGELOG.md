@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `Response.permanent_redirect_to: str | None` — set to the `Location` target on a permanent redirect (301/308) so callers can update stored URLs; `None` for temporary redirects (302/303/307) and non-redirects. Populated by all three backends. Closes #31.
+
 ### Removed
 
 - **BREAKING:** the arXiv source wrapper (`polyfetch_scrape.sources.arxiv`, the `sources/` namespace) and the `polyfetch arxiv get` CLI subcommand; dropped the now-unused `defusedxml` dependency. Domain API wrappers move to downstream packages that consume `fetch()` — see #89.

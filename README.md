@@ -63,7 +63,8 @@ fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       # tier pins one backend: "httpx"|"curl_cffi"|"playwright"
       # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
 
-Response(url, status, headers, body, content_type, backend)
+Response(url, status, headers, body, content_type, backend, permanent_redirect_to=None)
+      # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
 RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
             retry_on_status=frozenset({429, 500, 502, 503, 504}))
 

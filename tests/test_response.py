@@ -26,6 +26,21 @@ def test_response_holds_fields() -> None:
     assert resp.body == b"<html/>"
     assert resp.content_type == "text/html"
     assert resp.backend == "httpx"
+    assert resp.permanent_redirect_to is None
+
+
+def test_response_surfaces_permanent_redirect() -> None:
+    resp = Response(
+        url="https://example.com/old",
+        status=301,
+        headers={"location": "https://example.com/new"},
+        body=b"",
+        content_type=None,
+        backend="httpx",
+        permanent_redirect_to="https://example.com/new",
+    )
+
+    assert resp.permanent_redirect_to == "https://example.com/new"
 
 
 def test_response_is_frozen() -> None:

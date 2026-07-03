@@ -113,6 +113,25 @@ def test_playwright_backend_raises_terminal_status(
         )
 
 
+def test_playwright_backend_surfaces_permanent_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    _make_pw_chain(
+        monkeypatch,
+        response_status=301,
+        response_headers={"location": "https://example.com/new", "content-type": "text/html"},
+    )
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com/old",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == 301
+    assert resp.permanent_redirect_to == "https://example.com/new"
+
+
 def test_playwright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     # First call raises TimeoutError; second succeeds
     response_ok = MagicMock(spec=pw_sync.Response)

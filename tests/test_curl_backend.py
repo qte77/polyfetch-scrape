@@ -176,6 +176,22 @@ def test_curl_backend_raises_terminal_status(
         )
 
 
+def test_curl_backend_surfaces_permanent_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _fake_response(status=301, headers={"location": "https://example.com/new"})
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://example.com/old",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == 301
+    assert resp.permanent_redirect_to == "https://example.com/new"
+
+
 def test_curl_backend_raises_fingerprintblock_on_persistent_403(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
