@@ -1,14 +1,12 @@
 """Render a dynamic (JS) page via polyfetch's playwright tier and save a screenshot.
 
-Dogfoods first-class screenshots (#68): ``fetch(url, tier="playwright",
-screenshot="viewport")`` returns the PNG on ``Response.screenshot``. No direct
-Patchright driving here — the toolkit exposes it.
+Dogfoods the browser-tier render controls (#67/#68): ``fetch(url, tier="playwright",
+render=RenderOptions(wait_until="networkidle", screenshot="viewport"))`` waits for JS/XHR
+to settle, then returns the PNG on ``Response.screenshot``. No direct Patchright driving
+here — the toolkit exposes it.
 
 Run via ``make render`` or ``uv run python examples/render_screenshot.py [URL]``.
 Tier-3 needs the browser binary first: ``make setup_browsers``.
-
-Note: the playwright tier captures at ``domcontentloaded``; richer wait strategies
-(``networkidle`` / ``wait_for_function``) for JS-hydrated values are tracked as #67.
 """
 
 import argparse
@@ -16,7 +14,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from polyfetch_scrape import fetch
+from polyfetch_scrape import RenderOptions, fetch
 
 DEFAULT_URL = "https://quotes.toscrape.com/js/"
 DEFAULT_OUT_DIR = Path(__file__).parent / "screenshots"
@@ -32,7 +30,11 @@ def _slug(url: str) -> str:
 def render(url: str, out_dir: Path) -> None:
     """Render ``url`` on the playwright tier and write ``<slug>.viewport.png``."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    resp = fetch(url, tier="playwright", screenshot="viewport")
+    resp = fetch(
+        url,
+        tier="playwright",
+        render=RenderOptions(wait_until="networkidle", screenshot="viewport"),
+    )
     shot = out_dir / f"{_slug(url)}.viewport.png"
 
     print(f"rendered {resp.url} (status={resp.status}, backend={resp.backend})")

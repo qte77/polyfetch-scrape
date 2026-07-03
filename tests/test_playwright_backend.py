@@ -6,6 +6,7 @@ from patchright import sync_api as pw_sync
 
 from polyfetch_scrape._backends import FingerprintBlock, playwright_backend
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
+from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.retry import RetryPolicy
 
 
@@ -142,7 +143,7 @@ def test_playwright_backend_captures_viewport_screenshot(monkeypatch: pytest.Mon
         headers=None,
         timeout=5.0,
         policy=RetryPolicy(max_attempts=1),
-        screenshot="viewport",
+        render=RenderOptions(screenshot="viewport"),
     )
 
     page.screenshot.assert_called_once_with()
@@ -159,7 +160,7 @@ def test_playwright_backend_captures_element_screenshot(monkeypatch: pytest.Monk
         headers=None,
         timeout=5.0,
         policy=RetryPolicy(max_attempts=1),
-        screenshot="#chart",
+        render=RenderOptions(screenshot="#chart"),
     )
 
     page.locator.assert_called_once_with("#chart")
@@ -181,6 +182,36 @@ def test_playwright_backend_no_screenshot_by_default(monkeypatch: pytest.MonkeyP
     page.screenshot.assert_not_called()
     page.locator.assert_not_called()
     assert resp.screenshot is None
+
+
+def test_playwright_backend_uses_wait_until_from_render(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(wait_until="networkidle"),
+    )
+
+    page.goto.assert_called_once_with("https://example.com", wait_until="networkidle", timeout=5000)
+
+
+def test_playwright_backend_waits_for_function(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(wait_for_function="() => window.ready"),
+    )
+
+    page.wait_for_function.assert_called_once_with("() => window.ready", timeout=5000)
 
 
 def test_playwright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -229,7 +260,7 @@ def test_playwright_backend_passes_wait_for_selector(monkeypatch: pytest.MonkeyP
         headers=None,
         timeout=5.0,
         policy=RetryPolicy(max_attempts=1),
-        wait_for_selector="#main",
+        render=RenderOptions(wait_for_selector="#main"),
     )
 
     page.wait_for_selector.assert_called_once_with("#main", timeout=5000)
