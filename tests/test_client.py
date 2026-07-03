@@ -8,6 +8,7 @@ import respx
 from polyfetch_scrape._backends import FingerprintBlock
 from polyfetch_scrape.client import FetchError, fetch
 from polyfetch_scrape.errors import GoneError, LegalBlock
+from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
@@ -302,10 +303,9 @@ def test_fetch_falls_through_to_playwright_when_curl_blocked(
         headers: Mapping[str, str] | None,
         timeout: float,
         policy: RetryPolicy,
-        wait_for_selector: str | None = None,
-        screenshot: str | None = None,
+        render: RenderOptions | None = None,
     ) -> Response:
-        captured_kwargs["wait_for_selector"] = wait_for_selector
+        captured_kwargs["wait_for_selector"] = render.wait_for_selector if render else None
         return pw_resp
 
     monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
@@ -423,15 +423,16 @@ def test_fetch_tier_pin_forces_curl(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls == {"httpx": 0, "curl": 1}
 
 
-def test_fetch_forwards_screenshot_to_playwright_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_forwards_render_to_playwright_tier(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_pw(*_a: object, screenshot: str | None = None, **_kw: object) -> Response:
-        captured["screenshot"] = screenshot
+    def fake_pw(*_a: object, render: RenderOptions | None = None, **_kw: object) -> Response:
+        captured["render"] = render
         return _backend_response("playwright")
 
     monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
 
-    fetch("https://example.com", tier="playwright", screenshot="viewport")
+    opts = RenderOptions(screenshot="viewport")
+    fetch("https://example.com", tier="playwright", render=opts)
 
-    assert captured["screenshot"] == "viewport"
+    assert captured["render"] == opts

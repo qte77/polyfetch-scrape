@@ -1,6 +1,13 @@
 import logging
 
-from polyfetch_scrape.client import AuthRequired, FetchError, GoneError, LegalBlock, fetch
+from polyfetch_scrape.client import (
+    AuthRequired,
+    FetchError,
+    GoneError,
+    LegalBlock,
+    RenderOptions,
+    fetch,
+)
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, should_retry
 
@@ -12,6 +19,7 @@ __all__ = [
     "FetchError",
     "GoneError",
     "LegalBlock",
+    "RenderOptions",
     "Response",
     "RetryPolicy",
     "fetch",

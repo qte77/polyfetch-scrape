@@ -12,6 +12,7 @@ from polyfetch_scrape._backends import (
     raise_for_terminal_status,
 )
 from polyfetch_scrape.errors import FetchError
+from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
@@ -31,12 +32,12 @@ def attempt(
     headers: Mapping[str, str] | None,
     timeout: float,
     policy: RetryPolicy,
-    wait_for_selector: str | None = None,
-    screenshot: str | None = None,
+    render: RenderOptions | None = None,
 ) -> Response:
     if method.upper() != "GET":
         raise FetchError(f"playwright backend supports GET only, not {method}")
 
+    opts = render if render is not None else RenderOptions()
     last = _Attempt(None, None, None)
     timeout_ms = int(timeout * 1000)
 
@@ -44,9 +45,7 @@ def attempt(
         browser = pw.chromium.launch(headless=True)
         try:
             for attempt_idx in range(policy.max_attempts):
-                last = _attempt_once(
-                    browser, url, headers, timeout_ms, wait_for_selector, screenshot
-                )
+                last = _attempt_once(browser, url, headers, timeout_ms, opts)
                 if last.response is not None:
                     return last.response
                 if attempt_idx + 1 < policy.max_attempts:
@@ -68,8 +67,7 @@ def _attempt_once(
     url: str,
     headers: Mapping[str, str] | None,
     timeout_ms: int,
-    wait_for_selector: str | None,
-    screenshot: str | None,
+    opts: RenderOptions,
 ) -> _Attempt:
     context = browser.new_context()
     if headers:
@@ -77,7 +75,7 @@ def _attempt_once(
     page = context.new_page()
     try:
         try:
-            response = page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            response = page.goto(url, wait_until=opts.wait_until, timeout=timeout_ms)
         except PwTimeoutError as exc:
             return _Attempt(None, None, exc)
 
@@ -89,9 +87,7 @@ def _attempt_once(
             return _Attempt(None, status, None)
 
         raise_for_terminal_status(status, url)
-
-        if wait_for_selector is not None:
-            page.wait_for_selector(wait_for_selector, timeout=timeout_ms)
+        _apply_waits(page, opts, timeout_ms)
 
         body = page.content().encode("utf-8")
         all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
@@ -104,13 +100,21 @@ def _attempt_once(
                 content_type=all_headers.get("content-type"),
                 backend="playwright",
                 permanent_redirect_to=permanent_redirect_target(status, all_headers),
-                screenshot=_capture_screenshot(page, screenshot),
+                screenshot=_capture_screenshot(page, opts.screenshot),
             ),
             None,
             None,
         )
     finally:
         context.close()
+
+
+def _apply_waits(page: Any, opts: RenderOptions, timeout_ms: int) -> None:
+    """Wait for a selector and/or a JS predicate before capture (both optional)."""
+    if opts.wait_for_selector is not None:
+        page.wait_for_selector(opts.wait_for_selector, timeout=timeout_ms)
+    if opts.wait_for_function is not None:
+        page.wait_for_function(opts.wait_for_function, timeout=timeout_ms)
 
 
 def _capture_screenshot(page: Any, target: str | None) -> bytes | None:

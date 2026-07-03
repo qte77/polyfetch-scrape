@@ -9,10 +9,11 @@ from polyfetch_scrape._backends import (
     playwright_backend,
 )
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
+from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
-__all__ = ["AuthRequired", "FetchError", "GoneError", "LegalBlock", "fetch"]
+__all__ = ["AuthRequired", "FetchError", "GoneError", "LegalBlock", "RenderOptions", "fetch"]
 
 Browser = Literal["chrome", "firefox"]
 Tier = Literal["httpx", "curl_cffi", "playwright"]
@@ -32,14 +33,15 @@ def fetch(
     tier: Tier | None = None,
     etag: str | None = None,
     last_modified: str | None = None,
-    screenshot: str | None = None,
+    render: RenderOptions | None = None,
 ) -> Response:
     policy = retry if retry is not None else RetryPolicy()
     headers = _with_conditional_headers(headers, etag, last_modified)
+    # `render` (RenderOptions) is the playwright-tier surface; `wait_for_selector` is a
+    # back-compat convenience that seeds it when no explicit `render` is given.
+    render = render if render is not None else RenderOptions(wait_for_selector=wait_for_selector)
     if tier is not None:
-        return _run_single_tier(
-            tier, method, url, headers, timeout, policy, browser, wait_for_selector, screenshot
-        )
+        return _run_single_tier(tier, method, url, headers, timeout, policy, browser, render)
     try:
         return httpx_backend.attempt(method, url, headers, timeout, policy)
     except FingerprintBlock:
@@ -48,15 +50,7 @@ def fetch(
             return curl_backend.attempt(method, url, headers, timeout, policy, browser=browser)
         except FingerprintBlock:
             _log.info("tier escalation: curl_cffi blocked, trying playwright: %s", url)
-            return playwright_backend.attempt(
-                method,
-                url,
-                headers,
-                timeout,
-                policy,
-                wait_for_selector=wait_for_selector,
-                screenshot=screenshot,
-            )
+            return playwright_backend.attempt(method, url, headers, timeout, policy, render=render)
 
 
 def _with_conditional_headers(
@@ -88,20 +82,11 @@ def _run_single_tier(
     timeout: float,
     policy: RetryPolicy,
     browser: Browser,
-    wait_for_selector: str | None,
-    screenshot: str | None,
+    render: RenderOptions,
 ) -> Response:
     """Pinned tier: dispatch to one backend; its error propagates (no escalation)."""
     if tier == "httpx":
         return httpx_backend.attempt(method, url, headers, timeout, policy)
     if tier == "curl_cffi":
         return curl_backend.attempt(method, url, headers, timeout, policy, browser=browser)
-    return playwright_backend.attempt(
-        method,
-        url,
-        headers,
-        timeout,
-        policy,
-        wait_for_selector=wait_for_selector,
-        screenshot=screenshot,
-    )
+    return playwright_backend.attempt(method, url, headers, timeout, policy, render=render)
