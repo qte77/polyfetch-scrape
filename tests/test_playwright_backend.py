@@ -132,6 +132,57 @@ def test_playwright_backend_surfaces_permanent_redirect(monkeypatch: pytest.Monk
     assert resp.permanent_redirect_to == "https://example.com/new"
 
 
+def test_playwright_backend_captures_viewport_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    page.screenshot.return_value = b"\x89PNG-viewport"
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        screenshot="viewport",
+    )
+
+    page.screenshot.assert_called_once_with()
+    assert resp.screenshot == b"\x89PNG-viewport"
+
+
+def test_playwright_backend_captures_element_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    page.locator.return_value.screenshot.return_value = b"\x89PNG-el"
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        screenshot="#chart",
+    )
+
+    page.locator.assert_called_once_with("#chart")
+    page.locator.return_value.screenshot.assert_called_once_with()
+    assert resp.screenshot == b"\x89PNG-el"
+
+
+def test_playwright_backend_no_screenshot_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    page.screenshot.assert_not_called()
+    page.locator.assert_not_called()
+    assert resp.screenshot is None
+
+
 def test_playwright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     # First call raises TimeoutError; second succeeds
     response_ok = MagicMock(spec=pw_sync.Response)

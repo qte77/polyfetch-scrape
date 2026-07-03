@@ -14,3 +14,5 @@ class Response:
     # Set to the Location target on a permanent redirect (301/308) so callers can
     # update stored URLs; None for non-permanent responses (temporary 302/303/307).
     permanent_redirect_to: str | None = None
+    # PNG bytes when a screenshot was requested on the playwright tier; else None.
+    screenshot: bytes | None = None

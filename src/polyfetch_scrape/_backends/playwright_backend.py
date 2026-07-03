@@ -32,6 +32,7 @@ def attempt(
     timeout: float,
     policy: RetryPolicy,
     wait_for_selector: str | None = None,
+    screenshot: str | None = None,
 ) -> Response:
     if method.upper() != "GET":
         raise FetchError(f"playwright backend supports GET only, not {method}")
@@ -43,7 +44,9 @@ def attempt(
         browser = pw.chromium.launch(headless=True)
         try:
             for attempt_idx in range(policy.max_attempts):
-                last = _attempt_once(browser, url, headers, timeout_ms, wait_for_selector)
+                last = _attempt_once(
+                    browser, url, headers, timeout_ms, wait_for_selector, screenshot
+                )
                 if last.response is not None:
                     return last.response
                 if attempt_idx + 1 < policy.max_attempts:
@@ -66,6 +69,7 @@ def _attempt_once(
     headers: Mapping[str, str] | None,
     timeout_ms: int,
     wait_for_selector: str | None,
+    screenshot: str | None,
 ) -> _Attempt:
     context = browser.new_context()
     if headers:
@@ -100,9 +104,23 @@ def _attempt_once(
                 content_type=all_headers.get("content-type"),
                 backend="playwright",
                 permanent_redirect_to=permanent_redirect_target(status, all_headers),
+                screenshot=_capture_screenshot(page, screenshot),
             ),
             None,
             None,
         )
     finally:
         context.close()
+
+
+def _capture_screenshot(page: Any, target: str | None) -> bytes | None:
+    """Capture a PNG: ``"viewport"`` shot, or an element shot for a CSS selector.
+
+    ``full_page`` is intentionally unsupported — Chromium writes 0 bytes on very
+    tall pages; use ``"viewport"`` or an element selector instead.
+    """
+    if target is None:
+        return None
+    if target == "viewport":
+        return page.screenshot()
+    return page.locator(target).screenshot()

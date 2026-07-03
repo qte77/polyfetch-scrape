@@ -27,6 +27,7 @@ def test_response_holds_fields() -> None:
     assert resp.content_type == "text/html"
     assert resp.backend == "httpx"
     assert resp.permanent_redirect_to is None
+    assert resp.screenshot is None
 
 
 def test_response_surfaces_permanent_redirect() -> None:

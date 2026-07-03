@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- `fetch(url, *, screenshot="viewport"|"<css-selector>")` — first-class screenshots on the playwright tier: the PNG bytes land on `Response.screenshot` (`None` otherwise). `full_page` is intentionally unsupported (Chromium writes 0 bytes on tall pages) — use `"viewport"` or an element selector. Closes #68.
 - `Response.permanent_redirect_to: str | None` — set to the `Location` target on a permanent redirect (301/308) so callers can update stored URLs; `None` for temporary redirects (302/303/307) and non-redirects. Populated by all three backends. Closes #31.
 
 ### Removed

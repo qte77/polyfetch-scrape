@@ -303,6 +303,7 @@ def test_fetch_falls_through_to_playwright_when_curl_blocked(
         timeout: float,
         policy: RetryPolicy,
         wait_for_selector: str | None = None,
+        screenshot: str | None = None,
     ) -> Response:
         captured_kwargs["wait_for_selector"] = wait_for_selector
         return pw_resp
@@ -420,3 +421,17 @@ def test_fetch_tier_pin_forces_curl(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert resp.backend == "curl_cffi"
     assert calls == {"httpx": 0, "curl": 1}
+
+
+def test_fetch_forwards_screenshot_to_playwright_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_pw(*_a: object, screenshot: str | None = None, **_kw: object) -> Response:
+        captured["screenshot"] = screenshot
+        return _backend_response("playwright")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+
+    fetch("https://example.com", tier="playwright", screenshot="viewport")
+
+    assert captured["screenshot"] == "viewport"

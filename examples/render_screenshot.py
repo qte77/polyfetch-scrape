@@ -1,21 +1,22 @@
-"""Render a dynamic (JS) page with Patchright/Chromium and save screenshots.
+"""Render a dynamic (JS) page via polyfetch's playwright tier and save a screenshot.
 
-Direct-drive stop-gap for screenshots polyfetch's tiers don't yet expose
-(first-class screenshots = #68; tier-3 wait strategies = #67/#70). Mirrors the
-launch pattern of ``examples/fallback_tiers_demo.py``'s ``demo_tier_3``.
+Dogfoods first-class screenshots (#68): ``fetch(url, tier="playwright",
+screenshot="viewport")`` returns the PNG on ``Response.screenshot``. No direct
+Patchright driving here — the toolkit exposes it.
 
 Run via ``make render`` or ``uv run python examples/render_screenshot.py [URL]``.
 Tier-3 needs the browser binary first: ``make setup_browsers``.
 
-``wait_until="networkidle"`` lets the page's JS/XHR settle before capture, which
-is what a dynamic page needs. Each run writes two PNGs under ``--out-dir``: a
-full-page shot and a viewport shot.
+Note: the playwright tier captures at ``domcontentloaded``; richer wait strategies
+(``networkidle`` / ``wait_for_function``) for JS-hydrated values are tracked as #67.
 """
 
 import argparse
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from polyfetch_scrape import fetch
 
 DEFAULT_URL = "https://quotes.toscrape.com/js/"
 DEFAULT_OUT_DIR = Path(__file__).parent / "screenshots"
@@ -29,28 +30,17 @@ def _slug(url: str) -> str:
 
 
 def render(url: str, out_dir: Path) -> None:
-    """Render ``url`` and write ``<slug>.full.png`` + ``<slug>.viewport.png``."""
-    from patchright.sync_api import sync_playwright
-
+    """Render ``url`` on the playwright tier and write ``<slug>.viewport.png``."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    slug = _slug(url)
-    full = out_dir / f"{slug}.full.png"
-    viewport = out_dir / f"{slug}.viewport.png"
+    resp = fetch(url, tier="playwright", screenshot="viewport")
+    shot = out_dir / f"{_slug(url)}.viewport.png"
 
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
-        page = browser.new_page()
-        try:
-            response = page.goto(url, wait_until="networkidle")
-            status = response.status if response is not None else None
-            title = page.title()
-            page.screenshot(path=str(full), full_page=True)
-            page.screenshot(path=str(viewport), full_page=False)
-            print(f"rendered {page.url} (status={status}, title={title!r})")
-            for shot in (full, viewport):
-                print(f"  {shot.name}  {shot.stat().st_size} bytes  -> {shot}")
-        finally:
-            browser.close()
+    print(f"rendered {resp.url} (status={resp.status}, backend={resp.backend})")
+    if resp.screenshot is None:
+        print("  no screenshot captured")
+        return
+    shot.write_bytes(resp.screenshot)
+    print(f"  {shot.name}  {len(resp.screenshot)} bytes  -> {shot}")
 
 
 def main() -> None:
