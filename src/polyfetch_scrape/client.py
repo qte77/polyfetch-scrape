@@ -32,12 +32,13 @@ def fetch(
     tier: Tier | None = None,
     etag: str | None = None,
     last_modified: str | None = None,
+    screenshot: str | None = None,
 ) -> Response:
     policy = retry if retry is not None else RetryPolicy()
     headers = _with_conditional_headers(headers, etag, last_modified)
     if tier is not None:
         return _run_single_tier(
-            tier, method, url, headers, timeout, policy, browser, wait_for_selector
+            tier, method, url, headers, timeout, policy, browser, wait_for_selector, screenshot
         )
     try:
         return httpx_backend.attempt(method, url, headers, timeout, policy)
@@ -48,7 +49,13 @@ def fetch(
         except FingerprintBlock:
             _log.info("tier escalation: curl_cffi blocked, trying playwright: %s", url)
             return playwright_backend.attempt(
-                method, url, headers, timeout, policy, wait_for_selector=wait_for_selector
+                method,
+                url,
+                headers,
+                timeout,
+                policy,
+                wait_for_selector=wait_for_selector,
+                screenshot=screenshot,
             )
 
 
@@ -82,6 +89,7 @@ def _run_single_tier(
     policy: RetryPolicy,
     browser: Browser,
     wait_for_selector: str | None,
+    screenshot: str | None,
 ) -> Response:
     """Pinned tier: dispatch to one backend; its error propagates (no escalation)."""
     if tier == "httpx":
@@ -89,5 +97,11 @@ def _run_single_tier(
     if tier == "curl_cffi":
         return curl_backend.attempt(method, url, headers, timeout, policy, browser=browser)
     return playwright_backend.attempt(
-        method, url, headers, timeout, policy, wait_for_selector=wait_for_selector
+        method,
+        url,
+        headers,
+        timeout,
+        policy,
+        wait_for_selector=wait_for_selector,
+        screenshot=screenshot,
     )
