@@ -59,12 +59,15 @@ polyfetch --help
 ```python
 fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
-      etag=None, last_modified=None) -> Response
+      etag=None, last_modified=None, screenshot=None) -> Response
       # tier pins one backend: "httpx"|"curl_cffi"|"playwright"
       # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
+      # screenshot="viewport"|"<css-selector>" → PNG bytes on Response.screenshot (playwright tier)
 
-Response(url, status, headers, body, content_type, backend, permanent_redirect_to=None)
+Response(url, status, headers, body, content_type, backend,
+         permanent_redirect_to=None, screenshot=None)
       # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
+      # screenshot: PNG bytes when requested on the playwright tier, else None
 RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
             retry_on_status=frozenset({429, 500, 502, 503, 504}))
 
