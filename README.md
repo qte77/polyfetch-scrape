@@ -3,7 +3,7 @@
 
 > HTTP scraping toolkit: typed `Response`, three-tier fallback chain (httpx → curl_cffi → Patchright), opt-in e2e tests, typer CLI.
 
-Reusable Python library + CLI that abstracts the "which tool beats which anti-bot" decision: callers just `fetch(url)` and get back a typed `Response` regardless of which backend ultimately succeeded. Designed for document-domain scraping (papers, patents, legislation) — see roadmap stages 0.4.0 / 0.5.0.
+Reusable Python library + CLI that abstracts the "which tool beats which anti-bot" decision: callers just `fetch(url)` and get back a typed `Response` regardless of which backend ultimately succeeded.
 
 **I am a:** [Library user](#quick-start-library) | [CLI user](#quick-start-cli) | [Contributor](#development)
 
@@ -39,7 +39,6 @@ polyfetch fetch https://example.com --json
 polyfetch fetch https://httpbin.org/user-agent --show-body   # verify the UA you send
 polyfetch fetch https://quotes.toscrape.com/js/ --tier playwright   # force the JS-render tier
 polyfetch bulk urls.txt --workers 4
-polyfetch arxiv get 2301.00001 --json
 polyfetch --help
 ```
 
@@ -86,12 +85,13 @@ For AI agent behavioural rules, see [`AGENTS.md`](AGENTS.md). For release notes,
 
 ## Project Outline
 
-Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in private `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`); per-source domain wrappers live in public `sources/` (currently `arxiv.py`; more in 0.4.0); opt-in extras live under `contrib/` (e.g. `easter_hunt`, a page-artifact scanner exposed as `polyfetch easter-hunt scan`) and consume the public `fetch()` — unsupported, core never depends on them. Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
+Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in private `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`); opt-in extras live under `contrib/` (e.g. `easter_hunt`, a page-artifact scanner exposed as `polyfetch easter-hunt scan`) and consume the public `fetch()` — unsupported, core never depends on them. Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
 
 ## References
 
 - [Roadmap](docs/roadmap.md) — staged delivery plan (0.1 → 0.5)
 - [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
+- [gha-rxiv-feed-action](https://github.com/qte77/gha-rxiv-feed-action) — fetch arXiv/bioRxiv/medRxiv feeds (open APIs; polyfetch's fallback chain isn't needed for these)
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
 - [Codespaces — qte77/polyforge-orchestrator/docs/codespaces.md](https://github.com/qte77/polyforge-orchestrator/blob/main/docs/codespaces.md) — canonical cross-qte77 reference for Codespaces auth, token precedence, GPG signing, devcontainer lifecycle
 - [License](LICENSE) (Apache-2.0) and [Notice](NOTICE)

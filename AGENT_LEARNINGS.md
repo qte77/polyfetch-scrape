@@ -15,11 +15,10 @@ description: Non-obvious patterns that prevent repeated mistakes across sprints
 
 ### Parse untrusted XML/RSS with defusedxml, never stdlib ElementTree
 
-- **Context**: Any source/feed path that parses third-party XML/RSS/Atom fetched from an untrusted URL (e.g. `sources/arxiv.py`, future feed wrappers).
+- **Context**: Any path parsing third-party XML/RSS/Atom from an untrusted URL — a downstream source/adapter package or future feed wrapper. Core has no XML parsing today, so this is a standing/preventive rule.
 - **Problem**: Python's stdlib `xml.etree.ElementTree` is vulnerable to XXE (external-entity expansion) and billion-laughs entity-expansion DoS on untrusted input — flagged by Bandit B314.
-- **Solution**: Parse untrusted XML with `defusedxml` (e.g. `defusedxml.ElementTree.fromstring`), or plain-regex extraction for trivial cases; never call `xml.etree.ElementTree` on untrusted payloads. Standing rule — pairs with the AGENTS.md "Network caution" bullet.
-- **Example**: `sources/arxiv.py` parses the arXiv Atom response via `defusedxml.ElementTree.fromstring(...)` instead of `xml.etree.ElementTree.fromstring(...)`.
-- **References**: `src/polyfetch_scrape/sources/arxiv.py`; AGENTS.md "Core Rules & AI Behavior → Network caution". Issue #42.
+- **Solution**: Parse untrusted XML with `defusedxml` (e.g. `defusedxml.ElementTree.fromstring`), or plain-regex extraction for trivial cases; never call `xml.etree.ElementTree` on untrusted payloads. Pairs with the AGENTS.md "Network caution" bullet.
+- **References**: AGENTS.md "Core Rules & AI Behavior → Network caution". Issue #42. (The prior in-tree example `sources/arxiv.py` was extracted from core with the arXiv wrapper.)
 
 ### Verify single-subagent claims before propagating
 
