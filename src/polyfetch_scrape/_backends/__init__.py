@@ -7,11 +7,28 @@ of failure (so the next backend should be tried), raises a typed terminal error
 raises FetchError for any other terminal failure after exhausting retries.
 """
 
+from collections.abc import Mapping
+
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 
 
 class FingerprintBlock(FetchError):  # noqa: N818 — control-flow sentinel, never surfaced to callers
     """Signal to the orchestrator that the next backend should be tried."""
+
+
+# RFC 9110 §15.4.2 (301) / RFC 7538 (308): permanent moves — callers should adopt the
+# new URL. Temporary redirects (302/303/307) are intentionally excluded.
+_PERMANENT_REDIRECT_STATUSES: frozenset[int] = frozenset({301, 308})
+
+
+def permanent_redirect_target(status: int, headers: Mapping[str, str]) -> str | None:
+    """Return the ``Location`` target for a permanent redirect (301/308), else None."""
+    if status not in _PERMANENT_REDIRECT_STATUSES:
+        return None
+    for key, value in headers.items():
+        if key.lower() == "location":
+            return value
+    return None
 
 
 # RFC 9110 / RFC 7725 terminal statuses: never retried, never escalated. Raised

@@ -6,7 +6,11 @@ from typing import Any
 from patchright.sync_api import TimeoutError as PwTimeoutError
 from patchright.sync_api import sync_playwright
 
-from polyfetch_scrape._backends import FingerprintBlock, raise_for_terminal_status
+from polyfetch_scrape._backends import (
+    FingerprintBlock,
+    permanent_redirect_target,
+    raise_for_terminal_status,
+)
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
@@ -95,6 +99,7 @@ def _attempt_once(
                 body=body,
                 content_type=all_headers.get("content-type"),
                 backend="playwright",
+                permanent_redirect_to=permanent_redirect_target(status, all_headers),
             ),
             None,
             None,

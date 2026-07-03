@@ -4,7 +4,11 @@ from dataclasses import dataclass
 
 import httpx
 
-from polyfetch_scrape._backends import FingerprintBlock, raise_for_terminal_status
+from polyfetch_scrape._backends import (
+    FingerprintBlock,
+    permanent_redirect_target,
+    raise_for_terminal_status,
+)
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
@@ -111,4 +115,5 @@ def _to_response(http_resp: httpx.Response) -> Response:
         body=http_resp.content,
         content_type=http_resp.headers.get("content-type"),
         backend="httpx",
+        permanent_redirect_to=permanent_redirect_target(http_resp.status_code, http_resp.headers),
     )

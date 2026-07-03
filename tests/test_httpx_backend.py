@@ -53,6 +53,36 @@ def test_httpx_backend_raises_terminal_status(status: int, exc_type: type[Except
 
 
 @respx.mock
+def test_httpx_backend_surfaces_permanent_redirect() -> None:
+    url = "https://example.com/old"
+    respx.get(url).mock(
+        return_value=httpx.Response(301, headers={"location": "https://example.com/new"})
+    )
+
+    resp = httpx_backend.attempt(
+        method="GET", url=url, headers=None, timeout=5.0, policy=RetryPolicy(max_attempts=1)
+    )
+
+    assert resp.status == 301
+    assert resp.permanent_redirect_to == "https://example.com/new"
+
+
+@respx.mock
+def test_httpx_backend_ignores_temporary_redirect() -> None:
+    url = "https://example.com/tmp"
+    respx.get(url).mock(
+        return_value=httpx.Response(302, headers={"location": "https://example.com/elsewhere"})
+    )
+
+    resp = httpx_backend.attempt(
+        method="GET", url=url, headers=None, timeout=5.0, policy=RetryPolicy(max_attempts=1)
+    )
+
+    assert resp.status == 302
+    assert resp.permanent_redirect_to is None
+
+
+@respx.mock
 def test_httpx_backend_raises_fingerprintblock_on_tls_error() -> None:
     # Arrange: ConnectError carrying a TLS-flavoured message
     url = "https://example.com/tls"

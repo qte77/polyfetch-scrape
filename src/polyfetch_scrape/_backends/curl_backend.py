@@ -5,7 +5,11 @@ from typing import Any, Literal, cast
 
 from curl_cffi import requests as curl_requests
 
-from polyfetch_scrape._backends import FingerprintBlock, raise_for_terminal_status
+from polyfetch_scrape._backends import (
+    FingerprintBlock,
+    permanent_redirect_target,
+    raise_for_terminal_status,
+)
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
@@ -88,4 +92,7 @@ def _to_response(http_resp: Any, fallback_url: str) -> Response:
         body=bytes(http_resp.content),
         content_type=dict(http_resp.headers).get("content-type"),
         backend="curl_cffi",
+        permanent_redirect_to=permanent_redirect_target(
+            int(http_resp.status_code), dict(http_resp.headers)
+        ),
     )
