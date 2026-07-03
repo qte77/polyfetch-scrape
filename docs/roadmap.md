@@ -57,26 +57,18 @@ handled per RFC 9110 semantics instead of being retried/escalated blindly.
   [RFC 7538](https://datatracker.ietf.org/doc/html/rfc7538))
 - Document the taxonomy in `docs/scraping-landscape.md` — [#34](https://github.com/qte77/polyfetch-scrape/issues/34)
 
-## 0.4.0 — API Wrappers
+## Beyond — core directions (themes, not domains)
 
-Domain-specific wrappers for document APIs.
+polyfetch-scrape is a **horizontal, hostile-fetch toolkit**. Domain API wrappers
+(arXiv, USPTO/patents, GitHub, legislation…) and LLM-ready extraction are **out of
+scope** — they belong in downstream packages that consume `fetch()` (e.g.
+`gha-rxiv-feed-action`; a USPTO adapter — see
+[#89](https://github.com/qte77/polyfetch-scrape/issues/89)), never in core.
 
-**Goals**:
+Core themes still ahead:
 
-- arXiv bulk download (OAI-PMH + direct PDF)
-- USPTO full-text search and patent PDF retrieval
-- EUR-Lex SPARQL/REST queries
-- legislation.gov.uk REST API
-- WIPO PATENTSCOPE REST API
-- GitHub source wrapper (gh CLI / REST) — [#32](https://github.com/qte77/polyfetch-scrape/issues/32)
-- Sitemap-based URL discovery helper for source wrappers — [#33](https://github.com/qte77/polyfetch-scrape/issues/33)
-
-## 0.5.0 — LLM-Ready Output
-
-Structured Markdown and JSON extraction for downstream LLM consumption.
-
-**Goals**:
-
-- HTML-to-Markdown conversion with metadata preservation
-- JSON schema for structured document fields (title, abstract, sections, citations)
-- Clean text extraction (strip boilerplate, navigation, ads)
+- **Status-code completeness** — surface permanent redirects (301/308) on `Response` — [#31](https://github.com/qte77/polyfetch-scrape/issues/31)
+- **Request bodies** — POST/PUT/JSON support in `fetch()` — [#46](https://github.com/qte77/polyfetch-scrape/issues/46)
+- **Browser-tier depth (the moat)** — screenshots [#68](https://github.com/qte77/polyfetch-scrape/issues/68), client-hydrated values [#67](https://github.com/qte77/polyfetch-scrape/issues/67), scripted interactions [#71](https://github.com/qte77/polyfetch-scrape/issues/71), headed manual-takeover for captcha [#59](https://github.com/qte77/polyfetch-scrape/issues/59)
+- **Politeness & control** — per-host rate limit [#49](https://github.com/qte77/polyfetch-scrape/issues/49), min/max tier range [#80](https://github.com/qte77/polyfetch-scrape/issues/80)
+- **Generic crawl utility** — sitemap.xml URL discovery [#33](https://github.com/qte77/polyfetch-scrape/issues/33)

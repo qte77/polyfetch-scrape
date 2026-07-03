@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING:** the arXiv source wrapper (`polyfetch_scrape.sources.arxiv`, the `sources/` namespace) and the `polyfetch arxiv get` CLI subcommand; dropped the now-unused `defusedxml` dependency. Domain API wrappers move to downstream packages that consume `fetch()` — see #89.
+
 ## [0.4.0] - 2026-07-02
 
 ### Added
