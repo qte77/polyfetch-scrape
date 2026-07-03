@@ -9,7 +9,6 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "qte77"}]
 dependencies = [
     "curl-cffi>=0.15.0",
-    "defusedxml>=0.7.1",
     "httpx>=0.28.1",
     "patchright>=1.58.2",
     "typer>=0.25.0",
