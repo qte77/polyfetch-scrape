@@ -91,6 +91,7 @@ All non-trivial changes update `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md)
 - **Topical commits within a PR** — split by concern, not by file. Each commit should be reviewable independently.
 - **Squash-merge** PRs into `main`; keep the topical-commit list in the PR description for the merge commit body.
 - **Branch names**: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, etc.
+- **Releases** are automated — see [README → Versioning](README.md#versioning): run the **Bump version** workflow, then merge the `chore(release)` PR **with a PAT** so **Tag and Release** fires.
 
 ## Project conventions (quick reference)
 
