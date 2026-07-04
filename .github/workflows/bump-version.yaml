@@ -1,0 +1,69 @@
+---
+name: Bump version
+
+# Step 1 of 2 of the release pipeline (see README "Versioning").
+# Bumps the version files (pyproject.toml, uv.lock self-ref, README badge,
+# CHANGELOG roll + compare footer) via bump-my-version on a branch, then opens
+# a chore(release) PR. Tagging + the GitHub Release are handled by
+# tag-release.yaml when this PR merges to main (so the tag lands on the merge
+# commit, not a throwaway bump-branch commit).
+#
+# NOTE: merge the bump PR with a PAT — a push made by GITHUB_TOKEN does not
+# re-trigger workflows, so tag-release.yaml would not fire otherwise.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: '[major|minor|patch]'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - 'major'
+          - 'minor'
+          - 'patch'
+
+env:
+  BRANCH_NEW: "bump-${{ github.run_number }}-${{ github.ref_name }}"
+
+jobs:
+  bump_version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Bump version files (no commit/tag)
+        id: bump
+        uses: callowayproject/bump-my-version@169cce310a3bf9a723d4810157635401de72a07a # 1.4
+        with:
+          args: ${{ inputs.bump_type }}
+
+      - name: Commit, push branch, open PR
+        if: steps.bump.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ env.BRANCH_NEW }}
+          BASE: ${{ github.ref_name }}
+          VERSION: ${{ steps.bump.outputs.current-version }}
+          PREV_VERSION: ${{ steps.bump.outputs.previous-version }}
+        run: |
+          git config user.name "bump-my-version"
+          git config user.email "bump-my-version@qte77.gha"
+          git checkout -b "$BRANCH"
+          git commit -am "chore(release): bump $PREV_VERSION -> $VERSION"
+          # The bump-my-version Docker action disrupts the persisted git
+          # credential, so push to an explicitly token-authenticated URL.
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          gh pr create \
+            --base "$BASE" \
+            --head "$BRANCH" \
+            --title "chore(release): bump $PREV_VERSION -> $VERSION" \
+            --body "Automated version bump \`v$PREV_VERSION\` -> \`v$VERSION\`. **Merge with a PAT** (not the default GITHUB_TOKEN) so \`tag-release.yaml\` fires — it tags \`v$VERSION\` on the \`$BASE\` merge commit and publishes the GitHub Release from the CHANGELOG section."
