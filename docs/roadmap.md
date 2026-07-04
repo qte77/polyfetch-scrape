@@ -69,6 +69,6 @@ Core themes still ahead:
 
 - **Status-code completeness** — surface permanent redirects (301/308) on `Response` — [#31](https://github.com/qte77/polyfetch-scrape/issues/31)
 - **Request bodies** — POST/PUT/JSON support in `fetch()` — [#46](https://github.com/qte77/polyfetch-scrape/issues/46)
-- **Browser-tier depth (the moat)** — screenshots [#68](https://github.com/qte77/polyfetch-scrape/issues/68), client-hydrated values [#67](https://github.com/qte77/polyfetch-scrape/issues/67), scripted interactions [#71](https://github.com/qte77/polyfetch-scrape/issues/71), headed manual-takeover for captcha [#59](https://github.com/qte77/polyfetch-scrape/issues/59)
+- **Browser-tier depth (the moat)** — ✅ shipped: screenshots ([#68](https://github.com/qte77/polyfetch-scrape/issues/68)) + wait strategies / client-hydrated values ([#67](https://github.com/qte77/polyfetch-scrape/issues/67)) via `RenderOptions`. Ahead: scripted interactions [#71](https://github.com/qte77/polyfetch-scrape/issues/71), headed manual-takeover for captcha [#59](https://github.com/qte77/polyfetch-scrape/issues/59)
 - **Politeness & control** — per-host rate limit [#49](https://github.com/qte77/polyfetch-scrape/issues/49), min/max tier range [#80](https://github.com/qte77/polyfetch-scrape/issues/80)
 - **Generic crawl utility** — sitemap.xml URL discovery [#33](https://github.com/qte77/polyfetch-scrape/issues/33)

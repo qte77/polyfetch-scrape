@@ -1,0 +1,62 @@
+# Architecture
+
+How a single `fetch(url)` call flows through the three-tier fallback chain to a typed `Response`.
+
+## Data flow
+
+```text
+                    fetch(url, ...)                    src/polyfetch_scrape/client.py
+                         │
+              _with_conditional_headers    (etag / last_modified → If-None-Match / If-Modified-Since)
+                         │
+        tier set? ───────┴─────── pinned → _run_single_tier ──┐
+                         │ (auto)                              │
+                         ▼                                     │
+               httpx_backend.attempt ──2xx──► Response         │
+                         │                                     │
+                FingerprintBlock (403 / TLS error)             │
+                         ▼                                     │
+               curl_backend.attempt  ──2xx──► Response         │
+                (chrome TLS impersonation)                     │
+                         │                                     │
+                FingerprintBlock                               │
+                         ▼                                     ▼
+            playwright_backend.attempt ──2xx──► Response  ◄────┘
+            (headless Chromium; RenderOptions:
+             wait_until / wait_for_* / screenshot)
+                         │
+      terminal 4xx/451 ──┴── raise_for_terminal_status ──► AuthRequired / GoneError / LegalBlock
+```
+
+Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and returns the same typed
+`Response`, so callers never branch on which tier succeeded — `Response.backend` records it.
+
+## Component responsibilities
+
+| Module | Responsibility |
+|---|---|
+| `client.py` | Public `fetch()` orchestrator: conditional headers, auto-escalation vs. pinned (`tier=`), `RenderOptions` plumbing to the playwright tier. |
+| `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
+| `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
+| `_backends/curl_backend.py` | Tier 2: `curl_cffi` Chrome TLS impersonation; engages on 403 / TLS error. |
+| `_backends/playwright_backend.py` | Tier 3: headless Patchright/Chromium; applies `RenderOptions` (wait strategies, screenshot). |
+| `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot). |
+| `render_options.py` | `RenderOptions` — playwright-tier controls (wait_until, wait_for_selector, wait_for_function, screenshot). |
+| `retry.py` | `RetryPolicy` + `should_retry` + `Retry-After` parsing and capped backoff. |
+| `errors.py` | Exception taxonomy: `FetchError` base + terminal `AuthRequired` / `GoneError` / `LegalBlock`. |
+| `cli.py` | Thin typer CLI over `fetch` / bulk; opt-in `contrib` subcommands. |
+
+## Invariants
+
+- **Every tier returns the same typed `Response`.** Callers don't branch on backend; `Response.backend`
+  records which tier served the request.
+- **Terminal statuses raise in every tier** (401/407 → `AuthRequired`, 404/410 → `GoneError`, 451 →
+  `LegalBlock`) — no retry, no escalation; 451 never reaches the fingerprint tiers (RFC 7725).
+- **Escalation is fingerprint-only.** Only `FingerprintBlock` (403 / TLS error) walks httpx → curl_cffi
+  → playwright; every other outcome returns or raises immediately.
+- **Browser-tier controls stay on the browser tier.** `RenderOptions` (wait strategies, screenshots) is
+  a no-op on the httpx / curl_cffi tiers; screenshots require the playwright tier.
+- **Core is horizontal.** Domain API wrappers and content extraction live in downstream packages that
+  consume `fetch()`; `contrib/` extras are unsupported and never imported by core.
+- **No unconditional network at import.** Fetching happens only inside `fetch()` / a backend `attempt()`.
+```

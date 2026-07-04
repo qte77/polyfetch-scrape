@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 - `RenderOptions` + `fetch(url, *, render=RenderOptions(...))` — grouped playwright-tier controls: `wait_until` (`"networkidle"` lets XHR settle), `wait_for_selector`, `wait_for_function` (JS predicate — captures client-hydrated values), and `screenshot` (`"viewport"` or a CSS selector → PNG bytes on `Response.screenshot`; `full_page` unsupported — Chromium writes 0 bytes on tall pages). Ignored by the httpx/curl_cffi tiers. `wait_for_selector` stays as a top-level `fetch()` convenience that seeds `render`. Closes #67, #68.
 - `Response.permanent_redirect_to: str | None` — set to the `Location` target on a permanent redirect (301/308) so callers can update stored URLs; `None` for temporary redirects (302/303/307) and non-redirects. Populated by all three backends. Closes #31.
+- `docs/architecture.md` + `docs/userstory.md` — fallback-chain data flow / component responsibilities / invariants, and a user-story→coverage map (matches the qte77 sibling-repo doc convention); linked from README + CONTRIBUTING.
 
 ### Removed
 

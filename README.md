@@ -93,11 +93,13 @@ For AI agent behavioural rules, see [`AGENTS.md`](AGENTS.md). For release notes,
 
 ## Project Outline
 
-Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in private `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`); opt-in extras live under `contrib/` (e.g. `easter_hunt`, a page-artifact scanner exposed as `polyfetch easter-hunt scan`) and consume the public `fetch()` — unsupported, core never depends on them. Roadmap and architecture: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
+Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in private `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`); opt-in extras live under `contrib/` (e.g. `easter_hunt`, a page-artifact scanner exposed as `polyfetch easter-hunt scan`) and consume the public `fetch()` — unsupported, core never depends on them. Architecture (data flow + invariants): [`docs/architecture.md`](docs/architecture.md). Roadmap: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
 
 ## References
 
-- [Roadmap](docs/roadmap.md) — staged delivery plan (0.1 → 0.5)
+- [Roadmap](docs/roadmap.md) — delivery history + core directions ahead
+- [Architecture](docs/architecture.md) — fallback-chain data flow, component responsibilities, invariants
+- [User stories](docs/userstory.md) — who it serves and what each need maps to
 - [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
 - [gha-rxiv-feed-action](https://github.com/qte77/gha-rxiv-feed-action) — fetch arXiv/bioRxiv/medRxiv feeds (open APIs; polyfetch's fallback chain isn't needed for these)
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
