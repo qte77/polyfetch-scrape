@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- CI: `bump-version` + `tag-release` GitHub Actions workflows — automate the two-step release pipeline (`bump-my-version` → `chore(release)` PR → tag + GitHub Release from the CHANGELOG section), matching the qte77 sibling convention. `[tool.bumpversion]` in `pyproject.toml` drives the file/CHANGELOG rewrites (incl. the `uv.lock` self-ref). See README "Versioning".
+
 ## [0.5.0] - 2026-07-04
 
 ### Added

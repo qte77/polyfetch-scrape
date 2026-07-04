@@ -91,6 +91,15 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full command reference, dev wor
 
 For AI agent behavioural rules, see [`AGENTS.md`](AGENTS.md). For release notes, see [`CHANGELOG.md`](CHANGELOG.md).
 
+## Versioning
+
+Two-step release pipeline (GitHub Actions), mirroring the qte77 sibling repos:
+
+1. **Bump** — run the **Bump version** workflow (`workflow_dispatch`; pick major/minor/patch). It bumps `pyproject.toml`, the `uv.lock` self-reference, the README badge, and rolls `CHANGELOG.md` (new dated section + compare link) via [`bump-my-version`](https://github.com/callowayproject/bump-my-version), then opens a `chore(release)` PR.
+2. **Tag + release** — **merge that PR with a PAT** (a `GITHUB_TOKEN` push won't re-trigger workflows). The **Tag and Release** workflow then tags `vX.Y.Z` on the merge commit and publishes the GitHub Release from the matching `CHANGELOG.md` section.
+
+Keep new changes under `## [Unreleased]`; the bump rolls them into the dated version section.
+
 ## Project Outline
 
 Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under `src/polyfetch_scrape/`; the three backends are isolated in private `_backends/` (`httpx_backend.py`, `curl_backend.py`, `playwright_backend.py`); opt-in extras live under `contrib/` (e.g. `easter_hunt`, a page-artifact scanner exposed as `polyfetch easter-hunt scan`) and consume the public `fetch()` — unsupported, core never depends on them. Architecture (data flow + invariants): [`docs/architecture.md`](docs/architecture.md). Roadmap: [`docs/roadmap.md`](docs/roadmap.md). Tool landscape and empirical anti-bot findings: [`docs/scraping-landscape.md`](docs/scraping-landscape.md).

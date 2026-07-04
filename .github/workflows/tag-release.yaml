@@ -1,0 +1,72 @@
+---
+name: Tag and Release
+
+# Step 2 of 2 of the release pipeline (see README "Versioning").
+# Fires when a version bump (from bump-version.yaml) is merged to main.
+# Tags the merge commit vX.Y.Z and publishes the GitHub Release from the
+# matching CHANGELOG section. The tag therefore always lives on main's
+# history (no drift).
+#
+# NOTE: a push made by GITHUB_TOKEN does not re-trigger workflows, so the
+# bump PR must be merged with user/PAT credentials for this to fire.
+
+on:
+  push:
+    branches: [main]
+    paths: ['pyproject.toml']
+
+permissions:
+  contents: write
+
+jobs:
+  tag_release:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 2
+
+      - name: Detect version change
+        id: detect
+        run: |
+          new=$(grep -m1 '^version = ' pyproject.toml | sed -E 's/version = "(.*)"/\1/')
+          old=$(git show HEAD^:pyproject.toml | grep -m1 '^version = ' | sed -E 's/version = "(.*)"/\1/')
+          if [ "$new" = "$old" ]; then
+            echo "no version change ($old == $new); nothing to tag"
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "version $old -> $new"
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+            echo "version=$new" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag and GitHub Release
+        if: steps.detect.outputs.bumped == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.detect.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "tag $tag already exists; aborting"
+            exit 1
+          fi
+          git config user.name "tag-release"
+          git config user.email "tag-release@qte77.gha"
+          git tag -a -m "Release $tag" "$tag"
+          git push origin "$tag"
+
+          # Release notes = this version's CHANGELOG section (header excluded,
+          # stop at the next version header).
+          notes=$(awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") == 1 { capture = 1; next }
+            capture && index($0, "## [") == 1 { exit }
+            capture { print }
+          ' CHANGELOG.md)
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            gh release create "$tag" --title "$tag" --generate-notes
+          else
+            gh release create "$tag" --title "$tag" --notes "$notes"
+          fi
