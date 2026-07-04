@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-04
+
 ### Added
 
 - `RenderOptions` + `fetch(url, *, render=RenderOptions(...))` — grouped playwright-tier controls: `wait_until` (`"networkidle"` lets XHR settle), `wait_for_selector`, `wait_for_function` (JS predicate — captures client-hydrated values), and `screenshot` (`"viewport"` or a CSS selector → PNG bytes on `Response.screenshot`; `full_page` unsupported — Chromium writes 0 bytes on tall pages). Ignored by the httpx/curl_cffi tiers. `wait_for_selector` stays as a top-level `fetch()` convenience that seeds `render`. Closes #67, #68.
@@ -134,7 +136,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `pyproject.toml` — `pytest filterwarnings = ["error"]`, branch coverage with `fail_under = 90`, pyright `typeCheckingMode = "strict"`.
 - Opt-in `e2e` pytest marker + `make test_e2e` recipe (httpbin / arxiv smoke tests, no network in default `make test`).
 
-[Unreleased]: https://github.com/qte77/polyfetch-scrape/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/qte77/polyfetch-scrape/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/qte77/polyfetch-scrape/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.2.0...v0.3.0
