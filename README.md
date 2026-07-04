@@ -8,7 +8,7 @@ Reusable Python library + CLI that abstracts the "which tool beats which anti-bo
 **I am a:** [Library user](#quick-start-library) | [CLI user](#quick-start-cli) | [Contributor](#development)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-informational)](CHANGELOG.md)
 [![Python](https://img.shields.io/badge/python-%3E=3.11-blue)](pyproject.toml)
 [![CodeFactor](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape/badge)](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape)
 [![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
