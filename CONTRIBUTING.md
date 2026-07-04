@@ -103,4 +103,4 @@ All non-trivial changes update `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md)
 - **Backend modules in `_backends/`** are private; only `polyfetch_scrape.{fetch, Response, RetryPolicy, FetchError}` are public
 - **Add deps via `uv add ...`** (or `uv add --group dev ...`); never edit `[project.dependencies]` by hand without re-locking via `uv sync`
 
-For deeper architecture and the staged roadmap, see [`docs/roadmap.md`](docs/roadmap.md). For empirical anti-bot findings (with first-party citations), see [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
+For deeper architecture see [`docs/architecture.md`](docs/architecture.md); for the staged roadmap see [`docs/roadmap.md`](docs/roadmap.md). For empirical anti-bot findings (with first-party citations), see [`docs/scraping-landscape.md`](docs/scraping-landscape.md).
