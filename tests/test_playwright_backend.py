@@ -6,7 +6,7 @@ from patchright import sync_api as pw_sync
 
 from polyfetch_scrape._backends import FingerprintBlock, playwright_backend
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
-from polyfetch_scrape.render_options import RenderOptions
+from polyfetch_scrape.render_options import RenderAction, RenderOptions
 from polyfetch_scrape.retry import RetryPolicy
 
 
@@ -280,3 +280,76 @@ def test_playwright_backend_omits_wait_for_selector_when_none(
     )
 
     page.wait_for_selector.assert_not_called()
+
+
+def test_playwright_backend_maps_each_action_verb(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    actions = (
+        RenderAction("click", selector="#a"),
+        RenderAction("click_text", text="Go"),
+        RenderAction("fill", selector="#b", value="hi"),
+        RenderAction("wait_for_selector", selector="#c"),
+        RenderAction("wait_ms", ms=250),
+    )
+    playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(actions=actions),
+    )
+
+    page.click.assert_called_once_with("#a", timeout=5000)
+    page.get_by_text.assert_called_once_with("Go")
+    page.get_by_text.return_value.click.assert_called_once_with(timeout=5000)
+    page.fill.assert_called_once_with("#b", "hi", timeout=5000)
+    page.wait_for_selector.assert_called_once_with("#c", timeout=5000)
+    page.wait_for_timeout.assert_called_once_with(250)
+
+
+def test_playwright_backend_runs_actions_before_waits_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(
+            actions=(
+                RenderAction("click", selector="#a"),
+                RenderAction("fill", selector="#b", value="x"),
+            ),
+            wait_for_selector="#done",
+        ),
+    )
+
+    # Actions fire in declared order, then _apply_waits' selector wait.
+    names = [c[0] for c in page.method_calls]
+    ordered = [n for n in names if n in {"click", "fill", "wait_for_selector"}]
+    assert ordered == ["click", "fill", "wait_for_selector"]
+    page.click.assert_called_once_with("#a", timeout=5000)
+    page.fill.assert_called_once_with("#b", "x", timeout=5000)
+    page.wait_for_selector.assert_called_once_with("#done", timeout=5000)
+
+
+def test_playwright_backend_no_actions_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    page.click.assert_not_called()
+    page.fill.assert_not_called()
+    page.get_by_text.assert_not_called()
+    page.wait_for_timeout.assert_not_called()

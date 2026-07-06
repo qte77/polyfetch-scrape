@@ -9,11 +9,19 @@ from polyfetch_scrape._backends import (
     playwright_backend,
 )
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
-from polyfetch_scrape.render_options import RenderOptions
+from polyfetch_scrape.render_options import RenderAction, RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
-__all__ = ["AuthRequired", "FetchError", "GoneError", "LegalBlock", "RenderOptions", "fetch"]
+__all__ = [
+    "AuthRequired",
+    "FetchError",
+    "GoneError",
+    "LegalBlock",
+    "RenderAction",
+    "RenderOptions",
+    "fetch",
+]
 
 Browser = Literal["chrome", "firefox"]
 Tier = Literal["httpx", "curl_cffi", "playwright"]
