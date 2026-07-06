@@ -5,7 +5,7 @@
 
 Reusable Python library + CLI that abstracts the "which tool beats which anti-bot" decision: callers just `fetch(url)` and get back a typed `Response` regardless of which backend ultimately succeeded.
 
-**I am a:** [Library user](#quick-start-library) | [CLI user](#quick-start-cli) | [Contributor](#development)
+**I am a:** [Library user](#quick-start-library) | [CLI user](#quick-start-cli) | [Agent / sideload](USING.md) | [Contributor](#development)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-informational)](CHANGELOG.md)
@@ -41,6 +41,8 @@ polyfetch fetch https://quotes.toscrape.com/js/ --tier playwright   # force the 
 polyfetch bulk urls.txt --workers 4
 polyfetch --help
 ```
+
+**Consuming polyfetch from another project or an agent without installing it?** See [`USING.md`](USING.md) — the `uv run --directory` env-borrow contract (no venv poison).
 
 ## Fallback Chain
 
@@ -106,6 +108,7 @@ Three-tier sync `fetch()` library wrapped by a thin typer CLI. Code lives under 
 
 ## References
 
+- [Using without installing](USING.md) — call polyfetch from another repo/agent via `uv run --directory` (env-borrow contract: invocation, JSON schema, errors, stable surface)
 - [Roadmap](docs/roadmap.md) — delivery history + core directions ahead
 - [Architecture](docs/architecture.md) — fallback-chain data flow, component responsibilities, invariants
 - [User stories](docs/userstory.md) — who it serves and what each need maps to
