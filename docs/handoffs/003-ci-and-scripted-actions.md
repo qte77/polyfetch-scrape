@@ -1,6 +1,6 @@
 # Handoff — 003 CI (#98) + scripted actions (#71) + agent CLI contract (#94, #101, USING.md/#41)
 
-**Plan:** `docs/plans/003-ci-and-scripted-actions.md` · **Status:** in progress (USING.md/#41 done, pending PR; #98/#71/#94/#101 to do) ·
+**Plan:** `docs/plans/003-ci-and-scripted-actions.md` · **Status:** ✅ complete — all merged (USING.md/#41 #102, #98 #103, #101 #104, #94 #106, #71 #107; base64 deferred → #105) ·
 **Repo:** `main` (v0.5.0 released) · **Issues:** [#98](https://github.com/qte77/polyfetch-scrape/issues/98), [#71](https://github.com/qte77/polyfetch-scrape/issues/71), [#94](https://github.com/qte77/polyfetch-scrape/issues/94), [#101](https://github.com/qte77/polyfetch-scrape/issues/101).
 
 ## Onboard
