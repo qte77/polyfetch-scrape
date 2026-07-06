@@ -46,4 +46,4 @@ def raise_for_terminal_status(status: int, url: str) -> None:
     """Raise the mapped terminal error for a status that must not be retried or escalated."""
     exc_type = _TERMINAL.get(status)
     if exc_type is not None:
-        raise exc_type(f"terminal HTTP {status}: {url}")
+        raise exc_type(f"terminal HTTP {status}: {url}", status=status)

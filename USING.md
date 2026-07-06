@@ -49,8 +49,14 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 ## Errors & exit codes
 
 - Success → exit `0`. Failure → exit `1` (`bulk` exits `1` if **any** URL failed).
-- `bulk` failures appear inline: `{"url": "…", "error": "GoneError: terminal HTTP 404: …", "backend": null}`.
-- `fetch` failures currently print `FetchError: <msg>` to **stderr** (plain text; does not yet honor `--json`). Structured JSON errors (`error_type` + `status`, `fetch`/`bulk` parity) are tracked in **[#101](https://github.com/qte77/polyfetch-scrape/issues/101)**.
+- On `--json`, both `fetch` (**stdout**) and every failed `bulk` line emit the same error schema:
+
+```json
+{"url": "https://…", "error_type": "GoneError", "status": 404, "message": "terminal HTTP 404: https://…"}
+```
+
+- `error_type` = the exception class (below); `status` = terminal HTTP code, or `null` when not status-bound (e.g. retries exhausted).
+- Without `--json`, `fetch` prints `<ErrorType>: <message>` to **stderr**.
 - Terminal statuses — no retry, no escalation. Exception names (all subclass `FetchError`): `AuthRequired` (401/407), `GoneError` (404/410), `LegalBlock` (451).
 
 ## Fallback tiers (automatic)
