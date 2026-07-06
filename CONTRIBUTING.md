@@ -53,6 +53,8 @@
 
 Direct CLI (when `make` doesn't fit): `uv run polyfetch fetch URL [options]` and `uv run polyfetch bulk FILE [options]`. Run `uv run polyfetch --help` for the full surface.
 
+Consuming polyfetch from **another** project or an agent *without installing it* (env-borrow via `uv run --directory`, no venv poison): see [`USING.md`](USING.md).
+
 ## Tooling discipline
 
 - **Always go through `make` or `uv run`.** Never invoke `pip`, bare `pytest`, bare `ruff`, bare `pyright`, or bare `polyfetch`. The single exception is `pip install uv -q` inside `setup_uv` — bootstrap-only.

@@ -1,0 +1,18 @@
+// Local markdownlint config — mirrors the EFFECTIVE ruleset of the shared CI
+// workflow (qte77/.github → .github/workflows/lint-md-links.yml) so a local
+// `markdownlint-cli2 <files>` matches CI instead of drowning in defaults.
+//
+// Only rules already unenforced in CI are disabled (existing committed docs
+// violate them while the checks stay green):
+//   MD013 line-length            — docs wrap by sentence, not column (README/CHANGELOG)
+//   MD032 blanks-around-lists     — plan/handoff step lists are intentionally tight
+//   MD036 no-emphasis-as-heading  — plans use **Steps**/**Design:** as sub-labels
+//   MD060 table-column-style      — compact pipe tables are the repo style
+// Everything else stays on; MD033/MD024 are opted out inline per-file where needed.
+{
+  "default": true,
+  "MD013": false,
+  "MD032": false,
+  "MD036": false,
+  "MD060": false
+}
