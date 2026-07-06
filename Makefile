@@ -1,5 +1,5 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
-        test test_e2e test_coverage validate quick_validate probe probe_bulk hunt \
+        test test_e2e test_coverage validate ci quick_validate probe probe_bulk hunt \
         demo_tiers render help
 .DEFAULT_GOAL := help
 
@@ -51,6 +51,14 @@ validate:  ## Full pre-commit validation
 	$(MAKE) -s complexity
 	$(MAKE) -s test_coverage
 	@echo "=== validate: all passed ==="
+
+ci:  ## Check-only CI pipeline (no mutation; validate without the formatters)
+	uv run ruff format --check .
+	uv run ruff check .
+	$(MAKE) -s type_check
+	$(MAKE) -s complexity
+	$(MAKE) -s test_coverage
+	@echo "=== ci: all passed ==="
 
 quick_validate:  ## Fast dev cycle (no tests)
 	$(MAKE) -s lint_src

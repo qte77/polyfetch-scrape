@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 - CI: `bump-version` + `tag-release` GitHub Actions workflows — automate the two-step release pipeline (`bump-my-version` → `chore(release)` PR → tag + GitHub Release from the CHANGELOG section), matching the qte77 sibling convention. `[tool.bumpversion]` in `pyproject.toml` drives the file/CHANGELOG rewrites (incl. the `uv.lock` self-ref). See README "Versioning".
 - `USING.md` — machine-facing "use without installing" contract for consuming polyfetch from another project or agent via `uv run --directory` (env-borrow, no venv poison): canonical invocation, `--json` output schema, error/exit-code contract, and the stable public surface. Discoverable from README (role nav + References) and CONTRIBUTING. Folds in #41.
+- CI: `.github/workflows/test.yml` + a check-only `make ci` recipe — runs ruff (check-only), pyright, complexipy, and pytest (coverage ≥ 90, e2e skipped) on every push/PR to `main`. Python tests/types/lint previously ran only locally via `make validate`; they now gate PRs. `make ci` is the non-mutating counterpart of `make validate` (uses `ruff format --check` / `ruff check` instead of the `--fix` formatters). Closes #98.
 
 ## [0.5.0] - 2026-07-04
 
