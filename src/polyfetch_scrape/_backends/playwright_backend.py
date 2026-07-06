@@ -14,7 +14,7 @@ from polyfetch_scrape._backends import (
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import RenderAction, RenderOptions
 from polyfetch_scrape.response import Response
-from polyfetch_scrape.retry import RetryPolicy
+from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
 
 _FINGERPRINT_STATUSES: frozenset[int] = frozenset({403})
 
@@ -24,6 +24,7 @@ class _Attempt:
     response: Response | None
     block_status: int | None
     error: Exception | None
+    retry_after: float | None = None
 
 
 def attempt(
@@ -45,11 +46,11 @@ def attempt(
         browser = pw.chromium.launch(headless=True)
         try:
             for attempt_idx in range(policy.max_attempts):
-                last = _attempt_once(browser, url, headers, timeout_ms, opts)
+                last = _attempt_once(browser, url, headers, timeout_ms, opts, policy)
                 if last.response is not None:
                     return last.response
                 if attempt_idx + 1 < policy.max_attempts:
-                    time.sleep(policy.backoff_initial * (policy.backoff_factor**attempt_idx))
+                    time.sleep(next_delay(last.retry_after, policy, attempt_idx))
         finally:
             browser.close()
 
@@ -68,6 +69,7 @@ def _attempt_once(
     headers: Mapping[str, str] | None,
     timeout_ms: int,
     opts: RenderOptions,
+    policy: RetryPolicy,
 ) -> _Attempt:
     context = browser.new_context()
     if headers:
@@ -83,8 +85,9 @@ def _attempt_once(
             return _Attempt(None, None, FetchError("playwright: no response object"))
 
         status = int(response.status)
-        if status in _FINGERPRINT_STATUSES:
-            return _Attempt(None, status, None)
+        if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
+            headers_map = {str(k).lower(): str(v) for k, v in dict(response.all_headers()).items()}
+            return _Attempt(None, status, None, parse_retry_after(headers_map.get("retry-after")))
 
         raise_for_terminal_status(status, url)
         _apply_actions(page, opts.actions, timeout_ms)
