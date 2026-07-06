@@ -1,7 +1,7 @@
 # 003 — CI (#98) + scripted actions (#71) + agent-facing CLI contract (#94, #101, USING.md/#41)
 
-> Status: **in progress** — USING.md/#41 implemented this session (working tree, pending PR); #98/#71/#94/#101 not started. Handoff: `docs/handoffs/003-ci-and-scripted-actions.md` (update to match).
-> Repo `main @ cd061c7` (or later), **v0.5.0 released**. Independent units — recommended order in "Git / sequencing".
+> Status: **complete** — all units merged to `main`: USING.md/#41 (PR #102), #98 CI (#103), #101 structured errors (#104), #94 CLI render flags (#106), #71 scripted actions (#107). Deferred: base64 screenshot in `--json` (#105). Handoff: `docs/handoffs/003-ci-and-scripted-actions.md`.
+> Repo `main @ cd061c7` (or later), **v0.5.0 released**. Independent units — the sections below are the as-executed record.
 
 ## Context
 
