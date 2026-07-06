@@ -47,12 +47,22 @@ def _summarize(resp: Response) -> dict[str, Any]:
 
 
 def _format_text(payload: dict[str, Any]) -> str:
-    if "error" in payload:
-        return f"{payload['url']}  →  ERROR  {payload['error']}"
+    if "error_type" in payload:
+        return f"{payload['url']}  →  ERROR  {payload['error_type']}: {payload['message']}"
     return (
         f"{payload['url']}  →  {payload['status']} [{payload['backend']}]  "
         f"{payload['bytes']} bytes  {payload['content_type'] or ''}"
     ).rstrip()
+
+
+def _error_payload(url: str, exc: FetchError) -> dict[str, Any]:
+    """Structured error for ``--json``: shared by ``fetch`` and ``bulk`` (see USING.md)."""
+    return {
+        "url": url,
+        "error_type": type(exc).__name__,
+        "status": exc.status,
+        "message": str(exc),
+    }
 
 
 @app.command()
@@ -90,7 +100,10 @@ def fetch_cmd(
             tier=tier,  # type: ignore[arg-type]
         )
     except FetchError as exc:
-        typer.echo(f"FetchError: {exc}", err=True)
+        if json_output:
+            typer.echo(json.dumps(_error_payload(url, exc)))
+        else:
+            typer.echo(f"{type(exc).__name__}: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     if show_body:
@@ -112,7 +125,7 @@ def _run_one(url: str, *, timeout: float, max_attempts: int) -> dict[str, Any]:
     try:
         resp = fetch(url, timeout=timeout, retry=RetryPolicy(max_attempts=max_attempts))
     except FetchError as exc:
-        return {"url": url, "error": f"{type(exc).__name__}: {exc}", "backend": None}
+        return _error_payload(url, exc)
     return _summarize(resp)
 
 
@@ -133,7 +146,7 @@ def bulk(
 
     def _emit(payload: dict[str, Any]) -> None:
         nonlocal any_failed
-        if "error" in payload:
+        if "error_type" in payload:
             any_failed = True
         line = json.dumps(payload) if json_output else _format_text(payload)
         typer.echo(line)

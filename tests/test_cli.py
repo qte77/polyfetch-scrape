@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from polyfetch_scrape.cli import app
-from polyfetch_scrape.errors import FetchError
+from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.response import Response
 
 runner = CliRunner()
@@ -82,6 +82,33 @@ def test_fetch_exits_1_on_fetcherror(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "simulated" in (result.stderr or "") + result.stdout
 
 
+@pytest.mark.parametrize(
+    ("exc", "error_type", "status"),
+    [
+        (GoneError("terminal HTTP 404: u", status=404), "GoneError", 404),
+        (AuthRequired("terminal HTTP 401: u", status=401), "AuthRequired", 401),
+        (LegalBlock("terminal HTTP 451: u", status=451), "LegalBlock", 451),
+        (FetchError("retries exhausted"), "FetchError", None),
+    ],
+)
+def test_fetch_json_emits_structured_error(
+    monkeypatch: pytest.MonkeyPatch, exc: FetchError, error_type: str, status: int | None
+) -> None:
+    def boom(*_a: object, **_kw: object) -> Response:
+        raise exc
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", boom)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["url"] == "https://x.test"
+    assert payload["error_type"] == error_type
+    assert payload["status"] == status
+    assert payload["message"] == str(exc)
+
+
 def test_bulk_emits_one_jsonline_per_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     urls = ["https://a.test", "https://b.test", "https://c.test"]
     listfile = tmp_path / "urls.txt"
@@ -135,9 +162,10 @@ def test_bulk_continues_on_error_and_exits_1(
     lines = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
     assert len(lines) == 3
     by_url = {line["url"]: line for line in lines}
-    assert "error" in by_url["https://b.test"]
-    assert "error" not in by_url["https://a.test"]
-    assert "error" not in by_url["https://c.test"]
+    assert by_url["https://b.test"]["error_type"] == "FetchError"
+    assert by_url["https://b.test"]["status"] is None
+    assert "error_type" not in by_url["https://a.test"]
+    assert "error_type" not in by_url["https://c.test"]
 
 
 def test_bulk_workers_runs_concurrently(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
