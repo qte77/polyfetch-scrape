@@ -43,6 +43,7 @@
 | `make test_e2e` | Run e2e tests against real network | Opt-in; requires `make setup_browsers` |
 | `make test_coverage` | Unit tests with coverage threshold | Threshold 90 % |
 | `make validate` | Full pre-commit pipeline | lint + types + complexity + cov |
+| `make ci` | Check-only CI pipeline (no mutation) | Same gates as `validate`, non-mutating; run by `.github/workflows/test.yml` |
 | `make quick_validate` | Fast inner-loop validation | lint + types only |
 | `make probe URL=... [JSON=1] [BROWSER=chrome\|firefox] [MAX_ATTEMPTS=N]` | Probe a single URL via CLI | Wraps `polyfetch fetch` |
 | `make probe_bulk FILE=... [WORKERS=N] [TEXT=1] [MAX_ATTEMPTS=N]` | Probe URLs from a file (skips `#` comments + blank lines) | Wraps `polyfetch bulk`; e.g. `FILE=examples/fallback-tier-targets.txt` |
