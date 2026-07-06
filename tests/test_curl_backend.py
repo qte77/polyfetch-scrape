@@ -206,3 +206,39 @@ def test_curl_backend_raises_fingerprintblock_on_persistent_403(
             timeout=5.0,
             policy=RetryPolicy(max_attempts=1),
         )
+
+
+def test_curl_backend_forwards_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _fake_response(status=200, body=b"ok")
+    session_cls = _install_session(monkeypatch, return_value=fake)
+
+    curl_backend.attempt(
+        method="POST",
+        url="https://example.com/api",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        json={"q": "x"},
+    )
+
+    kwargs = session_cls.return_value.request.call_args.kwargs
+    assert kwargs["json"] == {"q": "x"}
+    assert kwargs["data"] is None
+
+
+def test_curl_backend_forwards_raw_content_as_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _fake_response(status=200, body=b"ok")
+    session_cls = _install_session(monkeypatch, return_value=fake)
+
+    curl_backend.attempt(
+        method="POST",
+        url="https://example.com/raw",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        content=b"raw-bytes",
+    )
+
+    kwargs = session_cls.return_value.request.call_args.kwargs
+    assert kwargs["data"] == b"raw-bytes"
+    assert kwargs["json"] is None
