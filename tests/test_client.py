@@ -200,6 +200,7 @@ def test_fetch_falls_back_to_curl_on_fingerprintblock(
         headers: Mapping[str, str] | None,
         timeout: float,
         policy: RetryPolicy,
+        **_kw: object,
     ) -> Response:
         raise FingerprintBlock("blocked")
 
@@ -212,6 +213,7 @@ def test_fetch_falls_back_to_curl_on_fingerprintblock(
         timeout: float,
         policy: RetryPolicy,
         browser: str,
+        **_kw: object,
     ) -> Response:
         curl_calls.append(browser)
         return fallback_resp
@@ -241,6 +243,7 @@ def test_fetch_passes_browser_profile_to_curl(monkeypatch: pytest.MonkeyPatch) -
         timeout: float,
         policy: RetryPolicy,
         browser: str,
+        **_kw: object,
     ) -> Response:
         captured["browser"] = browser
         return Response(
@@ -436,3 +439,64 @@ def test_fetch_forwards_render_to_playwright_tier(monkeypatch: pytest.MonkeyPatc
     fetch("https://example.com", tier="playwright", render=opts)
 
     assert captured["render"] == opts
+
+
+@respx.mock
+def test_fetch_forwards_json_body_to_httpx() -> None:
+    import json as _json
+
+    url = "https://example.com/api"
+    route = respx.post(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    resp = fetch(url, method="POST", json={"limit": 20})
+
+    assert resp.status == 200
+    assert _json.loads(route.calls.last.request.content) == {"limit": 20}
+
+
+def test_fetch_rejects_json_and_content_together() -> None:
+    with pytest.raises(FetchError):
+        fetch("https://example.com", json={"a": 1}, content=b"x")
+
+
+def test_fetch_body_request_does_not_escalate_to_playwright(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pw_called = False
+
+    def fake_httpx(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("httpx blocked")
+
+    def fake_curl(*_a: object, **_kw: object) -> Response:
+        raise FingerprintBlock("curl blocked")
+
+    def fake_pw(*_a: object, **_kw: object) -> Response:
+        nonlocal pw_called
+        pw_called = True
+        return _backend_response("playwright")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
+    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+
+    # Both fingerprint tiers block a POST with a body → clear FetchError, no playwright replay.
+    with pytest.raises(FetchError) as exc_info:
+        fetch("https://example.com", method="POST", json={"a": 1})
+
+    assert pw_called is False
+    assert not isinstance(exc_info.value, FingerprintBlock)
+
+
+def test_fetch_tier_pin_playwright_rejects_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    pw_called = False
+
+    def fake_pw(*_a: object, **_kw: object) -> Response:
+        nonlocal pw_called
+        pw_called = True
+        return _backend_response("playwright")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+
+    with pytest.raises(FetchError):
+        fetch("https://example.com", tier="playwright", json={"a": 1})
+    assert pw_called is False

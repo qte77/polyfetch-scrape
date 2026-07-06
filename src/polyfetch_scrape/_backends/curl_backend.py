@@ -34,13 +34,16 @@ def attempt(
     timeout: float,
     policy: RetryPolicy,
     browser: Browser = "chrome",
+    *,
+    json: Any | None = None,
+    content: bytes | None = None,
 ) -> Response:
     last = _Attempt(None, None, None)
     session_cls = cast(Any, curl_requests).Session
 
     with session_cls(impersonate=browser) as session:
         for attempt_idx in range(policy.max_attempts):
-            last = _attempt_once(session, method, url, headers, timeout, policy)
+            last = _attempt_once(session, method, url, headers, timeout, policy, json, content)
             if last.response is not None:
                 return last.response
             if attempt_idx + 1 < policy.max_attempts:
@@ -64,6 +67,8 @@ def _attempt_once(
     headers: Mapping[str, str] | None,
     timeout: float,
     policy: RetryPolicy,
+    json: Any | None = None,
+    content: bytes | None = None,
 ) -> _Attempt:
     try:
         http_resp = session.request(
@@ -71,6 +76,8 @@ def _attempt_once(
             url,
             headers=dict(headers) if headers else None,
             timeout=timeout,
+            json=json,
+            data=content,
         )
     except Exception as exc:  # curl_cffi raises a wide error hierarchy
         return _Attempt(None, None, exc)

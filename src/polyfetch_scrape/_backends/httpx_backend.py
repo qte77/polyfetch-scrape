@@ -1,6 +1,7 @@
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -36,12 +37,15 @@ def attempt(
     headers: Mapping[str, str] | None,
     timeout: float,
     policy: RetryPolicy,
+    *,
+    json: Any | None = None,
+    content: bytes | None = None,
 ) -> Response:
     last = _Attempt(None, None, None)
 
     with httpx.Client(timeout=timeout) as client:
         for attempt_idx in range(policy.max_attempts):
-            last = _attempt_once(client, method, url, headers, policy)
+            last = _attempt_once(client, method, url, headers, policy, json, content)
             if last.response is not None:
                 return last.response
             if attempt_idx + 1 < policy.max_attempts:
@@ -67,9 +71,13 @@ def _attempt_once(
     url: str,
     headers: Mapping[str, str] | None,
     policy: RetryPolicy,
+    json: Any | None = None,
+    content: bytes | None = None,
 ) -> _Attempt:
     try:
-        http_resp = client.request(method, url, headers=_with_default_headers(headers))
+        http_resp = client.request(
+            method, url, headers=_with_default_headers(headers), json=json, content=content
+        )
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 

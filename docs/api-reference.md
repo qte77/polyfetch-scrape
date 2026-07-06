@@ -8,13 +8,17 @@ The complete public surface of `polyfetch_scrape`. Everything under `_backends/`
 ```python
 fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
-      etag=None, last_modified=None, render=None) -> Response
+      etag=None, last_modified=None, json=None, content=None,
+      render=None) -> Response
       # tier pins one backend: "httpx"|"curl_cffi"|"playwright"
       # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
+      # json=<obj> / content=<bytes> → POST/PUT request body (mutually exclusive)
       # render=RenderOptions(...) → playwright-tier wait/screenshot controls
 ```
 
 A single call runs the three-tier fallback chain (or the pinned `tier`) and returns a typed `Response` regardless of which backend succeeded.
+
+**Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The playwright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to playwright — or one pinned to `tier="playwright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
 ## Render controls (playwright tier)
 

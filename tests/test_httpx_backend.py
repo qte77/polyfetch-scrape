@@ -246,3 +246,42 @@ def test_httpx_backend_caps_excessive_retry_after(monkeypatch: pytest.MonkeyPatc
     )
 
     assert slept == [RETRY_AFTER_CAP_S]
+
+
+@respx.mock
+def test_httpx_backend_forwards_json_body() -> None:
+    import json as _json
+
+    url = "https://example.com/api"
+    route = respx.post(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    resp = httpx_backend.attempt(
+        method="POST",
+        url=url,
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        json={"limit": 20, "offset": 0},
+    )
+
+    assert resp.status == 200
+    sent = route.calls.last.request
+    assert _json.loads(sent.content) == {"limit": 20, "offset": 0}
+    assert sent.headers["content-type"] == "application/json"
+
+
+@respx.mock
+def test_httpx_backend_forwards_raw_content_body() -> None:
+    url = "https://example.com/raw"
+    route = respx.post(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    httpx_backend.attempt(
+        method="POST",
+        url=url,
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        content=b"raw-bytes",
+    )
+
+    assert route.calls.last.request.content == b"raw-bytes"
