@@ -37,6 +37,7 @@ print(r.status, r.backend, len(r.body))     # 200 curl_cffi 179447
 polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
 polyfetch fetch https://httpbin.org/user-agent --show-body   # verify the UA you send
+polyfetch fetch https://example.com --etag '"abc123"'   # conditional GET (If-None-Match → 304 on match)
 polyfetch fetch https://quotes.toscrape.com/js/ --tier playwright   # force the JS-render tier
 polyfetch fetch https://quotes.toscrape.com/js/ --tier playwright --screenshot viewport --screenshot-out shot.png   # render + screenshot
 polyfetch bulk urls.txt --workers 4

@@ -105,6 +105,32 @@ def test_fetch_render_flags_build_render_options(monkeypatch: pytest.MonkeyPatch
     assert render.screenshot == "viewport"  # type: ignore[attr-defined]
 
 
+def test_fetch_conditional_flags_reach_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "https://x.test",
+            "--etag",
+            '"abc123"',
+            "--if-modified-since",
+            "Wed, 21 Oct 2015 07:28:00 GMT",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["etag"] == '"abc123"'
+    assert captured["last_modified"] == "Wed, 21 Oct 2015 07:28:00 GMT"
+
+
 def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     png = b"\x89PNG\r\n\x1a\nFAKE"
 

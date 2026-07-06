@@ -106,6 +106,17 @@ def fetch_cmd(
             "Render flags only apply when the playwright tier runs.",
         ),
     ] = None,
+    etag: Annotated[
+        str | None,
+        typer.Option("--etag", help="Send If-None-Match with this validator (conditional GET)."),
+    ] = None,
+    if_modified_since: Annotated[
+        str | None,
+        typer.Option(
+            "--if-modified-since",
+            help="Send If-Modified-Since with this HTTP-date (conditional GET).",
+        ),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of text")] = False,
     show_body: Annotated[
         bool,
@@ -128,6 +139,8 @@ def fetch_cmd(
             retry=policy,
             browser=browser,  # type: ignore[arg-type]
             tier=tier,  # type: ignore[arg-type]
+            etag=etag,
+            last_modified=if_modified_since,
             render=render,
         )
     except FetchError as exc:
