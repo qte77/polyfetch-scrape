@@ -29,7 +29,9 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 | `polyfetch bulk <file> [--workers N]` | one URL per line (`#`/blank skipped) → JSON-lines |
 | `polyfetch --help` / `polyfetch --version` | discover the surface / print version |
 
-`fetch` flags: `--tier httpx|curl_cffi|playwright` (pin one backend, skip fallback), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--wait-for-selector CSS` (playwright only), `--method`, `--json`, `--show-body`.
+`fetch` flags: `--tier httpx|curl_cffi|playwright` (pin one backend, skip fallback), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--json`, `--show-body`.
+
+`fetch` **playwright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|<css>` + `--screenshot-out PATH` (writes the PNG). A base64 screenshot inside `--json` is tracked in [#105](https://github.com/qte77/polyfetch-scrape/issues/105).
 
 `bulk` flags: `--workers N` (concurrency), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 

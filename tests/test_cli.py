@@ -70,6 +70,76 @@ def test_fetch_show_body_writes_raw_bytes(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.stdout_bytes == body
 
 
+def test_fetch_render_flags_build_render_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "https://x.test",
+            "--tier",
+            "playwright",
+            "--wait-until",
+            "networkidle",
+            "--wait-for-selector",
+            ".q",
+            "--wait-for-function",
+            "window.ready",
+            "--screenshot",
+            "viewport",
+        ],
+    )
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.wait_until == "networkidle"  # type: ignore[attr-defined]
+    assert render.wait_for_selector == ".q"  # type: ignore[attr-defined]
+    assert render.wait_for_function == "window.ready"  # type: ignore[attr-defined]
+    assert render.screenshot == "viewport"  # type: ignore[attr-defined]
+
+
+def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    png = b"\x89PNG\r\n\x1a\nFAKE"
+
+    def fake(url: str, **_kw: object) -> Response:
+        return Response(
+            url=url,
+            status=200,
+            headers={"content-type": "image/png"},
+            body=b"x",
+            content_type="image/png",
+            backend="playwright",
+            screenshot=png,
+        )
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+    out = tmp_path / "shot.png"
+
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "https://x.test",
+            "--tier",
+            "playwright",
+            "--screenshot",
+            "viewport",
+            "--screenshot-out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert out.read_bytes() == png
+
+
 def test_fetch_exits_1_on_fetcherror(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(*_a: object, **_kw: object) -> Response:
         raise FetchError("simulated")
