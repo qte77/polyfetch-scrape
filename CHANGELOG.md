@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
+- README restructured to the qte77 doc-structure canon — added `## What` (value bullets) and `## Why` (incumbent → gap → differentiation) sections, a Test/CI status badge, and a standalone `## License` (SPDX + `NOTICE`); cleaned the hero to H1 + tagline + badges; reordered to Hero → Badges → What → How → Why → References → License; and moved the full public-API signatures out to a new [`docs/api-reference.md`](docs/api-reference.md) (README now links to it). No API or behaviour change. Closes #55.
 - `polyfetch fetch`/`bulk` now emit **structured JSON errors** under `--json`: both share the schema `{url, error_type, status, message}` (`fetch` prints it to stdout, honoring `--json` on failure; every failed `bulk` line matches). `error_type` is the exception class (`GoneError`/`AuthRequired`/`LegalBlock`/`FetchError`) and `status` the terminal HTTP code (or `null`); terminal exceptions now carry `.status`. **Breaking for `bulk` JSON consumers:** replaces the old `{"error": "GoneError: …", "backend": null}` line shape. Closes #101.
 
 ### Fixed
