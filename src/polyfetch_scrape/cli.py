@@ -10,6 +10,7 @@ import typer
 
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
+from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
@@ -73,12 +74,36 @@ def fetch_cmd(
     max_attempts: int = 3,
     browser: str = "chrome",
     wait_for_selector: str | None = None,
+    wait_until: Annotated[
+        str,
+        typer.Option(
+            "--wait-until",
+            help="Playwright load milestone: domcontentloaded|load|networkidle.",
+        ),
+    ] = "domcontentloaded",
+    wait_for_function: Annotated[
+        str | None,
+        typer.Option(
+            "--wait-for-function", help="Playwright: wait until this JS predicate is truthy."
+        ),
+    ] = None,
+    screenshot: Annotated[
+        str | None,
+        typer.Option(
+            "--screenshot",
+            help="Playwright: PNG of 'viewport' or a CSS selector; write via --screenshot-out.",
+        ),
+    ] = None,
+    screenshot_out: Annotated[
+        Path | None,
+        typer.Option("--screenshot-out", help="Write the --screenshot PNG to this path."),
+    ] = None,
     tier: Annotated[
         str | None,
         typer.Option(
             "--tier",
             help="Pin one backend (httpx|curl_cffi|playwright) and skip the fallback chain. "
-            "--wait-for-selector only applies when the playwright tier runs.",
+            "Render flags only apply when the playwright tier runs.",
         ),
     ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of text")] = False,
@@ -89,6 +114,12 @@ def fetch_cmd(
 ) -> None:
     """Fetch a single URL through the fallback chain."""
     policy = RetryPolicy(max_attempts=max_attempts)
+    render = RenderOptions(
+        wait_until=wait_until,  # type: ignore[arg-type]
+        wait_for_selector=wait_for_selector,
+        wait_for_function=wait_for_function,
+        screenshot=screenshot,
+    )
     try:
         resp = fetch(
             url,
@@ -96,8 +127,8 @@ def fetch_cmd(
             timeout=timeout,
             retry=policy,
             browser=browser,  # type: ignore[arg-type]
-            wait_for_selector=wait_for_selector,
             tier=tier,  # type: ignore[arg-type]
+            render=render,
         )
     except FetchError as exc:
         if json_output:
@@ -105,6 +136,9 @@ def fetch_cmd(
         else:
             typer.echo(f"{type(exc).__name__}: {exc}", err=True)
         raise typer.Exit(1) from exc
+
+    if screenshot_out is not None and resp.screenshot is not None:
+        screenshot_out.write_bytes(resp.screenshot)
 
     if show_body:
         # Write the raw bytes verbatim: decoding to str dropped output on non-UTF-8 /
