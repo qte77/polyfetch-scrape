@@ -12,7 +12,7 @@ from polyfetch_scrape._backends import (
     raise_for_terminal_status,
 )
 from polyfetch_scrape.errors import FetchError
-from polyfetch_scrape.render_options import RenderOptions
+from polyfetch_scrape.render_options import RenderAction, RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 
@@ -87,6 +87,7 @@ def _attempt_once(
             return _Attempt(None, status, None)
 
         raise_for_terminal_status(status, url)
+        _apply_actions(page, opts.actions, timeout_ms)
         _apply_waits(page, opts, timeout_ms)
 
         body = page.content().encode("utf-8")
@@ -107,6 +108,21 @@ def _attempt_once(
         )
     finally:
         context.close()
+
+
+def _apply_actions(page: Any, actions: tuple[RenderAction, ...], timeout_ms: int) -> None:
+    """Run scripted actions in order before waiting/capture (drive → settle → capture)."""
+    for action in actions:
+        if action.verb == "click":
+            page.click(action.selector, timeout=timeout_ms)
+        elif action.verb == "click_text":
+            page.get_by_text(action.text).click(timeout=timeout_ms)
+        elif action.verb == "fill":
+            page.fill(action.selector, action.value, timeout=timeout_ms)
+        elif action.verb == "wait_for_selector":
+            page.wait_for_selector(action.selector, timeout=timeout_ms)
+        elif action.verb == "wait_ms":
+            page.wait_for_timeout(action.ms)
 
 
 def _apply_waits(page: Any, opts: RenderOptions, timeout_ms: int) -> None:

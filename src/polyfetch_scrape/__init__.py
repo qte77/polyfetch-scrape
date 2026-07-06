@@ -5,6 +5,7 @@ from polyfetch_scrape.client import (
     FetchError,
     GoneError,
     LegalBlock,
+    RenderAction,
     RenderOptions,
     fetch,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "FetchError",
     "GoneError",
     "LegalBlock",
+    "RenderAction",
     "RenderOptions",
     "Response",
     "RetryPolicy",
