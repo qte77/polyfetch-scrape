@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 - `polyfetch fetch`/`bulk` now emit **structured JSON errors** under `--json`: both share the schema `{url, error_type, status, message}` (`fetch` prints it to stdout, honoring `--json` on failure; every failed `bulk` line matches). `error_type` is the exception class (`GoneError`/`AuthRequired`/`LegalBlock`/`FetchError`) and `status` the terminal HTTP code (or `null`); terminal exceptions now carry `.status`. **Breaking for `bulk` JSON consumers:** replaces the old `{"error": "GoneError: …", "backend": null}` line shape. Closes #101.
 
+### Fixed
+
+- Playwright tier now **retries retryable 5xx statuses** (`{429,500,502,503,504}`) and honors `Retry-After`, matching the httpx/curl_cffi tiers. Previously a 5xx response was wrapped and returned as success instead of being retried; a persistent 5xx now raises `FetchError` after `max_attempts`. Closes #84.
+
 ## [0.5.0] - 2026-07-04
 
 ### Added

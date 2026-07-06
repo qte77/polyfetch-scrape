@@ -251,6 +251,78 @@ def test_playwright_backend_raises_fetcherror_on_persistent_timeout(
         )
 
 
+def test_playwright_backend_retries_on_5xx_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    # First response is a retryable 503; second is a 200 — should retry, not return the 503.
+    response_503 = MagicMock(spec=pw_sync.Response)
+    response_503.status = 503
+    response_503.all_headers.return_value = {}
+
+    response_ok = MagicMock(spec=pw_sync.Response)
+    response_ok.status = 200
+    response_ok.all_headers.return_value = {"content-type": "text/html"}
+
+    page, _ = _make_pw_chain(monkeypatch, goto_side_effect=[response_503, response_ok])
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=2),
+    )
+
+    assert resp.status == 200
+    assert page.goto.call_count == 2
+
+
+def test_playwright_backend_raises_fetcherror_on_persistent_5xx(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_pw_chain(monkeypatch, response_status=503)
+
+    with pytest.raises(FetchError) as excinfo:
+        playwright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=2),
+        )
+
+    # A 5xx is a plain retry-exhaustion FetchError, never the fingerprint (403) path.
+    assert not isinstance(excinfo.value, FingerprintBlock)
+    assert "status=503" in str(excinfo.value)
+
+
+def test_playwright_backend_honors_retry_after_on_5xx(monkeypatch: pytest.MonkeyPatch) -> None:
+    delays: list[float] = []
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.playwright_backend.time.sleep",
+        lambda s: delays.append(s),
+    )
+
+    response_503 = MagicMock(spec=pw_sync.Response)
+    response_503.status = 503
+    response_503.all_headers.return_value = {"retry-after": "7"}
+
+    response_ok = MagicMock(spec=pw_sync.Response)
+    response_ok.status = 200
+    response_ok.all_headers.return_value = {"content-type": "text/html"}
+
+    _make_pw_chain(monkeypatch, goto_side_effect=[response_503, response_ok])
+
+    playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=2),
+    )
+
+    # Server Retry-After wins over exponential backoff.
+    assert delays == [7.0]
+
+
 def test_playwright_backend_passes_wait_for_selector(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
