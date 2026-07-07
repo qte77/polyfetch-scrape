@@ -40,6 +40,14 @@ screenshot=...)` → `Response.screenshot` (#67, #68).
 
 Covered by: `AuthRequired` (401/407), `GoneError` (404/410), `LegalBlock` (451) (#27/#28/#30).
 
+## Caller controlling cost and escalation depth
+
+> As a caller in CI or a latency-sensitive path, I don't want a fetch silently escalating to a heavy
+> headless browser — and sometimes I want to force the JS tier straight away.
+
+Covered by: `fetch(url, min_tier=..., max_tier=...)` and the `--min-tier` / `--max-tier` CLI flags —
+cap escalation (`max_tier="curl_cffi"` never launches Chromium) or force a tier (#80).
+
 ## Author of a domain adapter (arXiv, USPTO, ...)
 
 > As someone building a paper/patent client, I want the fetch/anti-bot machinery without

@@ -8,9 +8,11 @@ The complete public surface of `polyfetch_scrape`. Everything under `_backends/`
 ```python
 fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
-      etag=None, last_modified=None, json=None, content=None,
-      render=None) -> Response
-      # tier pins one backend: "httpx"|"curl_cffi"|"playwright"
+      min_tier=None, max_tier=None, etag=None, last_modified=None,
+      json=None, content=None, render=None) -> Response
+      # tier pins one backend: "httpx"|"curl_cffi"|"playwright" (≡ min_tier==max_tier)
+      # min_tier / max_tier → bound the fallback range: max_tier="curl_cffi" caps escalation
+      #   (never launches the browser); min_tier="playwright" forces the JS tier
       # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
       # json=<obj> / content=<bytes> → POST/PUT request body (mutually exclusive)
       # render=RenderOptions(...) → playwright-tier wait/screenshot controls
