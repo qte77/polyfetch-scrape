@@ -500,3 +500,97 @@ def test_fetch_tier_pin_playwright_rejects_body(monkeypatch: pytest.MonkeyPatch)
     with pytest.raises(FetchError):
         fetch("https://example.com", tier="playwright", json={"a": 1})
     assert pw_called is False
+
+
+def _install_tier_spies(monkeypatch: pytest.MonkeyPatch, calls: dict[str, int]) -> None:
+    """Wire all three backends as counters; httpx/curl block, playwright returns."""
+
+    def fake_httpx(*_a: object, **_kw: object) -> Response:
+        calls["httpx"] += 1
+        raise FingerprintBlock("httpx blocked")
+
+    def fake_curl(*_a: object, **_kw: object) -> Response:
+        calls["curl"] += 1
+        raise FingerprintBlock("curl blocked")
+
+    def fake_pw(*_a: object, **_kw: object) -> Response:
+        calls["pw"] += 1
+        return _backend_response("playwright")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
+    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+
+
+def test_fetch_max_tier_caps_before_playwright(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"httpx": 0, "curl": 0, "pw": 0}
+    _install_tier_spies(monkeypatch, calls)
+
+    # Both fingerprint tiers block, but max_tier caps at curl_cffi → never launch the browser.
+    with pytest.raises(FetchError):
+        fetch("https://example.com", max_tier="curl_cffi")
+
+    assert calls == {"httpx": 1, "curl": 1, "pw": 0}
+
+
+def test_fetch_min_tier_forces_playwright(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"httpx": 0, "curl": 0, "pw": 0}
+    _install_tier_spies(monkeypatch, calls)
+
+    resp = fetch("https://example.com", min_tier="playwright")
+
+    assert resp.backend == "playwright"
+    assert calls == {"httpx": 0, "curl": 0, "pw": 1}
+
+
+def test_fetch_min_tier_skips_httpx(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"httpx": 0, "curl": 0, "pw": 0}
+
+    def fake_httpx(*_a: object, **_kw: object) -> Response:
+        calls["httpx"] += 1
+        raise FingerprintBlock("httpx blocked")
+
+    def fake_curl(*_a: object, **_kw: object) -> Response:
+        calls["curl"] += 1
+        return _backend_response("curl_cffi")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+    monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
+
+    resp = fetch("https://example.com", min_tier="curl_cffi")
+
+    assert resp.backend == "curl_cffi"
+    assert calls == {"httpx": 0, "curl": 1, "pw": 0}
+
+
+def test_fetch_rejects_min_tier_above_max_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"httpx": 0, "curl": 0, "pw": 0}
+    _install_tier_spies(monkeypatch, calls)
+
+    with pytest.raises(FetchError):
+        fetch("https://example.com", min_tier="playwright", max_tier="httpx")
+
+    assert calls == {"httpx": 0, "curl": 0, "pw": 0}
+
+
+def test_fetch_rejects_tier_combined_with_min_or_max(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"httpx": 0, "curl": 0, "pw": 0}
+    _install_tier_spies(monkeypatch, calls)
+
+    with pytest.raises(FetchError):
+        fetch("https://example.com", tier="httpx", min_tier="curl_cffi")
+
+    assert calls == {"httpx": 0, "curl": 0, "pw": 0}
+
+
+def test_fetch_body_with_max_tier_curl_never_reaches_playwright(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"httpx": 0, "curl": 0, "pw": 0}
+    _install_tier_spies(monkeypatch, calls)
+
+    # A POST body capped at curl_cffi: both block → FetchError, playwright never in range.
+    with pytest.raises(FetchError):
+        fetch("https://example.com", method="POST", json={"a": 1}, max_tier="curl_cffi")
+
+    assert calls["pw"] == 0

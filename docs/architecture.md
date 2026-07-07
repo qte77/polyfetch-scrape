@@ -9,19 +9,19 @@ How a single `fetch(url)` call flows through the three-tier fallback chain to a 
                          │
               _with_conditional_headers    (etag / last_modified → If-None-Match / If-Modified-Since)
                          │
-        tier set? ───────┴─────── pinned → _run_single_tier ──┐
-                         │ (auto)                              │
-                         ▼                                     │
-               httpx_backend.attempt ──2xx──► Response         │
-                         │                                     │
-                FingerprintBlock (403 / TLS error)             │
-                         ▼                                     │
-               curl_backend.attempt  ──2xx──► Response         │
-                (chrome TLS impersonation)                     │
-                         │                                     │
-                FingerprintBlock                               │
-                         ▼                                     ▼
-            playwright_backend.attempt ──2xx──► Response  ◄────┘
+   _resolve_tier_range(tier / min_tier / max_tier) → active slice of the chain below
+                         │   default: full chain · tier= pins one · min_tier skips cheaper · max_tier caps
+                         ▼   (_run_chain walks the slice; _dispatch calls each tier)
+               httpx_backend.attempt ──2xx──► Response
+                         │
+                FingerprintBlock (403 / TLS error)
+                         ▼
+               curl_backend.attempt  ──2xx──► Response
+                (chrome TLS impersonation)
+                         │
+                FingerprintBlock
+                         ▼
+            playwright_backend.attempt ──2xx──► Response
             (headless Chromium; RenderOptions:
              wait_until / wait_for_* / screenshot)
                          │
@@ -35,7 +35,7 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
 
 | Module | Responsibility |
 |---|---|
-| `client.py` | Public `fetch()` orchestrator: conditional headers, auto-escalation vs. pinned (`tier=`), `RenderOptions` plumbing to the playwright tier. |
+| `client.py` | Public `fetch()` orchestrator: conditional headers, tier-range escalation (`min_tier`/`max_tier`; `tier=` pins one), request-body routing (`json`/`content`, httpx/curl only), `RenderOptions` plumbing to the playwright tier. |
 | `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
 | `_backends/curl_backend.py` | Tier 2: `curl_cffi` Chrome TLS impersonation; engages on 403 / TLS error. |
@@ -52,11 +52,11 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
   records which tier served the request.
 - **Terminal statuses raise in every tier** (401/407 → `AuthRequired`, 404/410 → `GoneError`, 451 →
   `LegalBlock`) — no retry, no escalation; 451 never reaches the fingerprint tiers (RFC 7725).
-- **Escalation is fingerprint-only.** Only `FingerprintBlock` (403 / TLS error) walks httpx → curl_cffi
-  → playwright; every other outcome returns or raises immediately.
+- **Escalation is fingerprint-only.** Only `FingerprintBlock` (403 / TLS error) escalates along the
+  active tier range (default httpx → curl_cffi → playwright; bounded by `min_tier`/`max_tier`); every
+  other outcome returns or raises immediately.
 - **Browser-tier controls stay on the browser tier.** `RenderOptions` (wait strategies, screenshots) is
   a no-op on the httpx / curl_cffi tiers; screenshots require the playwright tier.
 - **Core is horizontal.** Domain API wrappers and content extraction live in downstream packages that
   consume `fetch()`; `contrib/` extras are unsupported and never imported by core.
 - **No unconditional network at import.** Fetching happens only inside `fetch()` / a backend `attempt()`.
-```

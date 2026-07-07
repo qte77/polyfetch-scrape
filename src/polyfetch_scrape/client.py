@@ -35,6 +35,14 @@ _BODY_ON_PLAYWRIGHT_MSG = (
     "body requests are limited to the httpx/curl_cffi tiers: {url}"
 )
 
+# Cheapest → most capable. The auto chain escalates left-to-right; min_tier/max_tier
+# select a contiguous slice of this order (see #80).
+_TIER_ORDER: tuple[Tier, ...] = ("httpx", "curl_cffi", "playwright")
+
+
+def _tier_index(tier: Tier) -> int:
+    return _TIER_ORDER.index(tier)
+
 
 def fetch(
     url: str,
@@ -46,6 +54,8 @@ def fetch(
     browser: Browser = "chrome",
     wait_for_selector: str | None = None,
     tier: Tier | None = None,
+    min_tier: Tier | None = None,
+    max_tier: Tier | None = None,
     etag: str | None = None,
     last_modified: str | None = None,
     json: Any | None = None,
@@ -54,30 +64,14 @@ def fetch(
 ) -> Response:
     if json is not None and content is not None:
         raise FetchError("provide either json or content, not both")
+    lo, hi = _resolve_tier_range(tier, min_tier, max_tier)
     policy = retry if retry is not None else RetryPolicy()
     headers = _with_conditional_headers(headers, etag, last_modified)
     # `render` (RenderOptions) is the playwright-tier surface; `wait_for_selector` is a
     # back-compat convenience that seeds it when no explicit `render` is given.
     render = render if render is not None else RenderOptions(wait_for_selector=wait_for_selector)
-    if tier is not None:
-        return _run_single_tier(
-            tier, method, url, headers, timeout, policy, browser, render, json, content
-        )
-    try:
-        return httpx_backend.attempt(
-            method, url, headers, timeout, policy, json=json, content=content
-        )
-    except FingerprintBlock:
-        _log.info("tier escalation: httpx blocked, trying curl_cffi: %s", url)
-        try:
-            return curl_backend.attempt(
-                method, url, headers, timeout, policy, browser=browser, json=json, content=content
-            )
-        except FingerprintBlock:
-            if json is not None or content is not None:
-                raise FetchError(_BODY_ON_PLAYWRIGHT_MSG.format(url=url)) from None
-            _log.info("tier escalation: curl_cffi blocked, trying playwright: %s", url)
-            return playwright_backend.attempt(method, url, headers, timeout, policy, render=render)
+    active = _TIER_ORDER[_tier_index(lo) : _tier_index(hi) + 1]
+    return _run_chain(active, method, url, headers, timeout, policy, browser, render, json, content)
 
 
 def _with_conditional_headers(
@@ -101,7 +95,47 @@ def _with_conditional_headers(
     return merged
 
 
-def _run_single_tier(
+def _resolve_tier_range(
+    tier: Tier | None, min_tier: Tier | None, max_tier: Tier | None
+) -> tuple[Tier, Tier]:
+    """Resolve the ``(low, high)`` tier range. ``tier=`` is sugar for a single pinned tier."""
+    if tier is not None:
+        if min_tier is not None or max_tier is not None:
+            raise FetchError("pass either tier= or min_tier/max_tier, not both")
+        return tier, tier
+    lo: Tier = min_tier if min_tier is not None else "httpx"
+    hi: Tier = max_tier if max_tier is not None else "playwright"
+    if _tier_index(lo) > _tier_index(hi):
+        raise FetchError(f"min_tier ({lo}) must not exceed max_tier ({hi})")
+    return lo, hi
+
+
+def _run_chain(
+    active: tuple[Tier, ...],
+    method: str,
+    url: str,
+    headers: Mapping[str, str] | None,
+    timeout: float,
+    policy: RetryPolicy,
+    browser: Browser,
+    render: RenderOptions,
+    json: Any | None,
+    content: bytes | None,
+) -> Response:
+    """Walk the active tier range: escalate on FingerprintBlock; the last tier's error surfaces."""
+    *escalating, final = active
+    for i, current in enumerate(escalating):
+        try:
+            return _dispatch(
+                current, method, url, headers, timeout, policy, browser, render, json, content
+            )
+        except FingerprintBlock:
+            nxt = escalating[i + 1] if i + 1 < len(escalating) else final
+            _log.info("tier escalation: %s blocked, trying %s: %s", current, nxt, url)
+    return _dispatch(final, method, url, headers, timeout, policy, browser, render, json, content)
+
+
+def _dispatch(
     tier: Tier,
     method: str,
     url: str,
@@ -110,10 +144,10 @@ def _run_single_tier(
     policy: RetryPolicy,
     browser: Browser,
     render: RenderOptions,
-    json: Any | None = None,
-    content: bytes | None = None,
+    json: Any | None,
+    content: bytes | None,
 ) -> Response:
-    """Pinned tier: dispatch to one backend; its error propagates (no escalation)."""
+    """Call one backend. Playwright is GET-only and cannot carry a request body."""
     if tier == "httpx":
         return httpx_backend.attempt(
             method, url, headers, timeout, policy, json=json, content=content

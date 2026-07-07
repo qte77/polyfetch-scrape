@@ -2,17 +2,35 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
+from enum import StrEnum
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import typer
 
-from polyfetch_scrape.client import fetch
+from polyfetch_scrape.client import Tier, fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
+
+
+class _TierChoice(StrEnum):
+    """CLI choice for the tier flags — typer validates the value and shows it in --help.
+
+    Values mirror ``client.Tier``; ``_as_tier`` bridges the validated choice to that Literal.
+    """
+
+    httpx = "httpx"
+    curl_cffi = "curl_cffi"
+    playwright = "playwright"
+
+
+def _as_tier(choice: _TierChoice | None) -> Tier | None:
+    """Validated choice → the ``Tier`` Literal (sound: values are exactly the Literal members)."""
+    return cast("Tier | None", choice.value) if choice is not None else None
+
 
 app = typer.Typer(
     add_completion=False,
@@ -99,11 +117,24 @@ def fetch_cmd(
         typer.Option("--screenshot-out", help="Write the --screenshot PNG to this path."),
     ] = None,
     tier: Annotated[
-        str | None,
+        _TierChoice | None,
         typer.Option(
             "--tier",
-            help="Pin one backend (httpx|curl_cffi|playwright) and skip the fallback chain. "
+            help="Pin one backend and skip the fallback chain. "
             "Render flags only apply when the playwright tier runs.",
+        ),
+    ] = None,
+    min_tier: Annotated[
+        _TierChoice | None,
+        typer.Option(
+            "--min-tier", help="Start the fallback chain at this tier (skip cheaper ones)."
+        ),
+    ] = None,
+    max_tier: Annotated[
+        _TierChoice | None,
+        typer.Option(
+            "--max-tier",
+            help="Cap escalation at this tier (e.g. curl_cffi = never launch a browser).",
         ),
     ] = None,
     etag: Annotated[
@@ -138,7 +169,9 @@ def fetch_cmd(
             timeout=timeout,
             retry=policy,
             browser=browser,  # type: ignore[arg-type]
-            tier=tier,  # type: ignore[arg-type]
+            tier=_as_tier(tier),
+            min_tier=_as_tier(min_tier),
+            max_tier=_as_tier(max_tier),
             etag=etag,
             last_modified=if_modified_since,
             render=render,
