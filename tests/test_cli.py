@@ -131,6 +131,42 @@ def test_fetch_conditional_flags_reach_fetch(monkeypatch: pytest.MonkeyPatch) ->
     assert captured["last_modified"] == "Wed, 21 Oct 2015 07:28:00 GMT"
 
 
+def test_fetch_tier_range_flags_reach_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app,
+        ["fetch", "https://x.test", "--min-tier", "curl_cffi", "--max-tier", "playwright"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["min_tier"] == "curl_cffi"
+    assert captured["max_tier"] == "playwright"
+
+
+def test_fetch_rejects_unknown_tier_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    # An invalid tier choice is rejected by typer (exit 2) before fetch() is ever called.
+    called = False
+
+    def fake(url: str, **kwargs: object) -> Response:
+        nonlocal called
+        called = True
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--min-tier", "bogus"])
+
+    assert result.exit_code == 2
+    assert called is False
+
+
 def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     png = b"\x89PNG\r\n\x1a\nFAKE"
 
