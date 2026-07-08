@@ -35,7 +35,8 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
 
 | Module | Responsibility |
 |---|---|
-| `client.py` | Public `fetch()` orchestrator: conditional headers, tier-range escalation (`min_tier`/`max_tier`; `tier=` pins one), request-body routing (`json`/`content`, httpx/curl only), `RenderOptions` plumbing to the playwright tier. |
+| `client.py` | Public `fetch()` orchestrator: conditional headers, optional per-host `Throttle` (pre-dispatch spacing), tier-range escalation (`min_tier`/`max_tier`; `tier=` pins one), request-body routing (`json`/`content`, httpx/curl only), `RenderOptions` plumbing to the playwright tier. |
+| `throttle.py` | `Throttle` — thread-safe per-host minimum inter-request spacing (proactive politeness); shared across a bulk worker pool. |
 | `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
 | `_backends/curl_backend.py` | Tier 2: `curl_cffi` Chrome TLS impersonation; engages on 403 / TLS error. |

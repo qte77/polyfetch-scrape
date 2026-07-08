@@ -33,7 +33,7 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 
 `fetch` **playwright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|<css>` + `--screenshot-out PATH` (writes the PNG). A base64 screenshot inside `--json` is tracked in [#105](https://github.com/qte77/polyfetch-scrape/issues/105).
 
-`bulk` flags: `--workers N` (concurrency), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
+`bulk` flags: `--workers N` (concurrency), `--delay S` (per-host polite spacing — min seconds between same-host requests, shared across workers), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 
 (The optional `contrib` scanner `polyfetch easter-hunt scan` is unsupported and out of this contract — see [`CONTRIBUTING.md`](CONTRIBUTING.md).)
 

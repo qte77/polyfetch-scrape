@@ -48,6 +48,15 @@ Covered by: `AuthRequired` (401/407), `GoneError` (404/410), `LegalBlock` (451) 
 Covered by: `fetch(url, min_tier=..., max_tier=...)` and the `--min-tier` / `--max-tier` CLI flags —
 cap escalation (`max_tier="curl_cffi"` never launches Chromium) or force a tier (#80).
 
+## Polite bulk caller respecting published limits
+
+> As someone fetching many URLs from a few hosts, I want to stay under documented rate limits
+> proactively — not just react to 429s after I've already tripped them.
+
+Covered by: a shared `Throttle(min_interval=...)` via `fetch(url, throttle=...)`, and
+`polyfetch bulk --delay SECONDS` (one throttle across the worker pool → per-host spacing under
+concurrency) (#49).
+
 ## Author of a domain adapter (arXiv, USPTO, ...)
 
 > As someone building a paper/patent client, I want the fetch/anti-bot machinery without
