@@ -9,18 +9,32 @@ The complete public surface of `polyfetch_scrape`. Everything under `_backends/`
 fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
       min_tier=None, max_tier=None, etag=None, last_modified=None,
-      json=None, content=None, render=None) -> Response
+      json=None, content=None, throttle=None, render=None) -> Response
       # tier pins one backend: "httpx"|"curl_cffi"|"playwright" (≡ min_tier==max_tier)
       # min_tier / max_tier → bound the fallback range: max_tier="curl_cffi" caps escalation
       #   (never launches the browser); min_tier="playwright" forces the JS tier
       # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
       # json=<obj> / content=<bytes> → POST/PUT request body (mutually exclusive)
+      # throttle=Throttle(min_interval=…) → proactive per-host spacing (share one across calls)
       # render=RenderOptions(...) → playwright-tier wait/screenshot controls
 ```
 
 A single call runs the three-tier fallback chain (or the pinned `tier`) and returns a typed `Response` regardless of which backend succeeded.
 
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The playwright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to playwright — or one pinned to `tier="playwright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
+
+## Throttle (optional per-host rate limit)
+
+```python
+Throttle(min_interval: float)   # seconds between same-host requests; <= 0 disables (no-op)
+throttle.acquire(url)           # thread-safe; blocks to enforce this host's next slot
+```
+
+Proactive politeness: pass one **shared** `Throttle` to many `fetch(url, throttle=t)` calls (or use
+`polyfetch bulk --delay SECONDS`, which builds one shared across the worker pool) to keep at least
+`min_interval` seconds between requests to the **same host** (keyed by hostname); different hosts never
+block each other. It spaces distinct `fetch()` calls — internal retries / tier-escalation within one
+call already honor `Retry-After` / backoff. Per-process (not distributed).
 
 ## Render controls (playwright tier)
 

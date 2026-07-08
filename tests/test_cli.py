@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from polyfetch_scrape.cli import app
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.response import Response
+from polyfetch_scrape.throttle import Throttle
 
 runner = CliRunner()
 
@@ -165,6 +166,44 @@ def test_fetch_rejects_unknown_tier_value(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert result.exit_code == 2
     assert called is False
+
+
+def test_bulk_delay_builds_shared_throttle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+    urls = tmp_path / "urls.txt"
+    urls.write_text("https://a.test/\n")
+
+    result = runner.invoke(app, ["bulk", str(urls), "--delay", "0.5"])
+
+    assert result.exit_code == 0
+    throttle = captured["throttle"]
+    assert isinstance(throttle, Throttle)
+    assert throttle.min_interval == 0.5
+
+
+def test_bulk_without_delay_passes_no_throttle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+    urls = tmp_path / "urls.txt"
+    urls.write_text("https://a.test/\n")
+
+    result = runner.invoke(app, ["bulk", str(urls)])
+
+    assert result.exit_code == 0
+    assert captured["throttle"] is None
 
 
 def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

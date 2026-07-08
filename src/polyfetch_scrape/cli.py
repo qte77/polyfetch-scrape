@@ -14,6 +14,7 @@ from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
+from polyfetch_scrape.throttle import Throttle
 
 
 class _TierChoice(StrEnum):
@@ -201,9 +202,13 @@ def fetch_cmd(
 app.registered_commands[-1].name = "fetch"
 
 
-def _run_one(url: str, *, timeout: float, max_attempts: int) -> dict[str, Any]:
+def _run_one(
+    url: str, *, timeout: float, max_attempts: int, throttle: Throttle | None
+) -> dict[str, Any]:
     try:
-        resp = fetch(url, timeout=timeout, retry=RetryPolicy(max_attempts=max_attempts))
+        resp = fetch(
+            url, timeout=timeout, retry=RetryPolicy(max_attempts=max_attempts), throttle=throttle
+        )
     except FetchError as exc:
         return _error_payload(url, exc)
     return _summarize(resp)
@@ -215,6 +220,13 @@ def bulk(
     workers: int = 1,
     timeout: float = 30.0,
     max_attempts: int = 3,
+    delay: Annotated[
+        float,
+        typer.Option(
+            "--delay",
+            help="Per-host polite spacing in seconds (min interval between same-host requests).",
+        ),
+    ] = 0.0,
     json_output: Annotated[
         bool, typer.Option("--json/--text", help="JSON-lines (default) or human text")
     ] = True,
@@ -222,6 +234,8 @@ def bulk(
     """Fetch URLs from FILE (one per line; blank lines and ``#`` comments skipped)."""
     stripped = (line.strip() for line in file.read_text().splitlines())
     urls = [line for line in stripped if line and not line.startswith("#")]
+    # One shared throttle across the worker pool → per-host spacing holds under concurrency.
+    throttle = Throttle(delay) if delay > 0 else None
     any_failed = False
 
     def _emit(payload: dict[str, Any]) -> None:
@@ -233,11 +247,13 @@ def bulk(
 
     if workers <= 1:
         for url in urls:
-            _emit(_run_one(url, timeout=timeout, max_attempts=max_attempts))
+            _emit(_run_one(url, timeout=timeout, max_attempts=max_attempts, throttle=throttle))
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [
-                pool.submit(_run_one, url, timeout=timeout, max_attempts=max_attempts)
+                pool.submit(
+                    _run_one, url, timeout=timeout, max_attempts=max_attempts, throttle=throttle
+                )
                 for url in urls
             ]
             for fut in futures:

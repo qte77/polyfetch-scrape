@@ -594,3 +594,22 @@ def test_fetch_body_with_max_tier_curl_never_reaches_playwright(
         fetch("https://example.com", method="POST", json={"a": 1}, max_tier="curl_cffi")
 
     assert calls["pw"] == 0
+
+
+def test_fetch_acquires_throttle_before_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[str] = []
+
+    class _SpyThrottle:
+        def acquire(self, url: str) -> None:
+            events.append(f"acquire:{url}")
+
+    def fake_httpx(*_a: object, **_kw: object) -> Response:
+        events.append("httpx")
+        return _backend_response("httpx")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+
+    fetch("https://ex.test/p", throttle=_SpyThrottle())  # type: ignore[arg-type]
+
+    # Throttle is consulted once, for the request URL, before the backend runs.
+    assert events == ["acquire:https://ex.test/p", "httpx"]

@@ -12,6 +12,7 @@ from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBl
 from polyfetch_scrape.render_options import RenderAction, RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
+from polyfetch_scrape.throttle import Throttle
 
 __all__ = [
     "AuthRequired",
@@ -60,6 +61,7 @@ def fetch(
     last_modified: str | None = None,
     json: Any | None = None,
     content: bytes | None = None,
+    throttle: Throttle | None = None,
     render: RenderOptions | None = None,
 ) -> Response:
     if json is not None and content is not None:
@@ -71,6 +73,10 @@ def fetch(
     # back-compat convenience that seeds it when no explicit `render` is given.
     render = render if render is not None else RenderOptions(wait_for_selector=wait_for_selector)
     active = _TIER_ORDER[_tier_index(lo) : _tier_index(hi) + 1]
+    # Proactive per-host spacing before the request (spaces distinct fetch() calls; internal
+    # retries/tier-escalation within one call already honor Retry-After / backoff).
+    if throttle is not None:
+        throttle.acquire(url)
     return _run_chain(active, method, url, headers, timeout, policy, browser, render, json, content)
 
 
