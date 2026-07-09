@@ -37,6 +37,9 @@ class RenderOptions:
       ``Response.screenshot``. ``full_page`` is unsupported (0 bytes on tall pages).
     - ``actions``: ``RenderAction`` steps (click/fill/…) run **in order, before** the
       waits/capture — drive the page, then settle, then capture.
+    - ``capture_console``: collect console + uncaught-JS errors onto ``Response.console_errors``.
+    - ``capture_network_failures``: collect failed requests + HTTP ``>= 400`` responses onto
+      ``Response.network_failures``. Both off by default (zero overhead unless asked).
     """
 
     wait_until: WaitUntil = "domcontentloaded"
@@ -44,3 +47,5 @@ class RenderOptions:
     wait_for_function: str | None = None
     screenshot: str | None = None
     actions: tuple[RenderAction, ...] = ()
+    capture_console: bool = False
+    capture_network_failures: bool = False

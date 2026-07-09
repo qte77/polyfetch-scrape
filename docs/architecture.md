@@ -40,9 +40,9 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
 | `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
 | `_backends/curl_backend.py` | Tier 2: `curl_cffi` Chrome TLS impersonation; engages on 403 / TLS error. |
-| `_backends/playwright_backend.py` | Tier 3: headless Patchright/Chromium; applies `RenderOptions` (wait strategies, screenshot). |
-| `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot). |
-| `render_options.py` | `RenderOptions` — playwright-tier controls (wait_until, wait_for_selector, wait_for_function, screenshot). |
+| `_backends/playwright_backend.py` | Tier 3: headless Patchright/Chromium; applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture). |
+| `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, console_errors, network_failures). |
+| `render_options.py` | `RenderOptions` — playwright-tier controls (wait_until, wait_for_selector, wait_for_function, screenshot, capture_console, capture_network_failures). |
 | `retry.py` | `RetryPolicy` + `should_retry` + `Retry-After` parsing and capped backoff. |
 | `errors.py` | Exception taxonomy: `FetchError` base + terminal `AuthRequired` / `GoneError` / `LegalBlock`. |
 | `cli.py` | Thin typer CLI over `fetch` / bulk; opt-in `contrib` subcommands. |
