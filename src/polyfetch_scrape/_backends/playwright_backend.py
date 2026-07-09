@@ -1,6 +1,7 @@
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from patchright.sync_api import TimeoutError as PwTimeoutError
@@ -75,6 +76,7 @@ def _attempt_once(
     if headers:
         context.set_extra_http_headers(dict(headers))
     page = context.new_page()
+    console_errors, network_failures = _attach_capture(page, opts)
     try:
         try:
             response = page.goto(url, wait_until=opts.wait_until, timeout=timeout_ms)
@@ -105,12 +107,51 @@ def _attempt_once(
                 backend="playwright",
                 permanent_redirect_to=permanent_redirect_target(status, all_headers),
                 screenshot=_capture_screenshot(page, opts.screenshot),
+                console_errors=console_errors,
+                network_failures=network_failures,
             ),
             None,
             None,
         )
     finally:
         context.close()
+
+
+def _record_console(msg: Any, sink: list[str]) -> None:
+    if msg.type == "error":
+        sink.append(str(msg.text))
+
+
+def _record_pageerror(err: Any, sink: list[str]) -> None:
+    sink.append(str(err))
+
+
+def _record_request_failure(req: Any, sink: list[dict[str, object]]) -> None:
+    sink.append({"url": str(req.url), "error": str(req.failure)})
+
+
+def _record_bad_response(resp: Any, sink: list[dict[str, object]]) -> None:
+    if int(resp.status) >= 400:
+        sink.append({"url": str(resp.url), "status": int(resp.status)})
+
+
+def _attach_capture(page: Any, opts: RenderOptions) -> tuple[list[str], list[dict[str, object]]]:
+    """Register opt-in console/network listeners; return the (still-filling) capture lists.
+
+    A headless capture reflects only THIS process's network — a cross-origin failure a real user
+    hits (CORS / extension / proxy) can succeed here and read clean. Force a known failure to
+    trust it (AGENT_LEARNINGS: "Headless console/network capture only reflects the runner's own
+    network").
+    """
+    console_errors: list[str] = []
+    network_failures: list[dict[str, object]] = []
+    if opts.capture_console:
+        page.on("console", partial(_record_console, sink=console_errors))
+        page.on("pageerror", partial(_record_pageerror, sink=console_errors))
+    if opts.capture_network_failures:
+        page.on("requestfailed", partial(_record_request_failure, sink=network_failures))
+        page.on("response", partial(_record_bad_response, sink=network_failures))
+    return console_errors, network_failures
 
 
 def _apply_actions(page: Any, actions: tuple[RenderAction, ...], timeout_ms: int) -> None:

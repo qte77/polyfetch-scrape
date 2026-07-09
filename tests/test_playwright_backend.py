@@ -425,3 +425,96 @@ def test_playwright_backend_no_actions_by_default(monkeypatch: pytest.MonkeyPatc
     page.fill.assert_not_called()
     page.get_by_text.assert_not_called()
     page.wait_for_timeout.assert_not_called()
+
+
+def _fake_console(msg_type: str, text: str) -> MagicMock:
+    msg = MagicMock()
+    msg.type = msg_type
+    msg.text = text
+    return msg
+
+
+def _fake_request(url: str, failure: str) -> MagicMock:
+    req = MagicMock()
+    req.url = url
+    req.failure = failure
+    return req
+
+
+def _fake_response(status: int, url: str) -> MagicMock:
+    resp = MagicMock()
+    resp.status = status
+    resp.url = url
+    return resp
+
+
+def _page_handlers(page: MagicMock) -> dict[str, Any]:
+    """Map each registered page.on(event) to its handler from call_args_list."""
+    return {c.args[0]: c.args[1] for c in page.on.call_args_list}
+
+
+def test_playwright_backend_captures_console_and_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_console=True, capture_network_failures=True),
+    )
+
+    # resp.console_errors / .network_failures are the SAME list objects the handlers
+    # append to, so firing synthetic events after the return is visible on resp.
+    handlers = _page_handlers(page)
+    handlers["console"](_fake_console("error", "boom"))
+    handlers["pageerror"]("Uncaught X")
+    handlers["requestfailed"](_fake_request("https://x/api", "net::ERR"))
+    handlers["response"](_fake_response(500, "https://x/500"))
+    handlers["response"](_fake_response(200, "https://x/ok"))  # sub-400 is not a failure
+
+    assert "boom" in resp.console_errors
+    assert "Uncaught X" in resp.console_errors
+    assert {"url": "https://x/api", "error": "net::ERR"} in resp.network_failures
+    assert {"url": "https://x/500", "status": 500} in resp.network_failures
+    assert not any(f.get("url") == "https://x/ok" for f in resp.network_failures)
+
+
+def test_playwright_backend_console_filter_ignores_non_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_console=True),
+    )
+
+    _page_handlers(page)["console"](_fake_console("log", "just a log"))
+
+    assert resp.console_errors == []
+
+
+def test_playwright_backend_no_capture_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    # Opt-in gating → zero listeners registered, zero overhead.
+    registered = {c.args[0] for c in page.on.call_args_list}
+    assert registered & {"console", "pageerror", "requestfailed", "response"} == set()
+    assert resp.console_errors == []
+    assert resp.network_failures == []
