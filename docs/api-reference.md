@@ -40,9 +40,12 @@ call already honor `Retry-After` / backoff. Per-process (not distributed).
 
 ```python
 RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selector=None,
-              wait_for_function=None, screenshot=None, actions=())
+              wait_for_function=None, screenshot=None, actions=(),
+              capture_console=False, capture_network_failures=False)
       # playwright tier only; screenshot="viewport"|"<css-selector>" → Response.screenshot (PNG bytes)
       # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
+      # capture_console → Response.console_errors (console + uncaught-JS errors)
+      # capture_network_failures → Response.network_failures (failed requests + HTTP >= 400)
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
       # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -53,9 +56,15 @@ RenderAction(verb, selector=None, text=None, value=None, ms=None)
 
 ```python
 Response(url, status, headers, body, content_type, backend,
-         permanent_redirect_to=None, screenshot=None)
+         permanent_redirect_to=None, screenshot=None,
+         console_errors=[], network_failures=[])
       # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
       # screenshot: PNG bytes when requested on the playwright tier, else None
+      # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
+      # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)
+      #   opt-in via RenderOptions.capture_network_failures
+      # CAVEAT: console_errors / network_failures reflect only THIS process's network — a failure a
+      #   real user hits (CORS / extension / proxy) can read clean here; force a known failure to trust it
 
 RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
             retry_on_status=frozenset({429, 500, 502, 503, 504}))
