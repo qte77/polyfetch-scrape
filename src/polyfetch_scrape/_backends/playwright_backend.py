@@ -76,7 +76,7 @@ def _attempt_once(
     if headers:
         context.set_extra_http_headers(dict(headers))
     page = context.new_page()
-    console_errors, network_failures = _attach_capture(page, opts)
+    console_errors, network_failures = attach_capture(page, opts)
     try:
         try:
             response = page.goto(url, wait_until=opts.wait_until, timeout=timeout_ms)
@@ -106,7 +106,7 @@ def _attempt_once(
                 content_type=all_headers.get("content-type"),
                 backend="playwright",
                 permanent_redirect_to=permanent_redirect_target(status, all_headers),
-                screenshot=_capture_screenshot(page, opts.screenshot),
+                screenshot=capture_screenshot(page, opts.screenshot),
                 console_errors=console_errors,
                 network_failures=network_failures,
             ),
@@ -135,7 +135,7 @@ def _record_bad_response(resp: Any, sink: list[dict[str, object]]) -> None:
         sink.append({"url": str(resp.url), "status": int(resp.status)})
 
 
-def _attach_capture(page: Any, opts: RenderOptions) -> tuple[list[str], list[dict[str, object]]]:
+def attach_capture(page: Any, opts: RenderOptions) -> tuple[list[str], list[dict[str, object]]]:
     """Register opt-in console/network listeners; return the (still-filling) capture lists.
 
     A headless capture reflects only THIS process's network — a cross-origin failure a real user
@@ -177,7 +177,7 @@ def _apply_waits(page: Any, opts: RenderOptions, timeout_ms: int) -> None:
         page.wait_for_function(opts.wait_for_function, timeout=timeout_ms)
 
 
-def _capture_screenshot(page: Any, target: str | None) -> bytes | None:
+def capture_screenshot(page: Any, target: str | None) -> bytes | None:
     """Capture a PNG: ``"viewport"`` shot, or an element shot for a CSS selector.
 
     ``full_page`` is intentionally unsupported — Chromium writes 0 bytes on very
