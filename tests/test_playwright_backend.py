@@ -6,7 +6,7 @@ from patchright import sync_api as pw_sync
 
 from polyfetch_scrape._backends import FingerprintBlock, playwright_backend
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
-from polyfetch_scrape.render_options import RenderAction, RenderOptions
+from polyfetch_scrape.render_options import RenderAction, RenderOptions, Screenshot
 from polyfetch_scrape.retry import RetryPolicy
 
 
@@ -182,6 +182,40 @@ def test_playwright_backend_no_screenshot_by_default(monkeypatch: pytest.MonkeyP
     page.screenshot.assert_not_called()
     page.locator.assert_not_called()
     assert resp.screenshot is None
+
+
+def test_playwright_backend_captures_named_screenshots(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    page.screenshot.return_value = b"VP"
+    page.locator.return_value.screenshot.return_value = b"EL"
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(
+            screenshots=(Screenshot("full", "viewport"), Screenshot("chart", "#chart"))
+        ),
+    )
+
+    assert resp.screenshots == {"full": b"VP", "chart": b"EL"}
+    page.locator.assert_called_once_with("#chart")
+
+
+def test_playwright_backend_no_screenshots_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _make_pw_chain(monkeypatch)
+
+    resp = playwright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.screenshots == {}
 
 
 def test_playwright_backend_uses_wait_until_from_render(monkeypatch: pytest.MonkeyPatch) -> None:

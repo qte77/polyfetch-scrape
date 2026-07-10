@@ -97,6 +97,7 @@ def _attempt_once(
 
         body = page.content().encode("utf-8")
         all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
+        screenshots = {s.name: capture_screenshot(page, s.target) or b"" for s in opts.screenshots}
         return _Attempt(
             Response(
                 url=str(page.url),
@@ -109,6 +110,7 @@ def _attempt_once(
                 screenshot=capture_screenshot(page, opts.screenshot),
                 console_errors=console_errors,
                 network_failures=network_failures,
+                screenshots=screenshots,
             ),
             None,
             None,

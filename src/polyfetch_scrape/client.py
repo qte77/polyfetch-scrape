@@ -9,7 +9,7 @@ from polyfetch_scrape._backends import (
     playwright_backend,
 )
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
-from polyfetch_scrape.render_options import RenderAction, RenderOptions
+from polyfetch_scrape.render_options import RenderAction, RenderOptions, Screenshot
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 from polyfetch_scrape.throttle import Throttle
@@ -21,6 +21,7 @@ __all__ = [
     "LegalBlock",
     "RenderAction",
     "RenderOptions",
+    "Screenshot",
     "fetch",
 ]
 

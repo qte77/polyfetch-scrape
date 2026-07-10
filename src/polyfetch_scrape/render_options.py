@@ -25,6 +25,21 @@ class RenderAction:
 
 
 @dataclass(frozen=True, slots=True)
+class Screenshot:
+    """One named screenshot taken **after** the render (waits/actions have run).
+
+    - ``target``: ``"viewport"`` or a CSS selector (element shot — must match a single
+      element). ``full_page`` is unsupported (Chromium writes 0 bytes on tall pages),
+      same as ``RenderOptions.screenshot``.
+
+    Collected into ``Response.screenshots`` keyed by ``name``.
+    """
+
+    name: str
+    target: str = "viewport"
+
+
+@dataclass(frozen=True, slots=True)
 class RenderOptions:
     """Playwright-tier controls for ``fetch(url, render=...)``.
 
@@ -37,6 +52,8 @@ class RenderOptions:
       ``Response.screenshot``. ``full_page`` is unsupported (0 bytes on tall pages).
     - ``actions``: ``RenderAction`` steps (click/fill/…) run **in order, before** the
       waits/capture — drive the page, then settle, then capture.
+    - ``screenshots``: ``Screenshot(name, target)`` captures taken after the waits →
+      ``Response.screenshots`` (``dict[name, PNG bytes]``); complements the single ``screenshot``.
     - ``capture_console``: collect console + uncaught-JS errors onto ``Response.console_errors``.
     - ``capture_network_failures``: collect failed requests + HTTP ``>= 400`` responses onto
       ``Response.network_failures``. Both off by default (zero overhead unless asked).
@@ -47,5 +64,6 @@ class RenderOptions:
     wait_for_function: str | None = None
     screenshot: str | None = None
     actions: tuple[RenderAction, ...] = ()
+    screenshots: tuple[Screenshot, ...] = ()
     capture_console: bool = False
     capture_network_failures: bool = False
