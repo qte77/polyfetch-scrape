@@ -66,7 +66,7 @@ polyfetch --help
 
 ### Public API
 
-`fetch(url, *, …) -> Response` plus `RenderOptions`, `RenderAction`, `Response`, `RetryPolicy`, and the `FetchError` exception hierarchy. **Full signatures and options: [`docs/api-reference.md`](docs/api-reference.md).**
+`fetch(url, *, …) -> Response` plus `render_session(url)` (managed multi-step interactive browser sessions), `RenderOptions`, `RenderAction`, `Response`, `RetryPolicy`, and the `FetchError` exception hierarchy. **Full signatures and options: [`docs/api-reference.md`](docs/api-reference.md).**
 
 ### Development
 

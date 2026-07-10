@@ -52,6 +52,23 @@ RenderAction(verb, selector=None, text=None, value=None, ms=None)
       #     | "wait_for_selector"(selector) | "wait_ms"(ms)
 ```
 
+## Render session (interactive, playwright tier)
+
+A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on.
+
+```python
+with render_session(url, *, wait_until="domcontentloaded", timeout=30.0) as s:
+    s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
+    s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
+    s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
+    s.page           # the managed Patchright Page (escape hatch for structural reads)
+# auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
+#   on an exception inside the block → an "exception" screenshot is captured first.
+# a navigation timeout raises FetchError.
+```
+
+`submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
+
 ## `Response` and `RetryPolicy`
 
 ```python

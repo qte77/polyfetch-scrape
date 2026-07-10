@@ -43,6 +43,8 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
 | `_backends/playwright_backend.py` | Tier 3: headless Patchright/Chromium; applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture). |
 | `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, console_errors, network_failures). |
 | `render_options.py` | `RenderOptions` — playwright-tier controls (wait_until, wait_for_selector, wait_for_function, screenshot, capture_console, capture_network_failures). |
+| `render_session.py` | `render_session()` — managed headless multi-step Patchright `Page` context manager for interactive act→assert→act flows; reuses the backend's `attach_capture`/`capture_screenshot`. |
+| `utils/sitemap.py` | `fetch_sitemap_urls()` — sitemap.xml URL discovery (index recursion, gzip, `defusedxml`, literal-IP SSRF guard) over the public `fetch()`. |
 | `retry.py` | `RetryPolicy` + `should_retry` + `Retry-After` parsing and capped backoff. |
 | `errors.py` | Exception taxonomy: `FetchError` base + terminal `AuthRequired` / `GoneError` / `LegalBlock`. |
 | `cli.py` | Thin typer CLI over `fetch` / bulk; opt-in `contrib` subcommands. |
