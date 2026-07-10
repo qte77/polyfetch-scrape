@@ -9,6 +9,7 @@ from polyfetch_scrape.client import (
     RenderOptions,
     fetch,
 )
+from polyfetch_scrape.render_session import render_session
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, should_retry
 from polyfetch_scrape.throttle import Throttle
@@ -27,5 +28,6 @@ __all__ = [
     "RetryPolicy",
     "Throttle",
     "fetch",
+    "render_session",
     "should_retry",
 ]

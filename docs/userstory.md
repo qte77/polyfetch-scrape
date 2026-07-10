@@ -33,7 +33,9 @@ Covered by: `Response.permanent_redirect_to` on 301/308 (#31).
 Covered by: the playwright tier + `RenderOptions(wait_until="networkidle", wait_for_function=...,
 screenshot=...)` → `Response.screenshot` (#67, #68), plus opt-in
 `RenderOptions(capture_console=True, capture_network_failures=True)` → `Response.console_errors` /
-`Response.network_failures` to assert the page hydrated without console/network errors (#118).
+`Response.network_failures` to assert the page hydrated without console/network errors (#118). For a
+genuine **interactive** flow (act → assert → act — click, fill a composer, submit, re-assert), use
+`render_session(url)` for a managed multi-step `Page` instead of a single `fetch()` (#117).
 
 ## Caller handling auth / gone / legal-block outcomes
 
