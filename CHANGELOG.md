@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
+- `polyfetch_scrape.utils.sitemap.fetch_sitemap_urls(domain, *, max_urls=10_000)` — resolve a domain into the URLs it advertises via `/sitemap.xml`. Follows a `<sitemapindex>` one level into its child sitemaps, transparently decompresses `.xml.gz` payloads, and parses the untrusted XML with `defusedxml`. Built on the public `fetch()` (caps at `max_tier="curl_cffi"` — never launches the browser for XML); returns `[]` when there is no sitemap (404 / unparseable). Every fetched URL — the initial sitemap **and** each attacker-controlled child-sitemap URL — passes a literal-IP SSRF guard first (raises `ValueError` on an internal address; DNS-name scope only, matching the `easter_hunt` guard). Supporting infra for source wrappers. Closes #33.
 - `RenderOptions(capture_console=…, capture_network_failures=…)` → `Response.console_errors` / `Response.network_failures` — opt-in browser-tier diagnostics on the playwright tier. `capture_console` collects console **and** uncaught-JS errors as strings; `capture_network_failures` collects both failed requests (`{url, error}`) and HTTP `>= 400` responses (`{url, status}`). Off by default (backward-compatible; zero overhead and zero listeners registered unless asked), empty on the httpx/curl tiers, and reused by the future managed render session (#117). **Caveat (documented on `Response` + the capture helper):** a headless capture reflects only *this* process's network — a cross-origin failure a real user hits (CORS / extension / proxy) can succeed here and read clean; force a known failure to trust it. Library-only for now (`--json` surfacing tracked in #105). Closes #118.
 - `Throttle` — optional per-host polite throttle. `fetch(url, throttle=Throttle(min_interval=0.5))` and `polyfetch bulk --delay SECONDS` enforce a minimum interval between requests to the **same host** (keyed by hostname) — thread-safe, shared across `bulk`'s worker pool, and different hosts never block each other. Proactive politeness so callers stay under published limits instead of only reacting to 429s. Default off (fully backward-compatible). Closes #49.
 - `fetch()` tier range — new `min_tier` / `max_tier` kwargs and `--min-tier` / `--max-tier` CLI flags bound the fallback chain: `max_tier="curl_cffi"` caps escalation (never launches the browser), `min_tier="playwright"` forces the JS tier, and `tier=` is now sugar for `min==max`. The tier CLI flags are validated choices — an invalid value is rejected with a clear error (no more type-ignore on the CLI). Closes #80.
@@ -32,6 +33,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Fixed
 
 - Playwright tier now **retries retryable 5xx statuses** (`{429,500,502,503,504}`) and honors `Retry-After`, matching the httpx/curl_cffi tiers. Previously a 5xx response was wrapped and returned as success instead of being retried; a persistent 5xx now raises `FetchError` after `max_attempts`. Closes #84.
+
+### Security
+
+- Re-added `defusedxml` (dropped in 0.5.0 with the arXiv wrapper) for the new `utils/sitemap.py`, which parses untrusted third-party sitemap XML via `defusedxml.ElementTree.fromstring` instead of stdlib `xml.etree.ElementTree` — mitigates XML attacks (billion-laughs, external-entity expansion; Bandit B314). The sitemap helper also SSRF-guards every fetched URL (initial + child sitemaps) against literal internal IPs. Part of #33.
 
 ## [0.5.0] - 2026-07-04
 
