@@ -21,3 +21,5 @@ class Response:
     # proxy) can read clean here. Force a known failure to trust it (AGENT_LEARNINGS #3).
     console_errors: list[str] = field(default_factory=list[str])
     network_failures: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
+    # Named PNGs from RenderOptions.screenshots (playwright tier); empty otherwise.
+    screenshots: dict[str, bytes] = field(default_factory=dict[str, bytes])

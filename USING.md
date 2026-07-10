@@ -77,5 +77,5 @@ uv run --directory <polyfetch> patchright install chromium   # ~300 MB; tiers 1â
 
 ## Stable surface (what you may depend on)
 
-- **Stable**: the `polyfetch` CLI + its `--json` schema; the top-level `polyfetch_scrape` public names (`fetch`, `render_session`, `Response`, `RenderOptions`, `RetryPolicy`, `FetchError` + subclasses). `render_session` is Python-only (managed multi-step browser sessions; not CLI-expressible).
+- **Stable**: the `polyfetch` CLI + its `--json` schema; the top-level `polyfetch_scrape` public names (`fetch`, `render_session`, `Response`, `RenderOptions`, `RenderAction`, `Screenshot`, `RetryPolicy`, `FetchError` + subclasses). `render_session` is Python-only (managed multi-step browser sessions; not CLI-expressible).
 - **Off-limits**: `polyfetch_scrape._backends/*` (private, will churn); `polyfetch_scrape.contrib/*` (optional, unsupported).

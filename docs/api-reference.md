@@ -40,16 +40,21 @@ call already honor `Retry-After` / backoff. Per-process (not distributed).
 
 ```python
 RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selector=None,
-              wait_for_function=None, screenshot=None, actions=(),
+              wait_for_function=None, screenshot=None, actions=(), screenshots=(),
               capture_console=False, capture_network_failures=False)
       # playwright tier only; screenshot="viewport"|"<css-selector>" → Response.screenshot (PNG bytes)
       # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
+      # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
       # capture_console → Response.console_errors (console + uncaught-JS errors)
       # capture_network_failures → Response.network_failures (failed requests + HTTP >= 400)
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
       # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
       #     | "wait_for_selector"(selector) | "wait_ms"(ms)
+
+Screenshot(name, target="viewport")
+      # target: "viewport" | "<css-selector>" (element shot — must match ONE element)
+      # full_page unsupported (0 bytes on tall pages)
 ```
 
 ## Render session (interactive, playwright tier)
@@ -74,9 +79,10 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0) as s:
 ```python
 Response(url, status, headers, body, content_type, backend,
          permanent_redirect_to=None, screenshot=None,
-         console_errors=[], network_failures=[])
+         console_errors=[], network_failures=[], screenshots={})
       # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
       # screenshot: PNG bytes when requested on the playwright tier, else None
+      # screenshots: dict[name, PNG bytes] from RenderOptions.screenshots; {} otherwise
       # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
       # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)
       #   opt-in via RenderOptions.capture_network_failures

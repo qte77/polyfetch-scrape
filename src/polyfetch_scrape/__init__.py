@@ -7,6 +7,7 @@ from polyfetch_scrape.client import (
     LegalBlock,
     RenderAction,
     RenderOptions,
+    Screenshot,
     fetch,
 )
 from polyfetch_scrape.render_session import render_session
@@ -26,6 +27,7 @@ __all__ = [
     "RenderOptions",
     "Response",
     "RetryPolicy",
+    "Screenshot",
     "Throttle",
     "fetch",
     "render_session",
