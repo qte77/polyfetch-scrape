@@ -9,6 +9,7 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "qte77"}]
 dependencies = [
     "curl-cffi>=0.15.0",
+    "defusedxml>=0.7.1",
     "httpx>=0.28.1",
     "patchright>=1.58.2",
     "typer>=0.25.0",
@@ -22,6 +23,7 @@ dev = [
   "pytest-cov>=5.0",
   "respx>=0.23.1",
   "ruff>=0.5",
+  "types-defusedxml>=0.7.0.20260504",
 ]
 
 [project.scripts]
