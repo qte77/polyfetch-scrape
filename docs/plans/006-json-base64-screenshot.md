@@ -11,6 +11,12 @@ playwright-tier screenshot **inline** as base64 (`screenshot_b64`) so env-borrow
 the PNG in the JSON without `--screenshot-out` writing a file (deferred from #94). Fold in the
 `--browser` → `StrEnum` tidy (drops a `# type: ignore`).
 
+**Also fold in (unblocks Dependabot #139):** extract `cli.py:bulk`'s `workers > 1` `ThreadPoolExecutor`
+branch into a `_run_pool` helper. `complexipy` 6.0.1 (the major bump in #139) scores `bulk` at **18** (> 15);
+5.4.0 passed it. Since #105 already touches `cli.py`, do the extraction here so the whole #139 group
+(incl. **patchright 1.61.2**, wanted for #127/#132) can rebase green and merge. Behavior-preserving —
+existing `test_cli.py` bulk tests are the regression net (no new red-first test needed for the extraction).
+
 ## Source map — read these, don't re-explore
 
 **Repo facts:** src layout `src/polyfetch_scrape/`; make-driven (never bare `pip`/`pytest`/`ruff`/`pyright`);
@@ -22,6 +28,7 @@ pyright **strict** `include=["src"]` (tests NOT type-checked); complexipy ≤ 15
 | `src/polyfetch_scrape/cli.py` `_summarize` **l.59-66** | builds the `--json` dict; **shared with `bulk`** (which has no screenshot). Add `screenshot_b64` only on the **fetch** path — either an optional 2nd builder or add the key in `fetch_cmd` before the json emit (l.197-198). |
 | `cli.py` `fetch_cmd` **l.88-198** | `--screenshot` l.109-115, `--screenshot-out` l.116-119, `RenderOptions(...)` build l.160-165, screenshot-out write l.187-188, json emit **l.197-198**. Base64 `resp.screenshot` into the payload before l.198. |
 | `cli.py` `browser: str = "chrome"` **l.94** + `# type: ignore[arg-type]` **l.172** | **StrEnum tidy:** add `_BrowserChoice(StrEnum)` (`chrome`/`firefox`) mirroring `_TierChoice` **l.20-33** + an `_as_browser` bridge; retype the param; drop the l.172 ignore. (Bonus: `--wait-until` StrEnum drops the l.161 ignore too — optional.) |
+| `cli.py` `bulk` **l.217-263** (the `workers > 1` `ThreadPoolExecutor` block **l.251-260**) | **Complexity fix (unblocks #139):** extract the worker-pool branch into a `_run_pool(urls, *, …) -> None` helper so `bulk` drops back under complexipy 15 (it scores 18 under complexipy 6.0.1). Behavior-preserving. |
 | `src/polyfetch_scrape/response.py` `Response.screenshot: bytes\|None` | the bytes source. Surface the **single** `screenshot` only — the plural `Response.screenshots` is library-only (no CLI flag) → out of scope. |
 | `tests/test_cli.py` | existing `--screenshot`/`--screenshot-out` tests (~l.96/106/209-235). Add the 3 tests below (no fixture change — the CLI tests monkeypatch `fetch`). |
 | `USING.md` `## Output schema (--json)` **l.40-49** | add `screenshot_b64` to the documented schema + a one-line note. |
