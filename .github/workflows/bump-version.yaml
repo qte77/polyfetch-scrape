@@ -2,10 +2,10 @@
 name: Bump version
 
 # Step 1 of 2 of the release pipeline (see README "Versioning").
-# Bumps the version files (pyproject.toml, uv.lock self-ref, README badge,
-# CHANGELOG roll + compare footer) via bump-my-version on a branch, then opens
-# a chore(release) PR. Tagging + the GitHub Release are handled by
-# tag-release.yaml when this PR merges to main (so the tag lands on the merge
+# Bumps the version files (pyproject.toml, uv.lock self-ref, README badge) via
+# bump-my-version, collects any changelog.d/ fragments into CHANGELOG.md via
+# scriv, then opens a chore(release) PR. Tagging + the GitHub Release are handled
+# by tag-release.yaml when this PR merges to main (so the tag lands on the merge
 # commit, not a throwaway bump-branch commit).
 #
 # NOTE: merge the bump PR with a PAT — a push made by GITHUB_TOKEN does not
@@ -40,11 +40,28 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Sync dev deps (for scriv)
+        run: uv sync --frozen
+
       - name: Bump version files (no commit/tag)
         id: bump
         uses: callowayproject/bump-my-version@169cce310a3bf9a723d4810157635401de72a07a # 1.4
         with:
           args: ${{ inputs.bump_type }}
+
+      - name: Collect changelog fragments into CHANGELOG.md
+        if: steps.bump.outputs.bumped == 'true'
+        run: |
+          if ls changelog.d/*.md >/dev/null 2>&1; then
+            uv run --no-sync scriv collect --version "${{ steps.bump.outputs.current-version }}"
+          else
+            echo "no changelog fragments to collect"
+          fi
 
       - name: Commit, push branch, open PR
         if: steps.bump.outputs.bumped == 'true'
@@ -58,6 +75,8 @@ jobs:
           git config user.name "bump-my-version"
           git config user.email "bump-my-version@qte77.gha"
           git checkout -b "$BRANCH"
+          # -a stages the bumped version files, the scriv-collected CHANGELOG.md,
+          # and the removed changelog.d/ fragment files in one release commit.
           git commit -am "chore(release): bump $PREV_VERSION -> $VERSION"
           # The bump-my-version Docker action disrupts the persisted git
           # credential, so push to an explicitly token-authenticated URL.

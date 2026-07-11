@@ -3,7 +3,7 @@
 > HTTP scraping toolkit: one typed `fetch()` over a reactive httpx → curl_cffi → Patchright fallback chain — TLS impersonation, JS rendering + interactive browser sessions, and a typed error taxonomy behind a single `Response`.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-informational)](CHANGELOG.md)
 [![Test](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/python-%3E=3.11-blue)](pyproject.toml)
 [![CodeFactor](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape/badge)](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape)
@@ -77,10 +77,10 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full command reference, dev wor
 
 Two-step release pipeline (GitHub Actions), mirroring the qte77 sibling repos:
 
-1. **Bump** — run the **Bump version** workflow (`workflow_dispatch`; pick major/minor/patch). It bumps `pyproject.toml`, the `uv.lock` self-reference, the README badge, and rolls `CHANGELOG.md` (new dated section + compare link) via [`bump-my-version`](https://github.com/callowayproject/bump-my-version), then opens a `chore(release)` PR.
+1. **Bump** — run the **Bump version** workflow (`workflow_dispatch`; pick major/minor/patch). It bumps `pyproject.toml`, the `uv.lock` self-reference, and the README badge via [`bump-my-version`](https://github.com/callowayproject/bump-my-version), then collects the `changelog.d/` fragments into a dated `CHANGELOG.md` section via [`scriv`](https://scriv.readthedocs.io/), and opens a `chore(release)` PR.
 2. **Tag + release** — **merge that PR with a PAT** (a `GITHUB_TOKEN` push won't re-trigger workflows). The **Tag and Release** workflow then tags `vX.Y.Z` on the merge commit and publishes the GitHub Release from the matching `CHANGELOG.md` section.
 
-Keep new changes under `## [Unreleased]`; the bump rolls them into the dated version section.
+Per PR, add a changelog fragment (`make changelog_new`) instead of editing `CHANGELOG.md` — the bump collects them into the release section.
 
 ## Why
 
