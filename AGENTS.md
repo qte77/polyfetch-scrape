@@ -29,11 +29,11 @@ For project overview, see [`README.md`](README.md).
   network calls; always gate behind explicit invocation. Parse third-party XML/RSS with
   `defusedxml`, never stdlib `xml.etree.ElementTree` — see AGENT_LEARNINGS.md "Parse
   untrusted XML/RSS with defusedxml"
-- **Always use `make` recipes** - See [Complete Command Reference](CONTRIBUTING.md#complete-command-reference).
-  Never invoke `pip`, bare `pytest`, bare `ruff`, bare `pyright`, or bare `polyfetch`.
-  The single exception is `pip install uv -q` inside `setup_uv` (bootstrap-only).
-- **Always run `make validate`** before reporting a task complete. Lint, type-check,
-  complexity, and coverage gates must all pass green.
+- **Always use `make` recipes; never bare `pip`/`pytest`/`ruff`/`pyright`/`polyfetch`**
+  (one exception: the `pip install uv` bootstrap). Rule + full command reference:
+  [CONTRIBUTING → Tooling discipline](CONTRIBUTING.md#tooling-discipline).
+- **Always run `make validate`** (green) before reporting a task complete — see the
+  [CONTRIBUTING → Pre-commit checklist](CONTRIBUTING.md#pre-commit-checklist).
 - **Update `CHANGELOG.md`** `## [Unreleased]` section for non-trivial changes
   (see [CONTRIBUTING.md → CHANGELOG requirements](CONTRIBUTING.md#changelog-requirements))
 
