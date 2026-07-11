@@ -10,7 +10,8 @@ One **small CLI unit**. **Read the plan's "Source map" first** — it names ever
 3 tests, so you execute with `grep`, not a fresh Explore pass.
 
 - **What:** add `screenshot_b64` (base64 of `Response.screenshot`) to the `fetch --json` payload; fold in
-  the `--browser` → `StrEnum` tidy.
+  the `--browser` → `StrEnum` tidy; **and** extract `cli.py:bulk`'s worker-pool branch into a `_run_pool`
+  helper (drops `bulk` under complexipy 15 → unblocks Dependabot #139's complexipy 6.0.1 bump).
 - **Where:** `cli.py` `_summarize` (l.59-66) builds the `--json` dict but is **shared with `bulk`** — add
   the key on the **fetch path only** (before the json emit at l.197-198). The `--browser` StrEnum mirrors
   `_TierChoice` (cli.py l.20-33) and drops the `# type: ignore[arg-type]` at cli.py l.172.
@@ -50,8 +51,11 @@ One **small CLI unit**. **Read the plan's "Source map" first** — it names ever
 - **Decisions:** **#59** — ship only the CI-testable slice (detect challenge → typed `ChallengeBlock`); the
   `scrapingcourse.com` ceilings in `tests/test_e2e.py` are the #59 targets. **#89** spike-gate.
   **#60 / #72** UI — out of core scope; recommend close.
-- **CI hygiene:** Dependabot **#139** (python-deps: patchright 1.58.2→1.61.2 + 5) currently **fails `ci`** —
-  investigate / split the group before merging (the patchright jump is the likely culprit).
+- **CI hygiene — Dependabot #139** (python-deps): fails `ci` **only on `complexity`** — `complexipy`
+  5.4.0→**6.0.1** (major) rescored `cli.py:bulk` to 18 (> 15); the other 5 bumps (patchright 1.61.2, pyright,
+  pytest, ruff, typer) pass. **This unit folds the `bulk`→`_run_pool` extraction** (see the plan's Design),
+  so once #105 lands, #139 rebases green and the whole group merges — including **patchright 1.61.2** (wanted
+  for #127/#132's `aria_snapshot(mode="ai")`).
 
 ## State at handoff (2026-07-11, v0.6.0)
 
