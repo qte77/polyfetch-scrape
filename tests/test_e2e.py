@@ -6,9 +6,20 @@ Run via `make test_e2e` or `uv run pytest -m e2e`.
 
 import pytest
 
-from polyfetch_scrape import FetchError, GoneError, RetryPolicy, fetch
+from polyfetch_scrape import (
+    FetchError,
+    GoneError,
+    RenderOptions,
+    RetryPolicy,
+    Screenshot,
+    fetch,
+    render_session,
+)
+from polyfetch_scrape.utils.sitemap import fetch_sitemap_urls
 
 pytestmark = pytest.mark.e2e
+
+_PNG_MAGIC = b"\x89PNG"
 
 
 # --- Layer A: httpbin.org (deterministic, behavior-controlled) ---
@@ -99,4 +110,70 @@ def test_g2_remains_blocked_in_headless_ci() -> None:
     """Documents the practical ceiling: even Patchright can't beat the hardest
     Cloudflare tier without headed real-Chrome, which CI doesn't provide."""
     resp = fetch("https://www.g2.com/", retry=RetryPolicy(max_attempts=1))
+    assert resp.status == 200
+
+
+# --- Layer C: feature-coverage targets (ToS-safe sandboxes; the weekly probe
+# fails loudly if a passing target regresses — e.g. curl_cffi/patchright drift). ---
+
+
+def test_render_session_drives_js_spa() -> None:
+    """render_session (#117) drives an interactive JS SPA and captures a shot."""
+    with render_session("https://quotes.toscrape.com/js/", wait_until="networkidle") as s:
+        s.wait_for_selector(".quote")
+        shot = s.shot("home")
+        count = s.page.locator(".quote").count()
+    assert count >= 1
+    assert shot.startswith(_PNG_MAGIC)
+    assert isinstance(s.console_errors, list)
+
+
+def test_named_screenshots_capture_multiple() -> None:
+    """RenderOptions.screenshots (#119) captures named PNGs in one render."""
+    resp = fetch(
+        "https://quotes.toscrape.com/js/",
+        tier="playwright",
+        render=RenderOptions(
+            wait_until="networkidle",
+            screenshots=(Screenshot("viewport", "viewport"), Screenshot("footer", ".footer")),
+        ),
+    )
+    assert set(resp.screenshots) == {"viewport", "footer"}
+    assert resp.screenshots["viewport"].startswith(_PNG_MAGIC)
+    assert resp.screenshots["footer"].startswith(_PNG_MAGIC)
+
+
+def test_fetch_sitemap_urls_against_real_sitemap() -> None:
+    """fetch_sitemap_urls (#33) resolves a real /sitemap.xml."""
+    urls = fetch_sitemap_urls("https://www.sitemaps.org", max_urls=5)
+    assert len(urls) >= 1
+    assert all(u.startswith("http") for u in urls)
+
+
+# --- Layer D: harder anti-bot ceilings (ToS-safe challenge sandboxes that 403
+# every tier incl. headless Chromium; xfail like g2.com). A weekly xpass here is
+# the signal that headless capability improved — see docs/scraping-landscape.md. ---
+
+
+@pytest.mark.xfail(
+    reason="scrapingcourse.com anti-bot challenge 403s all tiers incl. headless (#59 ceiling).",
+    strict=False,
+    raises=(FetchError, AssertionError),
+)
+def test_scrapingcourse_antibot_challenge_is_ceiling() -> None:
+    resp = fetch(
+        "https://www.scrapingcourse.com/antibot-challenge", retry=RetryPolicy(max_attempts=1)
+    )
+    assert resp.status == 200
+
+
+@pytest.mark.xfail(
+    reason="scrapingcourse.com Cloudflare challenge 403s all tiers incl. headless (#59 ceiling).",
+    strict=False,
+    raises=(FetchError, AssertionError),
+)
+def test_scrapingcourse_cloudflare_challenge_is_ceiling() -> None:
+    resp = fetch(
+        "https://www.scrapingcourse.com/cloudflare-challenge", retry=RetryPolicy(max_attempts=1)
+    )
     assert resp.status == 200
