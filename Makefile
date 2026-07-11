@@ -1,6 +1,6 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
         test test_e2e test_coverage validate ci quick_validate probe probe_bulk hunt \
-        demo_tiers render help
+        demo_tiers render changelog_new changelog_preview changelog_release help
 .DEFAULT_GOAL := help
 
 
@@ -64,6 +64,20 @@ quick_validate:  ## Fast dev cycle (no tests)
 	$(MAKE) -s lint_src
 	$(MAKE) -s type_check
 	@echo "=== quick_validate: all passed ==="
+
+
+# MARK: CHANGELOG
+
+
+changelog_new:  ## Add + stage a scriv changelog fragment for this PR
+	uv run scriv create --add
+
+changelog_preview:  ## Preview the assembled release entry from changelog.d/
+	uv run scriv print
+
+changelog_release:  ## Collect fragments into CHANGELOG.md. Usage: make changelog_release VERSION=X.Y.Z
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION required. Usage: make changelog_release VERSION=X.Y.Z"; exit 2; fi
+	uv run scriv collect --version "$(VERSION)"
 
 
 # MARK: APP

@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 **Types of changes**: Added, Changed, Deprecated, Removed, Fixed, Security.
 
-## [Unreleased]
+Per-PR changes are staged as [scriv](https://scriv.readthedocs.io/) fragments in
+`changelog.d/` and collected here on release (`make changelog_new` to add one).
+
+<!-- scriv-insert-here -->
+
+## [0.6.0] - 2026-07-11
 
 ### Added
 
@@ -166,11 +171,3 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `Makefile` mirroring qte77/Agents-eval recipes (`setup_uv`, `setup_dev`, `lint_src`, `lint_tests`, `type_check`, `complexity`, `test`, `test_coverage`, `validate`, `quick_validate`); all wrap `uv run` (uv-only).
 - `pyproject.toml` — `pytest filterwarnings = ["error"]`, branch coverage with `fail_under = 90`, pyright `typeCheckingMode = "strict"`.
 - Opt-in `e2e` pytest marker + `make test_e2e` recipe (httpbin / arxiv smoke tests, no network in default `make test`).
-
-[Unreleased]: https://github.com/qte77/polyfetch-scrape/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.3.1...v0.4.0
-[0.3.1]: https://github.com/qte77/polyfetch-scrape/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/qte77/polyfetch-scrape/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/qte77/polyfetch-scrape/releases/tag/v0.1.0

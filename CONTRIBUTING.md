@@ -45,6 +45,9 @@
 | `make validate` | Full pre-commit pipeline | lint + types + complexity + cov |
 | `make ci` | Check-only CI pipeline (no mutation) | Same gates as `validate`, non-mutating; run by `.github/workflows/test.yml` |
 | `make quick_validate` | Fast inner-loop validation | lint + types only |
+| `make changelog_new` | Add + stage a scriv changelog fragment for this PR | Edit the generated `changelog.d/*.md` |
+| `make changelog_preview` | Preview the assembled release entry | Reads `changelog.d/` fragments |
+| `make changelog_release VERSION=X.Y.Z` | Collect fragments into `CHANGELOG.md` | Run by the release pipeline; manual for a local cut |
 | `make probe URL=... [JSON=1] [BROWSER=chrome\|firefox] [MAX_ATTEMPTS=N]` | Probe a single URL via CLI | Wraps `polyfetch fetch` |
 | `make probe_bulk FILE=... [WORKERS=N] [TEXT=1] [MAX_ATTEMPTS=N]` | Probe URLs from a file (skips `#` comments + blank lines) | Wraps `polyfetch bulk`; e.g. `FILE=examples/fallback-tier-targets.txt` |
 | `make demo_tiers` | Demo all 3 fallback tiers: httpx/curl_cffi JA3 diff + Patchright render+screenshot | Wraps `examples/fallback_tiers_demo.py`; needs `make setup_browsers` |
@@ -65,12 +68,15 @@ Consuming polyfetch from **another** project or an agent *without installing it*
 ## Pre-commit checklist
 
 1. `make validate` — must exit 0
-2. Update `CHANGELOG.md` `## [Unreleased]` section if your change is non-trivial (see below)
+2. Add a scriv changelog fragment (`make changelog_new`) if your change is non-trivial (see below)
 3. Update `README.md` if any user-facing surface changed (install, CLI, fallback behaviour, public API)
 
 ## CHANGELOG requirements
 
-All non-trivial changes update `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). Format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) with sub-sections `### Added / Changed / Deprecated / Removed / Fixed / Security` (only those that apply).
+All non-trivial changes add a [scriv](https://scriv.readthedocs.io/) **fragment** under `changelog.d/` — **not** a manual `CHANGELOG.md` edit. Fragments are collected into a dated `## [X.Y.Z]` section by the release pipeline (see [Commit and PR conventions](#commit-and-pr-conventions)).
+
+1. `make changelog_new` — creates + stages `changelog.d/<timestamp>_<branch>.md`.
+2. Edit it: uncomment the relevant `### Added / Changed / Deprecated / Removed / Fixed / Security` heading (only those that apply) and write the entry in [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) style. `make changelog_preview` shows the assembled result.
 
 **Requires a CHANGELOG entry:**
 
@@ -94,7 +100,7 @@ All non-trivial changes update `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md)
 - **Topical commits within a PR** — split by concern, not by file. Each commit should be reviewable independently.
 - **Squash-merge** PRs into `main`; keep the topical-commit list in the PR description for the merge commit body.
 - **Branch names**: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, etc.
-- **Releases** are automated — see [README → Versioning](README.md#versioning): run the **Bump version** workflow, then merge the `chore(release)` PR **with a PAT** so **Tag and Release** fires.
+- **Releases** are automated — see [README → Versioning](README.md#versioning): run the **Bump version** workflow (it bumps the version files and runs `scriv collect` to fold `changelog.d/` fragments into a dated `CHANGELOG.md` section), then merge the `chore(release)` PR **with a PAT** so **Tag and Release** fires.
 
 ## Project conventions (quick reference)
 

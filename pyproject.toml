@@ -1,6 +1,6 @@
 [project]
 name = "polyfetch-scrape"
-version = "0.5.0"
+version = "0.6.0"
 description = "Reusable HTTP scraping toolkit: httpx fallback chain + document-domain API wrappers"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,6 +23,7 @@ dev = [
   "pytest-cov>=5.0",
   "respx>=0.23.1",
   "ruff>=0.5",
+  "scriv[toml]>=1.8",
   "types-defusedxml>=0.7.0.20260504",
 ]
 
@@ -76,8 +77,16 @@ select = [
 include = ["src"]
 typeCheckingMode = "strict"
 
+[tool.scriv]
+format = "md"
+fragment_directory = "changelog.d"
+categories = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
+md_header_level = "2"
+entry_title_template = "[{{ version }}] - {{ date.strftime('%Y-%m-%d') }}"
+md_html_anchors = false
+
 [tool.bumpversion]
-current_version = "0.5.0"
+current_version = "0.6.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
@@ -103,14 +112,5 @@ filename = "README.md"
 search = "version-{current_version}-informational"
 replace = "version-{new_version}-informational"
 
-# Roll the CHANGELOG: open a fresh [Unreleased] above the new dated section.
-[[tool.bumpversion.files]]
-filename = "CHANGELOG.md"
-search = "## [Unreleased]"
-replace = "## [Unreleased]\n\n## [{new_version}] - {now:%Y-%m-%d}"
-
-# Compare-link footer: repoint [Unreleased] and add the new version's link.
-[[tool.bumpversion.files]]
-filename = "CHANGELOG.md"
-search = "compare/v{current_version}...HEAD"
-replace = "compare/v{new_version}...HEAD\n[{new_version}]: https://github.com/qte77/polyfetch-scrape/compare/v{current_version}...v{new_version}"
+# CHANGELOG is managed by scriv (changelog.d/ fragments → `scriv collect` on
+# release); bump-my-version only bumps version strings, never CHANGELOG.md.
