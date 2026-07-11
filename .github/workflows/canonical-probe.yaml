@@ -1,0 +1,40 @@
+---
+name: Canonical probe
+
+# Weekly real-network probe of the canonical anti-bot + feature targets so
+# browser-space drift surfaces automatically: a PASSING target that starts
+# failing (curl_cffi / patchright staleness, or a sandbox going away) fails the
+# job → GitHub notifies. The documented ceilings (g2.com, scrapingcourse
+# challenges) stay xfail — an xpass there means headless capability improved.
+#
+# Schedule + manual only — never on push/PR: it hits real networks and downloads
+# the ~300 MB Patchright Chromium, unlike the mocked `Test / ci` gate.
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Install Patchright Chromium
+        run: make setup_browsers
+
+      - name: Probe canonical targets (real network)
+        run: make test_e2e
