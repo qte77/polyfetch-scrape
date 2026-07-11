@@ -34,8 +34,8 @@ For project overview, see [`README.md`](README.md).
   [CONTRIBUTING → Tooling discipline](CONTRIBUTING.md#tooling-discipline).
 - **Always run `make validate`** (green) before reporting a task complete — see the
   [CONTRIBUTING → Pre-commit checklist](CONTRIBUTING.md#pre-commit-checklist).
-- **Update `CHANGELOG.md`** `## [Unreleased]` section for non-trivial changes
-  (see [CONTRIBUTING.md → CHANGELOG requirements](CONTRIBUTING.md#changelog-requirements))
+- **Add a scriv changelog fragment** (`make changelog_new`) for non-trivial changes — never
+  edit `CHANGELOG.md` directly (see [CONTRIBUTING.md → CHANGELOG requirements](CONTRIBUTING.md#changelog-requirements))
 
 ## Decision Framework
 
