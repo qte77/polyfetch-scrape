@@ -1,6 +1,6 @@
 # 006 — #105 base64 screenshot in `fetch --json` (`screenshot_b64`)
 
-> Status: **planned, not started.** Handoff: `docs/handoffs/006-json-base64-screenshot.md`.
+> Status: **planned, not started.** Handoff: `docs/handoffs/006-cli-json-screenshot.md`.
 > Repo `main` (v0.6.0 released). CI gates every PR: `Test / ci` + `CodeQL` + `lint`.
 > **Changelog is scriv now** — `make changelog_new`, never a manual `CHANGELOG.md` edit.
 
