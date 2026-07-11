@@ -1,6 +1,6 @@
 # polyfetch-scrape
 
-> HTTP scraping toolkit: typed `Response`, three-tier fallback chain (httpx → curl_cffi → Patchright), opt-in e2e tests, typer CLI.
+> HTTP scraping toolkit: one typed `fetch()` over a reactive httpx → curl_cffi → Patchright fallback chain — TLS impersonation, JS rendering + interactive browser sessions, and a typed error taxonomy behind a single `Response`.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.5.0-informational)](CHANGELOG.md)
@@ -12,10 +12,11 @@
 ## What
 
 - **One call, typed result.** `fetch(url)` returns a typed `Response` (`status`, `body`, `backend`, …) no matter which backend succeeded — you never pick a scraping tool per site.
-- **Three-tier fallback, reactive.** `httpx` → `curl_cffi` (Chrome TLS/JA3 impersonation) → Patchright (headless Chromium, anti-detection). Escalates only on a real `403` or TLS block, so the cheap tier is always tried first.
+- **Three-tier fallback, reactive.** `httpx` → `curl_cffi` (Chrome TLS/JA3 impersonation) → Patchright (headless Chromium, anti-detection). Escalates only on a real `403` or TLS block, so the cheap tier is always tried first — or pin one tier / bound the range with `tier` / `min_tier` / `max_tier`.
 - **Beats blocks a UA swap can't.** Real TLS impersonation + a headless-Chromium fallback clear sites that reject header-only spoofing ([empirical findings](docs/scraping-landscape.md)).
 - **Typed error taxonomy.** Terminal statuses (`401/407/404/410/451`) raise typed exceptions; `429/5xx` retry honouring `Retry-After`.
-- **Conditional GET + render controls.** `etag`/`last_modified` for `304`s; playwright-tier waits, screenshots, and scripted actions.
+- **Conditional GET + deep render controls.** `etag`/`last_modified` for `304`s; on the browser tier: waits, single + named screenshots, scripted actions, an interactive multi-step `render_session`, and opt-in console/network capture.
+- **POST bodies + polite throttling.** Send `json`/`content` request bodies (httpx/curl tiers); pass a per-host `Throttle` to stay under published rate limits.
 - **Library, CLI, or env-borrow.** `import fetch`, run `polyfetch`, or sideload from another repo/agent without installing ([USING.md](USING.md)).
 
 ## How
