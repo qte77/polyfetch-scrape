@@ -1,7 +1,7 @@
 [project]
 name = "polyfetch-scrape"
 version = "0.6.0"
-description = "Reusable HTTP scraping toolkit: httpx fallback chain + document-domain API wrappers"
+description = "HTTP scraping toolkit: one typed fetch() over a reactive httpx → curl_cffi → Patchright fallback chain — TLS impersonation, JS rendering, typed error taxonomy"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
