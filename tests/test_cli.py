@@ -9,6 +9,7 @@ from polyfetch_scrape.cli import app
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.throttle import Throttle
+from polyfetch_scrape.utils.discovery import DiscoveredSources
 
 runner = CliRunner()
 
@@ -363,3 +364,61 @@ def test_version_prints_and_exits_0() -> None:
 
     assert result.exit_code == 0
     assert result.stdout.strip()
+
+
+def _sources() -> "DiscoveredSources":
+    return DiscoveredSources(
+        url="https://ex.com",
+        sitemaps=("https://ex.com/sitemap.xml",),
+        event_sitemaps=(),
+        feeds=("https://ex.com/feed.xml",),
+        llms_txt=(),
+        json_ld_types=("Event",),
+    )
+
+
+def test_discover_registered_in_help() -> None:
+    result = runner.invoke(app, ["--help"])
+
+    assert result.exit_code == 0
+    assert "discover" in result.stdout
+
+
+def test_discover_json_emits_full_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.discover", lambda _url: _sources())
+
+    result = runner.invoke(app, ["discover", "https://ex.com", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "url": "https://ex.com",
+        "sitemaps": ["https://ex.com/sitemap.xml"],
+        "event_sitemaps": [],
+        "feeds": ["https://ex.com/feed.xml"],
+        "llms_txt": [],
+        "json_ld_types": ["Event"],
+    }
+
+
+def test_discover_text_output_lists_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.discover", lambda _url: _sources())
+
+    result = runner.invoke(app, ["discover", "https://ex.com"])
+
+    assert result.exit_code == 0
+    assert "https://ex.com" in result.stdout
+    assert "sitemaps (1)" in result.stdout
+    assert "json_ld_types (1): Event" in result.stdout
+
+
+def test_discover_ssrf_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(_url: str) -> "DiscoveredSources":
+        raise ValueError("SSRF guard: blocked internal address '127.0.0.1'")
+
+    monkeypatch.setattr("polyfetch_scrape.cli.discover", _raise)
+
+    result = runner.invoke(app, ["discover", "http://127.0.0.1"])
+
+    assert result.exit_code == 2
+    assert "SSRF" in result.output

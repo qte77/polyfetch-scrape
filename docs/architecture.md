@@ -45,6 +45,7 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
 | `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — playwright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures). |
 | `render_session.py` | `render_session()` — managed headless multi-step Patchright `Page` context manager for interactive act→assert→act flows; reuses the backend's `attach_capture`/`capture_screenshot`. |
 | `utils/sitemap.py` | `fetch_sitemap_urls()` — sitemap.xml URL discovery (index recursion, gzip, `defusedxml`, literal-IP SSRF guard) over the public `fetch()`. |
+| `utils/discovery.py` | `discover()` — structured-entrypoint discovery (sitemaps/feeds/`llms.txt`/JSON-LD `@type`) over `fetch()`; soft-404-guarded; returns URLs/types only (no extraction). Shares the SSRF guard via `utils/_ssrf.py`. |
 | `retry.py` | `RetryPolicy` + `should_retry` + `Retry-After` parsing and capped backoff. |
 | `errors.py` | Exception taxonomy: `FetchError` base + terminal `AuthRequired` / `GoneError` / `LegalBlock`. |
 | `cli.py` | Thin typer CLI over `fetch` / bulk; opt-in `contrib` subcommands. |

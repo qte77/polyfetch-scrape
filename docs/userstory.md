@@ -61,6 +61,16 @@ Covered by: a shared `Throttle(min_interval=...)` via `fetch(url, throttle=...)`
 `polyfetch bulk --delay SECONDS` (one throttle across the worker pool → per-host spacing under
 concurrency) (#49).
 
+## Caller who'd rather parse structured data than scrape HTML
+
+> As someone building a scraper, before I LLM-scrape a page's HTML I want to know whether the site
+> already exposes a cheaper structured entrypoint (a sitemap, an RSS/Atom feed, `llms.txt`, or
+> JSON-LD) so I can parse that instead.
+
+Covered by: `utils.discovery.discover(url)` and `polyfetch discover` — reports sitemaps / event
+sitemaps / feeds / `llms.txt` / JSON-LD `@type`s (soft-404-guarded), staying at the transport layer
+(entrypoint URLs/types only; extraction stays downstream) (#135).
+
 ## Author of a domain adapter (arXiv, USPTO, ...)
 
 > As someone building a paper/patent client, I want the fetch/anti-bot machinery without

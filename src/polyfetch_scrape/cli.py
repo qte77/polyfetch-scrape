@@ -15,6 +15,7 @@ from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 from polyfetch_scrape.throttle import Throttle
+from polyfetch_scrape.utils.discovery import DiscoveredSources, discover
 
 
 class _TierChoice(StrEnum):
@@ -261,6 +262,38 @@ def bulk(
 
     if any_failed:
         sys.exit(1)
+
+
+def _format_discovery(d: DiscoveredSources) -> str:
+    fields = (
+        ("sitemaps", d.sitemaps),
+        ("event_sitemaps", d.event_sitemaps),
+        ("feeds", d.feeds),
+        ("llms_txt", d.llms_txt),
+        ("json_ld_types", d.json_ld_types),
+    )
+    lines = [d.url]
+    lines += [
+        f"  {name} ({len(vals)}): {', '.join(vals) if vals else '—'}" for name, vals in fields
+    ]
+    return "\n".join(lines)
+
+
+@app.command()
+def discover_cmd(
+    url: str,
+    json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of text")] = False,
+) -> None:
+    """Discover structured entrypoints (sitemaps / feeds / llms.txt / JSON-LD types) for a URL."""
+    try:
+        found = discover(url)
+    except ValueError as exc:  # SSRF guard: literal internal IP
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(asdict(found)) if json_output else _format_discovery(found))
+
+
+# Bind 'discover' as the command name (function name kept distinct from the import)
+app.registered_commands[-1].name = "discover"
 
 
 # --------------------------------------------------------------------------- #

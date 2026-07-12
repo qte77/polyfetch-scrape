@@ -27,6 +27,7 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 | `polyfetch fetch <url> --json` | one URL → JSON summary (below) |
 | `polyfetch fetch <url> --show-body` | raw response **bytes** to stdout (binary-safe; takes precedence over `--json`) |
 | `polyfetch bulk <file> [--workers N]` | one URL per line (`#`/blank skipped) → JSON-lines |
+| `polyfetch discover <url> [--json]` | structured entrypoints (sitemaps/feeds/`llms.txt`/JSON-LD `@type`s) → JSON |
 | `polyfetch --help` / `polyfetch --version` | discover the surface / print version |
 
 `fetch` flags: `--tier httpx|curl_cffi|playwright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|playwright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`.
@@ -47,6 +48,12 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 
 - `backend` = which tier answered (`httpx` → `curl_cffi` → `playwright`).
 - Need the page content, not metadata? use `--show-body`.
+
+`discover --json` emits the structured entrypoints a site advertises (empty arrays when none):
+
+```json
+{"url": "https://…", "sitemaps": [], "event_sitemaps": [], "feeds": [], "llms_txt": [], "json_ld_types": []}
+```
 
 ## Errors & exit codes
 
