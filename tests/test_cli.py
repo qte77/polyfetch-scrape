@@ -407,7 +407,9 @@ def test_discover_text_output_lists_counts(monkeypatch: pytest.MonkeyPatch) -> N
     result = runner.invoke(app, ["discover", "https://ex.com"])
 
     assert result.exit_code == 0
-    assert "https://ex.com" in result.stdout
+    # Exact first-line match (not a `url in stdout` substring check — that trips
+    # CodeQL's incomplete-URL-sanitization heuristic on the URL literal).
+    assert result.stdout.splitlines()[0] == "https://ex.com"
     assert "sitemaps (1)" in result.stdout
     assert "json_ld_types (1): Event" in result.stdout
 
