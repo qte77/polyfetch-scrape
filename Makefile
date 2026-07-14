@@ -1,6 +1,6 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
         test test_e2e test_coverage validate ci quick_validate probe probe_bulk hunt \
-        discover demo_tiers render changelog_new changelog_preview changelog_release help
+        discover demo_tiers render screencast changelog_new changelog_preview changelog_release help
 .DEFAULT_GOAL := help
 
 
@@ -125,6 +125,11 @@ render:  ## Render a dynamic page + full/viewport screenshots via Patchright. Us
 	uv run python examples/render_screenshot.py \
 		$(if $(URL),"$(URL)") \
 		$(if $(call _cli,OUT),--out-dir "$(OUT)")
+
+
+screencast:  ## Record the README navigation screencast GIF (render_session walkthrough). Usage: make screencast [OUT=path]
+	uv run --with pillow python examples/navigate_screencast.py \
+		$(if $(call _cli,OUT),--out "$(OUT)")
 
 
 # MARK: HELP

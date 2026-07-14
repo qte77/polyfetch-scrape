@@ -20,6 +20,19 @@
 - **Structured-first discovery.** `discover(url)` (and `polyfetch discover`) reports the cheaper-than-HTML entrypoints a site exposes — sitemaps, RSS/Atom/iCal feeds, `llms.txt`, JSON-LD `@type`s — so consumers parse structured data instead of scraping HTML.
 - **Library, CLI, or env-borrow.** `import fetch`, run `polyfetch`, or sideload from another repo/agent without installing ([USING.md](USING.md)).
 
+<!-- markdownlint-disable MD033 -->
+<details>
+<summary>Screencast — polyfetch's <code>render_session</code> driving a headless browser through a live site: browse pagination → open the login form → fill and submit → land logged-in (one frame per step)</summary>
+
+<picture>
+  <img alt="polyfetch render_session navigating quotes.toscrape.com: home → page 2 → login form → filled form → logged in" src="assets/usage.gif" />
+</picture>
+
+Regenerate with `make screencast` ([`examples/navigate_screencast.py`](examples/navigate_screencast.py)) — uses only the public `render_session` API.
+
+</details>
+<!-- markdownlint-enable MD033 -->
+
 ## How
 
 **I am a:** [Library user](#library) | [CLI user](#cli) | [Agent / sideload](USING.md) | [Contributor](#development)
