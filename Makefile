@@ -1,6 +1,6 @@
 .PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
         test test_e2e test_coverage validate ci quick_validate probe probe_bulk hunt \
-        demo_tiers render screencast changelog_new changelog_preview changelog_release help
+        discover demo_tiers render screencast changelog_new changelog_preview changelog_release help
 .DEFAULT_GOAL := help
 
 
@@ -100,6 +100,12 @@ probe_bulk:  ## Probe URLs from FILE. Usage: make probe_bulk FILE=urls.txt [WORK
 		$(if $(call _cli,WORKERS),--workers $(WORKERS)) \
 		$(if $(call _cli,MAX_ATTEMPTS),--max-attempts $(MAX_ATTEMPTS)) \
 		$(if $(call _cli,TEXT),--text)
+
+
+discover:  ## Discover structured entrypoints (sitemaps/feeds/llms.txt/JSON-LD). Usage: make discover URL=https://... [JSON=1]
+	@if [ -z "$(URL)" ]; then echo "Error: URL required. Usage: make discover URL=https://example.com"; exit 1; fi
+	uv run polyfetch discover "$(URL)" \
+		$(if $(call _cli,JSON),--json)
 
 
 SEEDS ?= examples/easter-hunt-seeds.txt

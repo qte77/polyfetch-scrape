@@ -12,7 +12,6 @@ through, matching the ``easter_hunt`` contrib's documented scope.
 """
 
 import gzip
-import ipaddress
 from urllib.parse import urlsplit
 from xml.etree.ElementTree import Element
 
@@ -20,6 +19,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
+from polyfetch_scrape.utils._ssrf import check_ssrf
 
 _GZIP_MAGIC = b"\x1f\x8b"
 
@@ -52,28 +52,8 @@ def _sitemap_url(domain: str) -> str:
     return f"{parts.scheme}://{parts.netloc}/sitemap.xml"
 
 
-def _check_ssrf(url: str) -> None:
-    """Block a URL whose host is a literal internal IP (SSRF guard, pre-fetch)."""
-    host = urlsplit(url).hostname
-    if host is None:
-        return
-    try:
-        addr = ipaddress.ip_address(host)
-    except ValueError:
-        return  # not a literal IP — DNS name, allowed (literal-IP-only scope)
-    if (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_unspecified
-        or addr.is_reserved
-        or addr.is_multicast
-    ):
-        raise ValueError(f"SSRF guard: blocked internal address {host!r}")
-
-
 def _fetch_and_parse(url: str) -> Element | None:
-    _check_ssrf(url)
+    check_ssrf(url)
     try:
         resp = fetch(url, max_tier="curl_cffi")  # sitemaps never need JS
     except FetchError:

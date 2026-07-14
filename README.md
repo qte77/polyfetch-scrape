@@ -17,6 +17,7 @@
 - **Typed error taxonomy.** Terminal statuses (`401/407/404/410/451`) raise typed exceptions; `429/5xx` retry honouring `Retry-After`.
 - **Conditional GET + deep render controls.** `etag`/`last_modified` for `304`s; on the browser tier: waits, single + named screenshots, scripted actions, an interactive multi-step `render_session`, and opt-in console/network capture.
 - **POST bodies + polite throttling.** Send `json`/`content` request bodies (httpx/curl tiers); pass a per-host `Throttle` to stay under published rate limits.
+- **Structured-first discovery.** `discover(url)` (and `polyfetch discover`) reports the cheaper-than-HTML entrypoints a site exposes — sitemaps, RSS/Atom/iCal feeds, `llms.txt`, JSON-LD `@type`s — so consumers parse structured data instead of scraping HTML.
 - **Library, CLI, or env-borrow.** `import fetch`, run `polyfetch`, or sideload from another repo/agent without installing ([USING.md](USING.md)).
 
 <!-- markdownlint-disable MD033 -->
@@ -63,6 +64,7 @@ polyfetch fetch https://quotes.toscrape.com/js/ --tier playwright   # force the 
 polyfetch fetch https://example.com --max-tier curl_cffi   # cap escalation — never launch a browser
 polyfetch fetch https://quotes.toscrape.com/js/ --tier playwright --screenshot viewport --screenshot-out shot.png   # render + screenshot
 polyfetch bulk urls.txt --workers 4 --delay 0.5   # 4 workers, ≥0.5s between same-host requests
+polyfetch discover https://example.com --json   # structured entrypoints: sitemaps/feeds/llms.txt/JSON-LD
 polyfetch --help
 ```
 

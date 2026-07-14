@@ -51,6 +51,7 @@
 | `make probe URL=... [JSON=1] [BROWSER=chrome\|firefox] [MAX_ATTEMPTS=N]` | Probe a single URL via CLI | Wraps `polyfetch fetch` |
 | `make probe_bulk FILE=... [WORKERS=N] [TEXT=1] [MAX_ATTEMPTS=N]` | Probe URLs from a file (skips `#` comments + blank lines) | Wraps `polyfetch bulk`; e.g. `FILE=examples/fallback-tier-targets.txt` |
 | `make demo_tiers` | Demo all 3 fallback tiers: httpx/curl_cffi JA3 diff + Patchright render+screenshot | Wraps `examples/fallback_tiers_demo.py`; needs `make setup_browsers` |
+| `make discover URL=... [JSON=1]` | Discover a site's structured entrypoints (sitemaps/feeds/llms.txt/JSON-LD) | Wraps `polyfetch discover` |
 | `make hunt [URL=...] [SEEDS=file] [JSON=1] [WELLKNOWN=1]` | Scan fetched pages for notable artifacts (`easter_hunt` contrib) | Default seeds: `examples/easter-hunt-seeds.txt` |
 | `make render [URL=... ] [OUT=dir]` | Render a dynamic page + full/viewport screenshots via Patchright | Wraps `examples/render_screenshot.py`; needs `make setup_browsers` |
 | `make help` | Show all recipes | |

@@ -104,6 +104,22 @@ GoneError        # 404 / 410
 LegalBlock       # 451 (RFC 7725) — never escalated to the fingerprint tiers
 ```
 
+## Structured-source discovery (`utils.discovery`)
+
+Semi-public helper (import by module path — `from polyfetch_scrape.utils.discovery import discover`; not re-exported from the package root). Reports the cheaper-than-HTML entrypoints a site advertises, purely at the fetch layer — it returns URLs/types only and never extracts content.
+
+```python
+discover(url: str) -> DiscoveredSources
+      # DiscoveredSources(url, sitemaps, event_sitemaps, feeds, llms_txt, json_ld_types) — frozen; tuple[str, ...] fields
+      # sitemaps/event_sitemaps ← robots.txt `Sitemap:` lines + confirmed common paths (event* → event_sitemaps)
+      # feeds ← <link rel="alternate" type="application/rss+xml|atom+xml|text/calendar"> (resolved absolute)
+      # llms_txt ← /llms.txt, /llms-full.txt (soft-404-guarded: a 200 HTML shell is not counted)
+      # json_ld_types ← <script type="application/ld+json"> @type values (handles lists + @graph nesting)
+      # Never raises for an absent source; raises ValueError if url/a probe is a literal internal IP (SSRF guard).
+```
+
+CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(DiscoveredSources)`).
+
 ## Logging
 
 The library logs tier escalations on the `polyfetch_scrape` logger (silent by default via a `NullHandler`) — configure logging in your app to observe which tier each request escalated through.
