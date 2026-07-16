@@ -133,6 +133,26 @@ def test_patchright_backend_raises_terminal_status(
         )
 
 
+def test_patchright_backend_deletes_video_on_terminal_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A terminal status (404) raised out of _run_page must still delete a recorded video —
+    # the context closed and finalized the .webm, but no success Response will reference it.
+    page, _ = _make_pw_chain(monkeypatch, response_status=404)
+
+    with pytest.raises(GoneError):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            render=RenderOptions(record_video_dir="vids"),
+        )
+
+    page.video.delete.assert_called_once_with()
+
+
 def test_patchright_backend_surfaces_permanent_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
     _make_pw_chain(
         monkeypatch,

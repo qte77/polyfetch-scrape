@@ -112,9 +112,18 @@ def _attempt_once(
     console_errors, network_failures = attach_capture(page, opts)
     video = page.video if opts.record_video_dir is not None else None
     try:
-        result = _run_page(page, url, timeout_ms, opts, policy, console_errors, network_failures)
-    finally:
-        context.close()
+        try:
+            result = _run_page(
+                page, url, timeout_ms, opts, policy, console_errors, network_failures
+            )
+        finally:
+            context.close()
+    except Exception:
+        # A terminal status (raise_for_terminal_status) or any other error escaped _run_page.
+        # The context is already closed, so Patchright has finalized the video on disk — no
+        # success Response will reference it, so delete the orphan before propagating.
+        _discard_video(video)
+        raise
     return _finalize_video(result, video)
 
 
@@ -178,9 +187,15 @@ def _finalize_video(result: _Attempt, video: Any) -> _Attempt:
     if result.response is not None:
         path = Path(video.path())
         return replace(result, response=replace(result.response, video_path=path))
-    with contextlib.suppress(Exception):
-        video.delete()
+    _discard_video(video)
     return result
+
+
+def _discard_video(video: Any) -> None:
+    """Delete a recorded video that no successful ``Response`` will reference (best-effort)."""
+    if video is not None:
+        with contextlib.suppress(Exception):
+            video.delete()
 
 
 def _record_console(msg: Any, sink: list[str]) -> None:
