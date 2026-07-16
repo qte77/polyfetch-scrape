@@ -34,6 +34,11 @@ Order: #105/006 → #139 merges (patchright 1.61.2) → Wave-1 rename → Wave-2
 
 ---
 
+## Wave 0 — cheap wins + unblock
+- **#105** — execute the existing **`docs/plans/006-cli-json-screenshot.md`** (base64 `screenshot_b64` in `fetch --json`; it also extracts `_run_pool` from `bulk` → fixes the complexipy breach → **unblocks Dependabot #139** patchright 1.61.2). Watch the `cli.py` collision with PR A's `_TierChoice` — sequence + rebase.
+- **#145** — `doctor` / ensure-chromium: a `polyfetch doctor` command (mirror the `@app.command()` pattern used by `discover`/`bulk` in `cli.py`) **or** a `make doctor` recipe that checks Chromium and runs `patchright install chromium` if missing. Own PR + `### Added` fragment + CONTRIBUTING make-table row.
+- **#146** — document the `uv run --directory` venv-borrow contract in **README** (already in `USING.md`; #146 wants a README pointer). **Folds into PR B** (Script-author nav).
+
 ## Wave 1 · PR A — rename `playwright` tier → `patchright`  (`refactor/rename-patchright-tier`)
 
 Breaking-ish (pre-1.0). Keep `"playwright"` as a **deprecated input alias** (map→`patchright` + `DeprecationWarning`) — live sibling consumers pass `--tier playwright`.
