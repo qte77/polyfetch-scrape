@@ -58,7 +58,9 @@ jobs:
         if: steps.bump.outputs.bumped == 'true'
         run: |
           if ls changelog.d/*.md >/dev/null 2>&1; then
-            uv run --no-sync scriv collect --version "${{ steps.bump.outputs.current-version }}"
+            # NOT --no-sync: the bump-my-version Docker action above wipes .venv, so
+            # scriv must be re-installed here or `uv run` spawns it from an empty env.
+            uv run scriv collect --version "${{ steps.bump.outputs.current-version }}"
           else
             echo "no changelog fragments to collect"
           fi
