@@ -156,6 +156,30 @@ def test_named_screenshots_capture_multiple() -> None:
     assert resp.screenshots["footer"].startswith(_PNG_MAGIC)
 
 
+def test_patchright_emulation_and_video_record_real_webm(tmp_path) -> None:
+    """Emulation (device/color_scheme) + video recording (#162) produce a real .webm.
+
+    Guards the new context-time RenderOptions end-to-end against a real browser:
+    the recording is finalized on context close and its path surfaces on Response.
+    """
+    resp = fetch(
+        "https://quotes.toscrape.com/js/",
+        tier="patchright",
+        render=RenderOptions(
+            wait_until="networkidle",
+            device="iPhone 13",
+            color_scheme="dark",
+            record_video_dir=str(tmp_path),
+        ),
+    )
+    assert resp.status == 200
+    assert resp.backend == "patchright"
+    assert resp.video_path is not None
+    assert resp.video_path.suffix == ".webm"
+    assert resp.video_path.exists()
+    assert resp.video_path.stat().st_size > 0
+
+
 def test_fetch_sitemap_urls_against_real_sitemap() -> None:
     """fetch_sitemap_urls (#33) resolves a real /sitemap.xml."""
     urls = fetch_sitemap_urls("https://www.sitemaps.org", max_urls=5)
