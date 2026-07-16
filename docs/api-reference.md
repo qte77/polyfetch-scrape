@@ -23,6 +23,8 @@ A single call runs the three-tier fallback chain (or the pinned `tier`) and retu
 
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
+CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR]` — the patchright-tier emulation/video flags; `--json` additionally surfaces `screenshot_b64` (PNG) and `video_path` (recording) when requested. Full flag list: [USING.md](../USING.md).
+
 ## Throttle (optional per-host rate limit)
 
 ```python
@@ -140,6 +142,10 @@ discover(url: str) -> DiscoveredSources
 ```
 
 CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(DiscoveredSources)`).
+
+## CLI-only commands
+
+`polyfetch doctor [--fix]` — checks whether the browser-tier (patchright) Chromium binary is installed; exits non-zero when it's missing. `--fix` installs it. No Python equivalent — CLI-only. Handy when borrowing this repo's venv via `uv run --directory` (see [USING.md](../USING.md)), where the Chromium cache can get wiped between runs.
 
 ## Logging
 

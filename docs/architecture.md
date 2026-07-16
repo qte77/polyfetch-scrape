@@ -23,7 +23,8 @@ How a single `fetch(url)` call flows through the three-tier fallback chain to a 
                          ▼
             patchright_backend.attempt ──2xx──► Response
             (headless Chromium; RenderOptions:
-             wait_until / wait_for_* / screenshot)
+             wait_until / wait_for_* / screenshot
+             + emulation/video)
                          │
       terminal 4xx/451 ──┴── raise_for_terminal_status ──► AuthRequired / GoneError / LegalBlock
 ```
@@ -49,9 +50,9 @@ polyfetch has a supported **engine** and an unsupported-surface **scripting subs
 | `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
 | `_backends/curl_backend.py` | Tier 2: `curl_cffi` Chrome TLS impersonation; engages on 403 / TLS error. |
-| `_backends/patchright_backend.py` | Tier 3: headless Patchright/Chromium — Patchright is a stealth, API-compatible **Playwright fork** (the dependency is `patchright`, never `playwright`); applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture). |
-| `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, console_errors, network_failures, screenshots). |
-| `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — patchright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures). |
+| `_backends/patchright_backend.py` | Tier 3: headless Patchright/Chromium — Patchright is a stealth, API-compatible **Playwright fork** (the dependency is `patchright`, never `playwright`); applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture); emulation/video applied at `new_context()`. |
+| `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, video_path, console_errors, network_failures, screenshots). |
+| `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — patchright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures, device/viewport/color_scheme/user_agent/locale emulation, record_video_dir/record_video_size). |
 | `render_session.py` | `render_session()` — managed headless multi-step Patchright `Page` context manager for interactive act→assert→act flows; reuses the backend's `attach_capture`/`capture_screenshot`. |
 | `utils/sitemap.py` | `fetch_sitemap_urls()` — sitemap.xml URL discovery (index recursion, gzip, `defusedxml`, literal-IP SSRF guard) over the public `fetch()`. |
 | `utils/discovery.py` | `discover()` — structured-entrypoint discovery (sitemaps/feeds/`llms.txt`/JSON-LD `@type`) over `fetch()`; soft-404-guarded; returns URLs/types only (no extraction). Shares the SSRF guard via `utils/_ssrf.py`. |
