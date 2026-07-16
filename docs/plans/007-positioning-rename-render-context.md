@@ -117,6 +117,14 @@ Resolves #148/#154/#155 (emulation) + #125/#122/#155 (video). Consumers (sfclari
 
 **Payoff:** fewer duplicate issues, less script drift, the single browser abstraction consumers want. **Tension to hold:** this pulls toward an estate *framework*, which fights the minimal-primitive positioning — resolve it by owning the *substrate* (engine + context knobs + DX), never app-specific e2e. Wave 2 + the two-layer docs are steps 1–2; steps 3–5 are the follow-through.
 
+### Where the line is (decidable test) — record in `architecture.md`
+**polyfetch owns X iff BOTH:** (a) **generic** — true for *any* target site, not tied to one app's DOM/flow/selectors; **and** (b) **construction-time or shared plumbing** — set at browser/`new_context()` time, or boilerplate every consumer re-implements identically (install/teardown/capture/SSRF). Else **consumer owns** it (app-specific, or a few lines on the `.page` hatch). Applied: emulation/video (#148/#154/#155/#125/#122) = own; a11y `aria_snapshot` (#127) = recipe; ui-check (#144) = minimal core only when stable; doctor/venv-borrow (#145/#146) = own.
+
+### How to move the line (so it stops drifting)
+1. **Trigger:** a consumer dropping to *raw patchright* is the signal the line may be wrong.
+2. **Promotion rule** (mirrors `.claude/rules/compound-learning`): 1st drop → just script it; 2nd → file/note; **3rd or ≥2 repos need the *identical* thing → promote to core** — *iff* it passes the test above **and** the contract is stable (AHA — don't absorb a moving wishlist).
+3. **Record via PR:** into `RenderOptions`/core + update the `architecture.md` boundary statement + changelog entry. The "browser-context options" tracker is the running candidate log.
+
 ## Verify → CI-gated PR
 - `make validate` green each PR (pyright-strict, complexipy ≤15, cov ≥90, `filterwarnings=["error"]`). PR A live: `--tier patchright`→`backend:"patchright"`; `--tier playwright`→works+warns. PR B: `markdownlint-cli2`+`lychee`; `git grep -niE "hostile|the moat"`→none. Wave 2 e2e: `--device "iPhone 13"`, `--color-scheme dark`, real `.webm`.
 - `env -u GH_TOKEN -u GITHUB_TOKEN gh …`; squash on green CI; **check CodeQL** (no `"<url>" in x` — even in test asserts → use `==`). **GitHub Actions webhook delivery was flaky** (dropped PR/push events) — re-trigger (close/reopen or empty push) or wait; a merge conflict may also block (rebase/merge main in).
