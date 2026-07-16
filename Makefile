@@ -1,4 +1,4 @@
-.PHONY: setup_uv setup_dev setup_browsers lint_src lint_tests type_check complexity \
+.PHONY: setup_uv setup_dev setup_browsers doctor lint_src lint_tests type_check complexity \
         test test_e2e test_coverage validate ci quick_validate probe probe_bulk hunt \
         discover demo_tiers render screencast changelog_new changelog_preview changelog_release help
 .DEFAULT_GOAL := help
@@ -16,6 +16,9 @@ setup_dev:  ## Sync dev deps via uv
 
 setup_browsers:  ## Install Patchright Chromium binary (~300MB; required for e2e)
 	uv run patchright install chromium
+
+doctor:  ## Check the browser-tier Chromium is installed; install it if missing
+	uv run polyfetch doctor --fix
 
 
 # MARK: QUALITY
