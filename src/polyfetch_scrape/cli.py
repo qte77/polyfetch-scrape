@@ -307,6 +307,10 @@ def fetch_cmd(
         # Surface the patchright-tier PNG inline so env-borrow / agent consumers get it in
         # the JSON without --screenshot-out writing a file (#105). Absent when no screenshot.
         payload["screenshot_b64"] = base64.b64encode(resp.screenshot).decode("ascii")
+    if json_output and resp.video_path is not None:
+        # Surface the recorded .webm's exact path so --video-out consumers learn the
+        # auto-generated filename (Patchright names it). Absent when not recording.
+        payload["video_path"] = str(resp.video_path)
     typer.echo(json.dumps(payload) if json_output else _format_text(payload))
 
 

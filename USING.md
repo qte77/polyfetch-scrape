@@ -70,7 +70,7 @@ with render_session(url) as s:
 
 `fetch` **patchright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
 
-`fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path`, not yet surfaced in `--json`).
+`fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path` and, with `--json`, is surfaced as `video_path` — the exact auto-generated filename).
 
 `bulk` flags: `--workers N` (concurrency), `--delay S` (per-host polite spacing — min seconds between same-host requests, shared across workers), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 
@@ -88,6 +88,8 @@ with render_session(url) as s:
 - `screenshot_b64` (fetch `--json` only) = base64-encoded PNG, present **only** when a screenshot was
   captured (`--screenshot` on the patchright tier); the key is absent otherwise. Decode with
   `jq -r .screenshot_b64 | base64 -d`.
+- `video_path` (fetch `--json` only) = filesystem path to the recorded `.webm`, present **only** when
+  `--video-out DIR` recorded one on the patchright tier; absent otherwise.
 - Need the page content, not metadata? use `--show-body`.
 
 `discover --json` emits the structured entrypoints a site advertises (empty arrays when none):
