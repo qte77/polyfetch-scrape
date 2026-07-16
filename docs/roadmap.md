@@ -22,7 +22,7 @@
 
 ## 0.3.0 — JS-Render Fallback
 
-Playwright fallback for pages requiring JavaScript execution.
+Patchright (headless-browser) fallback for pages requiring JavaScript execution.
 
 **Goals**:
 

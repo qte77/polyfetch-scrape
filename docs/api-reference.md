@@ -10,18 +10,18 @@ fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
       min_tier=None, max_tier=None, etag=None, last_modified=None,
       json=None, content=None, throttle=None, render=None) -> Response
-      # tier pins one backend: "httpx"|"curl_cffi"|"playwright" (≡ min_tier==max_tier)
+      # tier pins one backend: "httpx"|"curl_cffi"|"patchright" (≡ min_tier==max_tier)
       # min_tier / max_tier → bound the fallback range: max_tier="curl_cffi" caps escalation
-      #   (never launches the browser); min_tier="playwright" forces the JS tier
+      #   (never launches the browser); min_tier="patchright" forces the JS tier
       # etag / last_modified → If-None-Match / If-Modified-Since (conditional GET)
       # json=<obj> / content=<bytes> → POST/PUT request body (mutually exclusive)
       # throttle=Throttle(min_interval=…) → proactive per-host spacing (share one across calls)
-      # render=RenderOptions(...) → playwright-tier wait/screenshot controls
+      # render=RenderOptions(...) → patchright-tier wait/screenshot controls
 ```
 
 A single call runs the three-tier fallback chain (or the pinned `tier`) and returns a typed `Response` regardless of which backend succeeded.
 
-**Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The playwright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to playwright — or one pinned to `tier="playwright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
+**Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
 ## Throttle (optional per-host rate limit)
 
@@ -36,13 +36,13 @@ Proactive politeness: pass one **shared** `Throttle` to many `fetch(url, throttl
 block each other. It spaces distinct `fetch()` calls — internal retries / tier-escalation within one
 call already honor `Retry-After` / backoff. Per-process (not distributed).
 
-## Render controls (playwright tier)
+## Render controls (patchright tier)
 
 ```python
 RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selector=None,
               wait_for_function=None, screenshot=None, actions=(), screenshots=(),
               capture_console=False, capture_network_failures=False)
-      # playwright tier only; screenshot="viewport"|"<css-selector>" → Response.screenshot (PNG bytes)
+      # patchright tier only; screenshot="viewport"|"<css-selector>" → Response.screenshot (PNG bytes)
       # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
       # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
       # capture_console → Response.console_errors (console + uncaught-JS errors)
@@ -57,7 +57,7 @@ Screenshot(name, target="viewport")
       # full_page unsupported (0 bytes on tall pages)
 ```
 
-## Render session (interactive, playwright tier)
+## Render session (interactive, patchright tier)
 
 A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on.
 
@@ -81,7 +81,7 @@ Response(url, status, headers, body, content_type, backend,
          permanent_redirect_to=None, screenshot=None,
          console_errors=[], network_failures=[], screenshots={})
       # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
-      # screenshot: PNG bytes when requested on the playwright tier, else None
+      # screenshot: PNG bytes when requested on the patchright tier, else None
       # screenshots: dict[name, PNG bytes] from RenderOptions.screenshots; {} otherwise
       # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
       # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)
