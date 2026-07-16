@@ -1,7 +1,9 @@
+import contextlib
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 from patchright.sync_api import TimeoutError as PwTimeoutError
@@ -44,10 +46,11 @@ def attempt(
     timeout_ms = int(timeout * 1000)
 
     with sync_playwright() as pw:
+        ctx_kwargs = context_kwargs(pw, opts)
         browser = pw.chromium.launch(headless=True)
         try:
             for attempt_idx in range(policy.max_attempts):
-                last = _attempt_once(browser, url, headers, timeout_ms, opts, policy)
+                last = _attempt_once(browser, url, headers, timeout_ms, opts, ctx_kwargs, policy)
                 if last.response is not None:
                     return last.response
                 if attempt_idx + 1 < policy.max_attempts:
@@ -64,59 +67,120 @@ def attempt(
     raise FetchError(msg) from last.error
 
 
+def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
+    """Build browser.new_context(**kwargs) from RenderOptions emulation/video fields.
+
+    Device preset first (a bundle of user_agent/viewport/is_mobile/...), then explicit
+    fields override it. record_video_* map to Patchright's {width,height} shape.
+    """
+    kwargs: dict[str, Any] = {}
+    if opts.device is not None:
+        kwargs.update(
+            pw.devices[opts.device]
+        )  # spread directly — new_context accepts default_browser_type
+    if opts.viewport is not None:
+        kwargs["viewport"] = {"width": opts.viewport[0], "height": opts.viewport[1]}
+    if opts.user_agent is not None:
+        kwargs["user_agent"] = opts.user_agent
+    if opts.locale is not None:
+        kwargs["locale"] = opts.locale
+    if opts.color_scheme is not None:
+        kwargs["color_scheme"] = opts.color_scheme
+    if opts.record_video_dir is not None:
+        kwargs["record_video_dir"] = str(opts.record_video_dir)
+        if opts.record_video_size is not None:
+            kwargs["record_video_size"] = {
+                "width": opts.record_video_size[0],
+                "height": opts.record_video_size[1],
+            }
+    return kwargs
+
+
 def _attempt_once(
     browser: Any,
     url: str,
     headers: Mapping[str, str] | None,
     timeout_ms: int,
     opts: RenderOptions,
+    context_kwargs: dict[str, Any],
     policy: RetryPolicy,
 ) -> _Attempt:
-    context = browser.new_context()
+    context = browser.new_context(**context_kwargs)
     if headers:
         context.set_extra_http_headers(dict(headers))
     page = context.new_page()
     console_errors, network_failures = attach_capture(page, opts)
+    video = page.video if opts.record_video_dir is not None else None
     try:
-        try:
-            response = page.goto(url, wait_until=opts.wait_until, timeout=timeout_ms)
-        except PwTimeoutError as exc:
-            return _Attempt(None, None, exc)
-
-        if response is None:
-            return _Attempt(None, None, FetchError("patchright: no response object"))
-
-        status = int(response.status)
-        if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
-            headers_map = {str(k).lower(): str(v) for k, v in dict(response.all_headers()).items()}
-            return _Attempt(None, status, None, parse_retry_after(headers_map.get("retry-after")))
-
-        raise_for_terminal_status(status, url)
-        _apply_actions(page, opts.actions, timeout_ms)
-        _apply_waits(page, opts, timeout_ms)
-
-        body = page.content().encode("utf-8")
-        all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
-        screenshots = {s.name: capture_screenshot(page, s.target) or b"" for s in opts.screenshots}
-        return _Attempt(
-            Response(
-                url=str(page.url),
-                status=status,
-                headers=all_headers,
-                body=body,
-                content_type=all_headers.get("content-type"),
-                backend="patchright",
-                permanent_redirect_to=permanent_redirect_target(status, all_headers),
-                screenshot=capture_screenshot(page, opts.screenshot),
-                console_errors=console_errors,
-                network_failures=network_failures,
-                screenshots=screenshots,
-            ),
-            None,
-            None,
-        )
+        result = _run_page(page, url, timeout_ms, opts, policy, console_errors, network_failures)
     finally:
         context.close()
+    return _finalize_video(result, video)
+
+
+def _run_page(
+    page: Any,
+    url: str,
+    timeout_ms: int,
+    opts: RenderOptions,
+    policy: RetryPolicy,
+    console_errors: list[str],
+    network_failures: list[dict[str, object]],
+) -> _Attempt:
+    """Navigate, check status/retry conditions, run actions/waits, and build the ``_Attempt``."""
+    try:
+        response = page.goto(url, wait_until=opts.wait_until, timeout=timeout_ms)
+    except PwTimeoutError as exc:
+        return _Attempt(None, None, exc)
+
+    if response is None:
+        return _Attempt(None, None, FetchError("patchright: no response object"))
+
+    status = int(response.status)
+    if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
+        headers_map = {str(k).lower(): str(v) for k, v in dict(response.all_headers()).items()}
+        return _Attempt(None, status, None, parse_retry_after(headers_map.get("retry-after")))
+
+    raise_for_terminal_status(status, url)
+    _apply_actions(page, opts.actions, timeout_ms)
+    _apply_waits(page, opts, timeout_ms)
+
+    body = page.content().encode("utf-8")
+    all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
+    screenshots = {s.name: capture_screenshot(page, s.target) or b"" for s in opts.screenshots}
+    return _Attempt(
+        Response(
+            url=str(page.url),
+            status=status,
+            headers=all_headers,
+            body=body,
+            content_type=all_headers.get("content-type"),
+            backend="patchright",
+            permanent_redirect_to=permanent_redirect_target(status, all_headers),
+            screenshot=capture_screenshot(page, opts.screenshot),
+            console_errors=console_errors,
+            network_failures=network_failures,
+            screenshots=screenshots,
+        ),
+        None,
+        None,
+    )
+
+
+def _finalize_video(result: _Attempt, video: Any) -> _Attempt:
+    """Attach the finished video path to a success response, or delete it on failure.
+
+    Patchright only writes the video file on ``context.close()``, so this must run
+    AFTER close (``_attempt_once`` calls it once the context is closed).
+    """
+    if video is None:
+        return result
+    if result.response is not None:
+        path = Path(video.path())
+        return replace(result, response=replace(result.response, video_path=path))
+    with contextlib.suppress(Exception):
+        video.delete()
+    return result
 
 
 def _record_console(msg: Any, sink: list[str]) -> None:
