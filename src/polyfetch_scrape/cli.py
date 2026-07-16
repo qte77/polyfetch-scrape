@@ -1,5 +1,7 @@
+import base64
 import json
 import sys
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from enum import StrEnum
@@ -9,7 +11,7 @@ from typing import Annotated, Any, cast
 
 import typer
 
-from polyfetch_scrape.client import Tier, fetch
+from polyfetch_scrape.client import Browser, Tier, fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import RenderOptions
 from polyfetch_scrape.response import Response
@@ -32,6 +34,21 @@ class _TierChoice(StrEnum):
 def _as_tier(choice: _TierChoice | None) -> Tier | None:
     """Validated choice → the ``Tier`` Literal (sound: values are exactly the Literal members)."""
     return cast("Tier | None", choice.value) if choice is not None else None
+
+
+class _BrowserChoice(StrEnum):
+    """CLI choice for ``--browser`` — typer validates the value and shows it in --help.
+
+    Values mirror ``client.Browser``; ``_as_browser`` bridges the validated choice to that Literal.
+    """
+
+    chrome = "chrome"
+    firefox = "firefox"
+
+
+def _as_browser(choice: _BrowserChoice) -> Browser:
+    """Validated choice → the ``Browser`` Literal (values are exactly the Literal members)."""
+    return choice.value
 
 
 app = typer.Typer(
@@ -92,7 +109,10 @@ def fetch_cmd(
     method: str = "GET",
     timeout: float = 30.0,
     max_attempts: int = 3,
-    browser: str = "chrome",
+    browser: Annotated[
+        _BrowserChoice,
+        typer.Option("--browser", help="Impersonation profile for the curl_cffi tier."),
+    ] = _BrowserChoice.chrome,
     wait_for_selector: str | None = None,
     wait_until: Annotated[
         str,
@@ -170,7 +190,7 @@ def fetch_cmd(
             method=method,
             timeout=timeout,
             retry=policy,
-            browser=browser,  # type: ignore[arg-type]
+            browser=_as_browser(browser),
             tier=_as_tier(tier),
             min_tier=_as_tier(min_tier),
             max_tier=_as_tier(max_tier),
@@ -196,6 +216,10 @@ def fetch_cmd(
         return
 
     payload = _summarize(resp)
+    if json_output and resp.screenshot is not None:
+        # Surface the playwright-tier PNG inline so env-borrow / agent consumers get it in
+        # the JSON without --screenshot-out writing a file (#105). Absent when no screenshot.
+        payload["screenshot_b64"] = base64.b64encode(resp.screenshot).decode("ascii")
     typer.echo(json.dumps(payload) if json_output else _format_text(payload))
 
 
@@ -213,6 +237,27 @@ def _run_one(
     except FetchError as exc:
         return _error_payload(url, exc)
     return _summarize(resp)
+
+
+def _run_pool(
+    urls: list[str],
+    *,
+    workers: int,
+    timeout: float,
+    max_attempts: int,
+    throttle: Throttle | None,
+    emit: Callable[[dict[str, Any]], None],
+) -> None:
+    """Fetch ``urls`` concurrently, emitting each result in submit order as it completes."""
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [
+            pool.submit(
+                _run_one, url, timeout=timeout, max_attempts=max_attempts, throttle=throttle
+            )
+            for url in urls
+        ]
+        for fut in futures:
+            emit(fut.result())
 
 
 @app.command()
@@ -250,15 +295,14 @@ def bulk(
         for url in urls:
             _emit(_run_one(url, timeout=timeout, max_attempts=max_attempts, throttle=throttle))
     else:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [
-                pool.submit(
-                    _run_one, url, timeout=timeout, max_attempts=max_attempts, throttle=throttle
-                )
-                for url in urls
-            ]
-            for fut in futures:
-                _emit(fut.result())
+        _run_pool(
+            urls,
+            workers=workers,
+            timeout=timeout,
+            max_attempts=max_attempts,
+            throttle=throttle,
+            emit=_emit,
+        )
 
     if any_failed:
         sys.exit(1)
