@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from pathlib import Path
@@ -240,6 +241,62 @@ def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     assert result.exit_code == 0
     assert out.read_bytes() == png
+
+
+def test_fetch_json_includes_screenshot_b64(monkeypatch: pytest.MonkeyPatch) -> None:
+    png = b"\x89PNG-x"
+
+    def fake(url: str, **_kw: object) -> Response:
+        return Response(
+            url=url,
+            status=200,
+            headers={"content-type": "image/png"},
+            body=b"x",
+            content_type="image/png",
+            backend="playwright",
+            screenshot=png,
+        )
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app,
+        ["fetch", "https://x.test", "--json", "--tier", "playwright", "--screenshot", "viewport"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert base64.b64decode(payload["screenshot_b64"]) == png
+
+
+def test_fetch_json_omits_screenshot_b64_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", lambda *a, **kw: _ok())
+
+    result = runner.invoke(app, ["fetch", "https://example.com", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert "screenshot_b64" not in payload
+
+
+def test_browser_flag_rejects_invalid_choice(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def fake(url: str, **_kw: object) -> Response:
+        nonlocal called
+        called = True
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    # typer validates the StrEnum → invalid choice exits 2 before fetch() is called.
+    bad = runner.invoke(app, ["fetch", "https://x.test", "--browser", "safari"])
+    assert bad.exit_code == 2
+    assert called is False
+
+    ok = runner.invoke(app, ["fetch", "https://x.test", "--browser", "firefox"])
+    assert ok.exit_code == 0
+    assert called is True
 
 
 def test_fetch_exits_1_on_fetcherror(monkeypatch: pytest.MonkeyPatch) -> None:
