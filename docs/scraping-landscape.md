@@ -35,9 +35,11 @@ Probed in-tree while building the 0.2.0 / 0.3.0 fallback chain. Results are poin
 |---|---|---|---|
 | `httpbin.org/get` | 200 | n/a | n/a |
 | `arxiv.org/abs/...` | 200 | n/a | n/a |
-| `nowsecure.nl/` | 403 | **200** | 200 |
-| `tls.peet.ws/api/all` | TLS verify error | TLS verify error | n/a |
+| `nowsecure.nl/` | **200** (was 403 in 2026-04; re-probed 2026-07-16) | **200** | 200 |
+| `tls.peet.ws/api/all` | **200** (was TLS verify error in 2026-04; re-probed 2026-07-16) | 200 | n/a |
 | `g2.com/` | 403 | 403 | **403** |
+
+The `nowsecure.nl/` and `tls.peet.ws/api/all` httpx-tier results above decayed between the 2026-04 probe and a 2026-07-16 re-probe (both now `200` where they weren't) — a concrete instance of this table's own "results decay — re-run before relying" caveat.
 
 **Session re-probe — User-Agent string vs. client fingerprint (2026-07-06):** issue [#36](https://github.com/qte77/polyfetch-scrape/issues/36) proposed a six-site "default-UA vs. browser-UA" table from an earlier agent session. On re-probe, five of those targets (`thingiverse.com`, `web.archive.org`, `ifactory3d.com`, `biqu.equipment`, `creality3dofficial.com`) now return `200` to **every** client tested — including a bare `curl` with its default UA — so they no longer illustrate a bot-block and are dropped. Only `www.hamiltoncompany.com` still discriminates, and it does so on more than the UA string:
 
