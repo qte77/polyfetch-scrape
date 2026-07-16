@@ -15,7 +15,7 @@
 - **Three-tier fallback, reactive.** `httpx` → `curl_cffi` (Chrome TLS/JA3 impersonation) → Patchright (headless Chromium, anti-detection). Escalates only on a real `403` or TLS block, so the cheap tier is always tried first — or pin one tier / bound the range with `tier` / `min_tier` / `max_tier`.
 - **Handles TLS-fingerprint blocks, not just UA checks.** Real TLS/JA3 impersonation plus a headless-Chromium fallback reach sites that reject header-only spoofing ([empirical findings](docs/scraping-landscape.md)).
 - **Typed error taxonomy.** Terminal statuses (`401/407/404/410/451`) raise typed exceptions; `429/5xx` retry honouring `Retry-After`.
-- **Conditional GET + deep render controls.** `etag`/`last_modified` for `304`s; on the browser tier: waits, single + named screenshots, scripted actions, an interactive multi-step `render_session`, device/locale/colour-scheme emulation with optional video recording (VP8 `.webm` → `Response.video_path`), and **DevTools capture** — console messages, network failures, and uncaught JS errors (opt-in on `fetch`, always-on in `render_session`, or wire your own `page.on(...)` listeners).
+- **Conditional GET + deep render controls.** `etag`/`last_modified` for `304`s; on the browser tier: waits, single + named screenshots, scripted actions, an interactive multi-step `render_session`, device/viewport/locale/colour-scheme/user-agent emulation with optional video recording (VP8 `.webm` → `Response.video_path`), and **DevTools capture** — console messages, network failures, and uncaught JS errors (opt-in on `fetch`, always-on in `render_session`, or wire your own `page.on(...)` listeners). `fetch --json` surfaces the screenshot inline as `screenshot_b64` and the recording path as `video_path` — see [USING.md](USING.md)'s Output schema.
 - **POST bodies + polite throttling.** Send `json`/`content` request bodies (httpx/curl tiers); pass a per-host `Throttle` to stay under published rate limits.
 - **Structured-first discovery.** `discover(url)` (and `polyfetch discover`) reports the cheaper-than-HTML entrypoints a site exposes — sitemaps, RSS/Atom/iCal feeds, `llms.txt`, JSON-LD `@type`s — so consumers parse structured data instead of scraping HTML.
 - **Library, CLI, or env-borrow.** `import fetch`, run `polyfetch`, or sideload from another repo/agent without installing ([USING.md](USING.md)).
@@ -72,8 +72,10 @@ polyfetch fetch https://example.com --etag '"abc123"'   # conditional GET (If-No
 polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright   # force the JS-render tier
 polyfetch fetch https://example.com --max-tier curl_cffi   # cap escalation — never launch a browser
 polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright --screenshot viewport --screenshot-out shot.png   # render + screenshot
+polyfetch fetch https://example.com --tier patchright --device "iPhone 13" --video-out ./videos --json   # emulate a device + record a .webm
 polyfetch bulk urls.txt --workers 4 --delay 0.5   # 4 workers, ≥0.5s between same-host requests
 polyfetch discover https://example.com --json   # structured entrypoints: sitemaps/feeds/llms.txt/JSON-LD
+polyfetch doctor --fix   # verify (and install) the browser-tier Chromium
 polyfetch --help
 ```
 
