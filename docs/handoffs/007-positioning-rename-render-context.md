@@ -21,7 +21,9 @@ Full plan + code/file/source map: **[`docs/plans/007-positioning-rename-render-c
 2. **Wave 1 · PR A** — the `playwright`→`patchright` rename (deprecated alias; §"PR A" source map in the plan). Do this before docs so PR B references the final name.
 3. **Wave 1 · PR B** — the two-layer positioning docs (README spine + compare + two-bucket "does not do" + architecture boundaries/no-pydantic + drop "hostile"/"the moat").
 4. **Wave 2** — emulation+video → core `RenderOptions` (both `new_context()` sites; `Response.video_path`).
-5. **Cleanup** — consolidate #148/#154/#155 + #122/#125; open the pydantic tracking issue; comment #127 (recipe); recommend close #60; #89 spike.
+5. **Cleanup + enhancements** (plan §Cleanup/Enhancements) — consolidate #148/#154/#155 + #122/#125; **dedup the SSRF guard** (easter_hunt `orchestrator.py:22` → `utils/_ssrf.check_ssrf`); open the pydantic tracking issue; comment #127 (recipe); **close #60**; #89 spike. Then **cut `v0.7.0`** around PR A (breaking rename; migration note) and add a **scripting cookbook** so the "scripts" layer is real.
+
+See the plan's **§Strategic — estate contract**: consumers keep re-filing the same substrate needs (emulation/video/ui-check/doctor) and dropping to raw patchright. Draw the line once — polyfetch owns the *substrate* (engine + `new_context()` knobs + DX), consumers own app-specific e2e — to stop the N-repo drift.
 
 ## Open decisions (already made — don't re-litigate)
 

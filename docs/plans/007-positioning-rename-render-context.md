@@ -91,10 +91,31 @@ Resolves #148/#154/#155 (emulation) + #125/#122/#155 (video). Consumers (sfclari
 
 ---
 
-## Cleanup / issues (after PRs)
+## Cleanup / deletions (after PRs)
 - Consolidate emulation dupes **#148/#154/#155** and video dupes **#122/#125** (one canonical each or a "browser-context options" tracker); cross-link.
-- Open **pydantic tracking issue** ("Evaluate pydantic/pydantic-settings — estate consistency vs minimal library", open-question framing; `scrape-stock-kpi` uses pydantic-settings, polyfetch strips it — see `utils/http_ua.py:19`); link from architecture.md.
-- Comment **#127** (scripted `.page` recipe, not core). Recommend close **#60**. **#89** cheap spike→close.
+- **Dedup the SSRF guard** — `contrib/easter_hunt/orchestrator.py:22` still carries a *third* copy of `_check_ssrf`; point it at `utils/_ssrf.check_ssrf` (sitemap + discovery already use the shared one).
+- Comment **#127** (scripted `.page` recipe, not core). **Close #60** (UI — off-thesis; shrinks apparent surface). **#89** cheap probe spike → close (downstream).
+- Open **pydantic tracking issue** (open-question framing; `scrape-stock-kpi` uses pydantic-settings, polyfetch strips it — `utils/http_ua.py:19`); link from architecture.md.
+
+## Enhancements (fold into the waves)
+- **Cut `v0.7.0` around PR A.** The rename is breaking (`Response.backend` value changes) → SemVer-natural release; 0.7.0 also *ships* the already-merged discovery (#135) + screencast under a clean version. Run the **Bump version** workflow after PR A merges; add a **migration note** (`playwright`→`patchright`; deprecated alias) to the release.
+- **Scripting cookbook** (`docs/scripting.md` or `examples/`). The two-layer USP asserts "you script the browser on the substrate" — make it real with worked recipes (a11y `aria_snapshot`, a multi-step walk, post-hoc `set_viewport_size`). PR B links it. Low cost, high credibility.
+- **Wave-0 DX first** (#145 doctor, #146 venv-borrow docs) — highest value/effort; stops sibling repos silently breaking on wiped Chromium caches.
+
+## Strategic — polyfetch's *estate contract*
+
+**Symptom:** the qte77 estate keeps re-filing the *same* substrate needs from different consumers — emulation (#148 fo-scraper, #154 sfclarity, #155 azure-doc-workflows), video (#122/#125 agenthud/ldnmxx-hack), a shared ui-check helper (#144 fo-scraper/ajoa-kit/sfclarity), doctor (#145), venv-borrow docs (#146), pydantic-settings divergence (`http_ua.py:19`). Each consumer hits the substrate's edge, **drops to raw patchright**, then files an issue → duplicate issues, per-repo script drift, and exactly the raw-patchright workarounds the two-layer positioning is meant to end (#155 explicitly wants polyfetch as "the single browser abstraction").
+
+**Root cause:** polyfetch is the estate's shared fetch/browser substrate, but there's **no explicit contract** for what it owns vs. what each consumer owns — so limits are discovered ad hoc, N times.
+
+**Fix — draw and document the line once (polyfetch owns the *substrate*, not the *framework*):**
+1. **polyfetch owns:** the fetch engine; the scripting substrate (installed browser + instrumented `Page` + env-borrow); the `new_context()` knobs (emulation/video — Wave 2 closes the biggest recurring gap); DX tooling (`doctor` #145, documented venv-borrow #146).
+2. **Consumers own:** app-specific e2e — the walks, assertions, theme toggling, per-app selectors. Not polyfetch's job.
+3. **The one shared helper (#144):** extract only a *minimal* core (render + screenshot + console/404 assert + Make-driveable) once the API settles (AHA) — don't absorb every consumer's wishlist.
+4. **Consistency decisions** (pydantic/typing/dataclasses): decide once (the tracking issue) so repos align or diverge *intentionally*.
+5. **A short "consuming polyfetch across the estate" doc:** point consumers at env-borrow + the substrate contract + "own your e2e," so they stop re-inventing.
+
+**Payoff:** fewer duplicate issues, less script drift, the single browser abstraction consumers want. **Tension to hold:** this pulls toward an estate *framework*, which fights the minimal-primitive positioning — resolve it by owning the *substrate* (engine + context knobs + DX), never app-specific e2e. Wave 2 + the two-layer docs are steps 1–2; steps 3–5 are the follow-through.
 
 ## Verify → CI-gated PR
 - `make validate` green each PR (pyright-strict, complexipy ≤15, cov ≥90, `filterwarnings=["error"]`). PR A live: `--tier patchright`→`backend:"patchright"`; `--tier playwright`→works+warns. PR B: `markdownlint-cli2`+`lychee`; `git grep -niE "hostile|the moat"`→none. Wave 2 e2e: `--device "iPhone 13"`, `--color-scheme dark`, real `.webm`.
