@@ -124,10 +124,13 @@ demo_tiers:  ## Exemplify all 3 fallback tiers: httpx/curl_cffi JA3 diff + patch
 	uv run python examples/fallback_tiers_demo.py
 
 
-render:  ## Render a dynamic page + full/viewport screenshots via Patchright. Usage: make render [URL=https://...] [OUT=dir]
+render:  ## Render a dynamic page + screenshot, with device/color-scheme emulation + video recording, via Patchright. Usage: make render [URL=https://...] [OUT=dir] [DEVICE=name] [COLOR_SCHEME=light|dark] [VIDEO_OUT=dir]
 	uv run python examples/render_screenshot.py \
 		$(if $(URL),"$(URL)") \
-		$(if $(call _cli,OUT),--out-dir "$(OUT)")
+		$(if $(call _cli,OUT),--out-dir "$(OUT)") \
+		$(if $(call _cli,DEVICE),--device "$(DEVICE)") \
+		$(if $(call _cli,COLOR_SCHEME),--color-scheme $(COLOR_SCHEME)) \
+		$(if $(call _cli,VIDEO_OUT),--video-out "$(VIDEO_OUT)")
 
 
 screencast:  ## Record the README navigation screencast GIF (render_session walkthrough). Usage: make screencast [OUT=path]
