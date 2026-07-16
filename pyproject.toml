@@ -11,18 +11,18 @@ dependencies = [
     "curl-cffi>=0.15.0",
     "defusedxml>=0.7.1",
     "httpx>=0.28.1",
-    "patchright>=1.58.2",
-    "typer>=0.25.0",
+    "patchright>=1.61.2",
+    "typer>=0.27.0",
 ]
 
 [dependency-groups]
 dev = [
-  "complexipy>=5.4.0",
-  "pyright>=1.1.409",
-  "pytest>=8.0",
+  "complexipy>=6.0.1",
+  "pyright>=1.1.411",
+  "pytest>=9.1.1",
   "pytest-cov>=5.0",
   "respx>=0.23.1",
-  "ruff>=0.5",
+  "ruff>=0.15.21",
   "scriv[toml]>=1.8",
   "types-defusedxml>=0.7.0.20260504",
 ]
