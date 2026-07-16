@@ -108,6 +108,79 @@ def test_fetch_render_flags_build_render_options(monkeypatch: pytest.MonkeyPatch
     assert render.screenshot == "viewport"  # type: ignore[attr-defined]
 
 
+def test_fetch_emulation_and_video_flags_build_render_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "https://x.test",
+            "--device",
+            "iPhone 13",
+            "--viewport",
+            "800x600",
+            "--color-scheme",
+            "dark",
+            "--user-agent",
+            "UA-x",
+            "--locale",
+            "en-US",
+            "--video-out",
+            "captured-videos",
+        ],
+    )
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.device == "iPhone 13"  # type: ignore[attr-defined]
+    assert render.viewport == (800, 600)  # type: ignore[attr-defined]
+    assert render.color_scheme == "dark"  # type: ignore[attr-defined]
+    assert render.user_agent == "UA-x"  # type: ignore[attr-defined]
+    assert render.locale == "en-US"  # type: ignore[attr-defined]
+    assert render.record_video_dir == Path("captured-videos")  # type: ignore[attr-defined]
+
+
+def test_fetch_rejects_malformed_viewport(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def fake(url: str, **kwargs: object) -> Response:
+        nonlocal called
+        called = True
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--viewport", "800"])
+
+    assert result.exit_code == 2
+    assert called is False
+
+
+def test_fetch_rejects_unknown_color_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def fake(url: str, **kwargs: object) -> Response:
+        nonlocal called
+        called = True
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--color-scheme", "psychedelic"])
+
+    assert result.exit_code == 2
+    assert called is False
+
+
 def test_fetch_conditional_flags_reach_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

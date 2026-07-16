@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -12,12 +13,22 @@ from polyfetch_scrape.render_session import render_session
 # real module object from sys.modules to patch its sync_playwright.
 _RS_MOD = sys.modules["polyfetch_scrape.render_session"]
 
+_IPHONE_13_DEVICE: dict[str, Any] = {
+    "user_agent": "UA-iphone",
+    "viewport": {"width": 390, "height": 844},
+    "is_mobile": True,
+    "has_touch": True,
+    "device_scale_factor": 3,
+    "default_browser_type": "chromium",
+}
+
 
 def _make_session_chain(
     monkeypatch: pytest.MonkeyPatch,
     *,
     goto_side_effect: Any = None,
     screenshot: bytes = b"\x89PNG",
+    video_path: str = "captured-videos/session.webm",
 ) -> tuple[MagicMock, MagicMock, MagicMock, MagicMock]:
     """Wire a sync_playwright().start() -> page chain. Returns (page, context, browser, pw)."""
     page = MagicMock(spec=pw_sync.Page)
@@ -25,6 +36,8 @@ def _make_session_chain(
     if goto_side_effect is not None:
         page.goto.side_effect = goto_side_effect
     page.screenshot.return_value = screenshot
+    page.video = MagicMock()
+    page.video.path.return_value = video_path
 
     context = MagicMock(spec=pw_sync.BrowserContext)
     context.new_page.return_value = page
@@ -34,6 +47,7 @@ def _make_session_chain(
 
     pw_instance = MagicMock(spec=pw_sync.Playwright)
     pw_instance.chromium.launch.return_value = browser
+    pw_instance.devices = {"iPhone 13": dict(_IPHONE_13_DEVICE)}
 
     sp = MagicMock()
     sp.start.return_value = pw_instance
@@ -143,3 +157,44 @@ def test_render_session_exported_from_package_root() -> None:
 
     assert hasattr(polyfetch_scrape, "render_session")
     assert "render_session" in polyfetch_scrape.__all__
+
+
+def test_context_kwargs_reach_new_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com", device="iPhone 13", color_scheme="dark"):
+        pass
+
+    kwargs = browser.new_context.call_args.kwargs
+    assert kwargs["color_scheme"] == "dark"
+    assert kwargs["user_agent"] == "UA-iphone"
+    assert kwargs["default_browser_type"] == "chromium"
+
+
+def test_new_context_no_kwargs_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com"):
+        pass
+
+    browser.new_context.assert_called_once_with()
+
+
+def test_video_path_set_after_teardown_when_recording(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, *_ = _make_session_chain(monkeypatch, video_path="captured-videos/session.webm")
+
+    with render_session("https://example.com", record_video_dir="captured-videos") as s:
+        assert s.video_path is None  # not finalized until the context closes
+
+    assert s.video_path == Path("captured-videos/session.webm")
+    page.video.path.assert_called_once_with()
+
+
+def test_video_path_none_when_not_recording(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, *_ = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com") as s:
+        pass
+
+    assert s.video_path is None
+    page.video.path.assert_not_called()

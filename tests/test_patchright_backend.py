@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -8,6 +9,15 @@ from polyfetch_scrape._backends import FingerprintBlock, patchright_backend
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.render_options import RenderAction, RenderOptions, Screenshot
 from polyfetch_scrape.retry import RetryPolicy
+
+_IPHONE_13_DEVICE: dict[str, Any] = {
+    "user_agent": "UA-iphone",
+    "viewport": {"width": 390, "height": 844},
+    "is_mobile": True,
+    "has_touch": True,
+    "device_scale_factor": 3,
+    "default_browser_type": "chromium",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -23,8 +33,13 @@ def _make_pw_chain(
     response_headers: dict[str, str] | None = None,
     page_content: str = "<html><body>ok</body></html>",
     final_url: str = "https://example.com/",
+    video_path: str = "captured-videos/abc123.webm",
 ) -> tuple[MagicMock, MagicMock]:
-    """Wire a complete sync_playwright() -> page chain. Returns (page, response_mock)."""
+    """Wire a complete sync_playwright() -> page chain. Returns (page, response_mock).
+
+    ``page._test_browser`` exposes the ``browser`` mock so tests can assert on the
+    kwargs passed to ``browser.new_context(...)`` without widening the return tuple.
+    """
     response = MagicMock(spec=pw_sync.Response)
     response.status = response_status
     response.all_headers.return_value = response_headers or {"content-type": "text/html"}
@@ -36,18 +51,22 @@ def _make_pw_chain(
         page.goto.side_effect = goto_side_effect
     else:
         page.goto.return_value = response
+    page.video = MagicMock()
+    page.video.path.return_value = video_path
 
     context = MagicMock(spec=pw_sync.BrowserContext)
     context.new_page.return_value = page
 
     browser = MagicMock(spec=pw_sync.Browser)
     browser.new_context.return_value = context
+    page._test_browser = browser
 
     chromium = MagicMock()
     chromium.launch.return_value = browser
 
     pw_instance = MagicMock(spec=pw_sync.Playwright)
     pw_instance.chromium = chromium
+    pw_instance.devices = {"iPhone 13": dict(_IPHONE_13_DEVICE)}
 
     pw_cm = MagicMock()
     pw_cm.__enter__ = MagicMock(return_value=pw_instance)
@@ -552,3 +571,162 @@ def test_patchright_backend_no_capture_by_default(monkeypatch: pytest.MonkeyPatc
     assert registered & {"console", "pageerror", "requestfailed", "response"} == set()
     assert resp.console_errors == []
     assert resp.network_failures == []
+
+
+# --------------------------------------------------------------------------- #
+# context_kwargs: emulation + video option mapping (unit-level, no pw chain)
+# --------------------------------------------------------------------------- #
+
+
+def test_context_kwargs_device_preset_spreads_full_dict() -> None:
+    pw = MagicMock()
+    pw.devices = {"iPhone 13": dict(_IPHONE_13_DEVICE)}
+
+    kwargs = patchright_backend.context_kwargs(pw, RenderOptions(device="iPhone 13"))
+
+    assert kwargs == _IPHONE_13_DEVICE
+    assert kwargs["default_browser_type"] == "chromium"  # NOT stripped
+
+
+def test_context_kwargs_explicit_viewport_overrides_device_viewport() -> None:
+    pw = MagicMock()
+    pw.devices = {"iPhone 13": dict(_IPHONE_13_DEVICE)}
+
+    kwargs = patchright_backend.context_kwargs(
+        pw, RenderOptions(device="iPhone 13", viewport=(800, 600))
+    )
+
+    assert kwargs["viewport"] == {"width": 800, "height": 600}
+    assert kwargs["user_agent"] == "UA-iphone"  # untouched device field survives
+
+
+def test_context_kwargs_maps_emulation_fields() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(
+        pw, RenderOptions(user_agent="UA-x", locale="en-US", color_scheme="dark")
+    )
+
+    assert kwargs == {"user_agent": "UA-x", "locale": "en-US", "color_scheme": "dark"}
+
+
+def test_context_kwargs_video_dir_and_size() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(
+        pw, RenderOptions(record_video_dir="captured-vids", record_video_size=(640, 480))
+    )
+
+    assert kwargs["record_video_dir"] == "captured-vids"
+    assert kwargs["record_video_size"] == {"width": 640, "height": 480}
+
+
+def test_context_kwargs_video_dir_without_size_omits_size_key() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(pw, RenderOptions(record_video_dir="captured-vids"))
+
+    assert kwargs == {"record_video_dir": "captured-vids"}
+
+
+def test_context_kwargs_empty_opts_is_empty_dict() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    assert patchright_backend.context_kwargs(pw, RenderOptions()) == {}
+
+
+# --------------------------------------------------------------------------- #
+# fetch tier: context kwargs reach browser.new_context; video finalize on close
+# --------------------------------------------------------------------------- #
+
+
+def test_patchright_backend_passes_context_kwargs_to_new_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(device="iPhone 13", locale="en-US"),
+    )
+
+    kwargs = page._test_browser.new_context.call_args.kwargs
+    assert kwargs["locale"] == "en-US"
+    assert kwargs["user_agent"] == "UA-iphone"
+    assert kwargs["default_browser_type"] == "chromium"
+
+
+def test_patchright_backend_new_context_no_kwargs_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    page._test_browser.new_context.assert_called_once_with()
+
+
+def test_patchright_backend_video_success_sets_video_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch, video_path="captured-videos/ok.webm")
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(record_video_dir="captured-videos"),
+    )
+
+    assert resp.video_path == Path("captured-videos/ok.webm")
+    page.video.delete.assert_not_called()
+
+
+def test_patchright_backend_video_deleted_on_persistent_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch, goto_side_effect=pw_sync.TimeoutError("nav timeout"))
+
+    with pytest.raises(FetchError):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            render=RenderOptions(record_video_dir="captured-videos"),
+        )
+
+    page.video.delete.assert_called_once_with()
+
+
+def test_patchright_backend_no_video_path_when_not_recording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.video_path is None
+    page.video.path.assert_not_called()
+    page.video.delete.assert_not_called()
