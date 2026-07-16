@@ -193,16 +193,25 @@ def _types_in(data: Json) -> list[str]:
     Unexpected shapes yield no types rather than raising (best-effort extraction).
     """
     if isinstance(data, list):
-        return [t for item in data for t in _types_in(item)]
+        return _types_in_list(data)
     if not isinstance(data, dict):
         return []
-    out: list[str] = []
-    raw = data.get("@type")
-    if isinstance(raw, str):
-        out.append(raw)
-    elif isinstance(raw, list):
-        out.extend(x for x in raw if isinstance(x, str))
-    graph = data.get("@graph")
-    if isinstance(graph, list):
-        out.extend(t for item in graph for t in _types_in(item))
+    out = _type_values(data.get("@type"))
+    out.extend(_types_in_list(data.get("@graph")))
     return out
+
+
+def _types_in_list(value: Json) -> list[str]:
+    """Flatten :func:`_types_in` over a JSON-LD list value (non-list → no types)."""
+    if not isinstance(value, list):
+        return []
+    return [t for item in value for t in _types_in(item)]
+
+
+def _type_values(raw: Json) -> list[str]:
+    """The ``@type`` string(s) from a raw ``@type`` value (a str or a list of str)."""
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, str)]
+    return []
