@@ -20,6 +20,17 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
   - **out-of-process** (recommended for agents): call the CLI, parse `--json`.
   - **in-clone script**: `uv run --directory <polyfetch> python /abs/path/script.py` → full Python API, run with the clone's interpreter. Pass **absolute paths** — `--directory` makes CWD the clone.
 
+## Scripting substrate
+
+Beyond the CLI, polyfetch is also a substrate to script against: `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page` for flows the CLI doesn't cover — multi-step walks, accessibility snapshots, ad-hoc DOM reads. Run it as an in-clone script (above):
+
+```python
+with render_session(url) as s:
+    snap = s.page.locator("body").aria_snapshot()   # accessibility tree of the page
+```
+
+(`aria_snapshot()` is the current Patchright API; `page.accessibility.snapshot()` was removed upstream.) polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. See README's [Two layers](README.md#two-layers-engine--scripting-substrate) for the full engine/scripts split.
+
 ## Commands
 
 | Invocation | Purpose |

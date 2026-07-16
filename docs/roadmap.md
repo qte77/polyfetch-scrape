@@ -59,7 +59,7 @@ handled per RFC 9110 semantics instead of being retried/escalated blindly.
 
 ## Beyond — core directions (themes, not domains)
 
-polyfetch-scrape is a **horizontal, hostile-fetch toolkit**. Domain API wrappers
+polyfetch-scrape is a **horizontal fetch toolkit**. Domain API wrappers
 (arXiv, USPTO/patents, GitHub, legislation…) and LLM-ready extraction are **out of
 scope** — they belong in downstream packages that consume `fetch()` (e.g.
 `gha-rxiv-feed-action`; a USPTO adapter — see
@@ -69,6 +69,6 @@ Core themes still ahead:
 
 - **Status-code completeness** — surface permanent redirects (301/308) on `Response` — [#31](https://github.com/qte77/polyfetch-scrape/issues/31)
 - **Request bodies** — ✅ shipped: POST/PUT via `json` / `content` in `fetch()` (httpx/curl tiers) — [#46](https://github.com/qte77/polyfetch-scrape/issues/46)
-- **Browser-tier depth (the moat)** — ✅ shipped: screenshots ([#68](https://github.com/qte77/polyfetch-scrape/issues/68); base64 inline in `fetch --json` [#105](https://github.com/qte77/polyfetch-scrape/issues/105)) + wait strategies / client-hydrated values ([#67](https://github.com/qte77/polyfetch-scrape/issues/67)) + scripted interactions ([#71](https://github.com/qte77/polyfetch-scrape/issues/71)) + opt-in console/network-failure capture ([#118](https://github.com/qte77/polyfetch-scrape/issues/118)) + interactive multi-step `render_session` ([#117](https://github.com/qte77/polyfetch-scrape/issues/117)) + named multi-screenshots ([#119](https://github.com/qte77/polyfetch-scrape/issues/119)) via `RenderOptions` / `render_session`. Ahead: headed manual-takeover for captcha [#59](https://github.com/qte77/polyfetch-scrape/issues/59)
+- **Browser-tier depth** — ✅ shipped: screenshots ([#68](https://github.com/qte77/polyfetch-scrape/issues/68); base64 inline in `fetch --json` [#105](https://github.com/qte77/polyfetch-scrape/issues/105)) + wait strategies / client-hydrated values ([#67](https://github.com/qte77/polyfetch-scrape/issues/67)) + scripted interactions ([#71](https://github.com/qte77/polyfetch-scrape/issues/71)) + opt-in console/network-failure capture ([#118](https://github.com/qte77/polyfetch-scrape/issues/118)) + interactive multi-step `render_session` ([#117](https://github.com/qte77/polyfetch-scrape/issues/117)) + named multi-screenshots ([#119](https://github.com/qte77/polyfetch-scrape/issues/119)) via `RenderOptions` / `render_session`. Ahead: headed manual-takeover for captcha [#59](https://github.com/qte77/polyfetch-scrape/issues/59)
 - **Politeness & control** — ✅ shipped: min/max tier range (`min_tier`/`max_tier` — cap escalation or force a tier) [#80](https://github.com/qte77/polyfetch-scrape/issues/80); per-host polite throttle (`Throttle` / `bulk --delay`) [#49](https://github.com/qte77/polyfetch-scrape/issues/49)
 - **Generic crawl utility** — ✅ shipped: sitemap.xml URL discovery (`utils.sitemap.fetch_sitemap_urls` — index recursion, gzip, `defusedxml`, SSRF-guarded) [#33](https://github.com/qte77/polyfetch-scrape/issues/33); structured-source discovery (`utils.discovery.discover` / `polyfetch discover` — sitemaps/feeds/`llms.txt`/JSON-LD entrypoints, soft-404-guarded) [#135](https://github.com/qte77/polyfetch-scrape/issues/135)

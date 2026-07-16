@@ -2,6 +2,11 @@
 
 Who polyfetch-scrape serves and what they need. Expand as new consumers come online.
 
+Two personas run through the stories below: **engine users**, who call `fetch`/`discover` and consume
+the typed `Response` directly (most stories here), and **script authors**, who drive
+`render_session().page` for app-specific interactive flows the engine doesn't express as a knob (see
+README's [Two layers](../README.md#two-layers-engine--scripting-substrate)).
+
 ## Agent-tooling author hitting the WebFetch ceiling
 
 > As an agent/tool author whose built-in fetch (e.g. Claude Code's WebFetch) got a `403` because it
