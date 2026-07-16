@@ -120,7 +120,7 @@ hunt:  ## Scan for page artifacts. Usage: make hunt [URL=https://...] [SEEDS=fil
 		$(if $(call _cli,WELLKNOWN),--include-wellknown)
 
 
-demo_tiers:  ## Exemplify all 3 fallback tiers: httpx/curl_cffi JA3 diff + playwright render+shot
+demo_tiers:  ## Exemplify all 3 fallback tiers: httpx/curl_cffi JA3 diff + patchright render+shot
 	uv run python examples/fallback_tiers_demo.py
 
 

@@ -30,19 +30,19 @@ description: Non-obvious patterns that prevent repeated mistakes across sprints
 
 ### Headless console/network capture only reflects the runner's own network
 
-- **Context**: Driving the Patchright/Chromium backend (`_backends/playwright_backend.py`, or raw `patchright.sync_api`) to debug a page's runtime behaviour — capturing console logs, JS errors, and network failures via `page.on(...)`.
+- **Context**: Driving the Patchright/Chromium backend (`_backends/patchright_backend.py`, or raw `patchright.sync_api`) to debug a page's runtime behaviour — capturing console logs, JS errors, and network failures via `page.on(...)`.
 - **Problem**: `page.on("console" | "pageerror" | "requestfailed" | "response")` faithfully captures the page's telemetry — but only for traffic on **this process's network**. A cross-origin fetch the page makes (e.g. to `raw.githubusercontent.com`) that is blocked in a *user's* browser (CORS / privacy extension / proxy / per-IP rate-limit) **succeeds here**, so the capture comes back clean — a false "no error" conclusion. Observed while debugging a dashboard that silently fell back to synthetic data in the reporter's Firefox (`CORS request did not succeed`) but loaded real data from this container.
 - **Solution**: Read a clean headless console as "no error *on this network*", not "no error". To trust the capture for an environment-specific failure, **force the failure** (e.g. point the fetch at an unreachable host) and confirm the listeners catch it; otherwise reason from the deployed code + the data's reachability, not the headless console alone. Capture all four events: uncaught/parse errors fire `pageerror` (**not** `console`); blocked/!2xx resources fire `requestfailed` / a non-200 `response` (not always `console`).
 - **Example**: `page.on("requestfailed", lambda r: ...)` → `net::ERR_NAME_NOT_RESOLVED` when the page fetches `https://nonexistent.invalid/...`; the same page on a reachable network logs nothing for that request.
-- **References**: `src/polyfetch_scrape/_backends/playwright_backend.py` (the Patchright/Chromium backend). Workflow rule — stays in `AGENT_LEARNINGS.md`.
+- **References**: `src/polyfetch_scrape/_backends/patchright_backend.py` (the Patchright/Chromium backend). Workflow rule — stays in `AGENT_LEARNINGS.md`.
 
 ### page.evaluate runs in an isolated world — page-script globals read as `undefined`
 
-- **Context**: Driving the Patchright/Chromium backend (`_backends/playwright_backend.py`, or raw `patchright.sync_api`) and reading page state via `page.evaluate(...)` to assert on runtime values — a library global (`window.Chart` from a UMD bundle) or a module-scoped var set by the page's own scripts.
+- **Context**: Driving the Patchright/Chromium backend (`_backends/patchright_backend.py`, or raw `patchright.sync_api`) and reading page state via `page.evaluate(...)` to assert on runtime values — a library global (`window.Chart` from a UMD bundle) or a module-scoped var set by the page's own scripts.
 - **Problem**: Patchright (a stealth Playwright fork) runs `page.evaluate` in an **isolated execution world**, not the page's main world. The DOM is shared, but JS globals defined by the page's own scripts (`window.Chart`, any module-scoped var) read back as `undefined` from `evaluate` even though they exist and work in the page. Caused a false "Chart is undefined / the chart didn't render" conclusion when the chart had in fact rendered.
 - **Solution**: Don't assert page-script globals via `page.evaluate` under Patchright. Use **screenshots as ground truth** for "did it render / what's shown", and `page.on(...)` for "did it load". Reserve `evaluate` for DOM you set or read structurally (element presence, attributes, `textContent`), not library/module globals.
 - **Example**: `page.evaluate("() => typeof window.Chart")` → `"undefined"` while the chart is visibly rendered; `page.locator('#chart-section').screenshot(...)` shows the real chart.
-- **References**: `src/polyfetch_scrape/_backends/playwright_backend.py` (the Patchright/Chromium backend). Pairs with the "Headless console/network capture only reflects the runner's own network" learning above. Workflow rule — stays in `AGENT_LEARNINGS.md`.
+- **References**: `src/polyfetch_scrape/_backends/patchright_backend.py` (the Patchright/Chromium backend). Pairs with the "Headless console/network capture only reflects the runner's own network" learning above. Workflow rule — stays in `AGENT_LEARNINGS.md`.
 
 ### Re-verify time-sensitive empirical data before merging — it decays
 

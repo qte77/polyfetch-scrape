@@ -29,7 +29,7 @@ class _TierChoice(StrEnum):
 
     httpx = "httpx"
     curl_cffi = "curl_cffi"
-    playwright = "playwright"
+    patchright = "patchright"
 
 
 def _as_tier(choice: _TierChoice | None) -> Tier | None:
@@ -54,7 +54,7 @@ def _as_browser(choice: _BrowserChoice) -> Browser:
 
 app = typer.Typer(
     add_completion=False,
-    help="HTTP scraping CLI: httpx → curl_cffi → playwright fallback chain",
+    help="HTTP scraping CLI: httpx → curl_cffi → patchright fallback chain",
     no_args_is_help=True,
 )
 
@@ -119,20 +119,20 @@ def fetch_cmd(
         str,
         typer.Option(
             "--wait-until",
-            help="Playwright load milestone: domcontentloaded|load|networkidle.",
+            help="Browser load milestone: domcontentloaded|load|networkidle.",
         ),
     ] = "domcontentloaded",
     wait_for_function: Annotated[
         str | None,
         typer.Option(
-            "--wait-for-function", help="Playwright: wait until this JS predicate is truthy."
+            "--wait-for-function", help="Browser tier: wait until this JS predicate is truthy."
         ),
     ] = None,
     screenshot: Annotated[
         str | None,
         typer.Option(
             "--screenshot",
-            help="Playwright: PNG of 'viewport' or a CSS selector; write via --screenshot-out.",
+            help="Browser tier: PNG of 'viewport' or a CSS selector; write via --screenshot-out.",
         ),
     ] = None,
     screenshot_out: Annotated[
@@ -144,7 +144,7 @@ def fetch_cmd(
         typer.Option(
             "--tier",
             help="Pin one backend and skip the fallback chain. "
-            "Render flags only apply when the playwright tier runs.",
+            "Render flags only apply when the patchright tier runs.",
         ),
     ] = None,
     min_tier: Annotated[
@@ -218,7 +218,7 @@ def fetch_cmd(
 
     payload = _summarize(resp)
     if json_output and resp.screenshot is not None:
-        # Surface the playwright-tier PNG inline so env-borrow / agent consumers get it in
+        # Surface the patchright-tier PNG inline so env-borrow / agent consumers get it in
         # the JSON without --screenshot-out writing a file (#105). Absent when no screenshot.
         payload["screenshot_b64"] = base64.b64encode(resp.screenshot).decode("ascii")
     typer.echo(json.dumps(payload) if json_output else _format_text(payload))

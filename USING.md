@@ -31,9 +31,9 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 | `polyfetch doctor [--fix]` | check the browser-tier Chromium is installed (exit non-zero if missing); `--fix` installs it. Handy when borrowing this venv — the Chromium cache can get wiped |
 | `polyfetch --help` / `polyfetch --version` | discover the surface / print version |
 
-`fetch` flags: `--tier httpx|curl_cffi|playwright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|playwright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`.
+`fetch` flags: `--tier httpx|curl_cffi|patchright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|patchright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`.
 
-`fetch` **playwright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
+`fetch` **patchright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
 
 `bulk` flags: `--workers N` (concurrency), `--delay S` (per-host polite spacing — min seconds between same-host requests, shared across workers), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 
@@ -47,9 +47,9 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 {"url": "https://…", "status": 200, "backend": "curl_cffi", "bytes": 179447, "content_type": "text/html; charset=utf-8"}
 ```
 
-- `backend` = which tier answered (`httpx` → `curl_cffi` → `playwright`).
+- `backend` = which tier answered (`httpx` → `curl_cffi` → `patchright`).
 - `screenshot_b64` (fetch `--json` only) = base64-encoded PNG, present **only** when a screenshot was
-  captured (`--screenshot` on the playwright tier); the key is absent otherwise. Decode with
+  captured (`--screenshot` on the patchright tier); the key is absent otherwise. Decode with
   `jq -r .screenshot_b64 | base64 -d`.
 - Need the page content, not metadata? use `--show-body`.
 

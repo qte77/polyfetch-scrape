@@ -1,6 +1,6 @@
-"""Render a dynamic (JS) page via polyfetch's playwright tier and save a screenshot.
+"""Render a dynamic (JS) page via polyfetch's patchright tier and save a screenshot.
 
-Dogfoods the browser-tier render controls (#67/#68): ``fetch(url, tier="playwright",
+Dogfoods the browser-tier render controls (#67/#68): ``fetch(url, tier="patchright",
 render=RenderOptions(wait_until="networkidle", screenshot="viewport"))`` waits for JS/XHR
 to settle, then returns the PNG on ``Response.screenshot``. No direct Patchright driving
 here — the toolkit exposes it.
@@ -28,11 +28,11 @@ def _slug(url: str) -> str:
 
 
 def render(url: str, out_dir: Path) -> None:
-    """Render ``url`` on the playwright tier and write ``<slug>.viewport.png``."""
+    """Render ``url`` on the patchright tier and write ``<slug>.viewport.png``."""
     out_dir.mkdir(parents=True, exist_ok=True)
     resp = fetch(
         url,
-        tier="playwright",
+        tier="patchright",
         render=RenderOptions(wait_until="networkidle", screenshot="viewport"),
     )
     shot = out_dir / f"{_slug(url)}.viewport.png"

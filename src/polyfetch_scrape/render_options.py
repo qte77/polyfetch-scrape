@@ -9,7 +9,7 @@ ActionVerb = Literal["click", "click_text", "fill", "wait_for_selector", "wait_m
 
 @dataclass(frozen=True, slots=True)
 class RenderAction:
-    """One scripted step run on the playwright tier *before* capture.
+    """One scripted step run on the patchright tier *before* capture.
 
     - ``click`` (selector) / ``click_text`` (text): click an element.
     - ``fill`` (selector, value): type ``value`` into an input.
@@ -41,7 +41,7 @@ class Screenshot:
 
 @dataclass(frozen=True, slots=True)
 class RenderOptions:
-    """Playwright-tier controls for ``fetch(url, render=...)``.
+    """Patchright-tier controls for ``fetch(url, render=...)``.
 
     Ignored by the httpx / curl_cffi tiers (they don't run a browser).
 

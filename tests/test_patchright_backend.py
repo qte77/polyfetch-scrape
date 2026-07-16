@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from patchright import sync_api as pw_sync
 
-from polyfetch_scrape._backends import FingerprintBlock, playwright_backend
+from polyfetch_scrape._backends import FingerprintBlock, patchright_backend
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.render_options import RenderAction, RenderOptions, Screenshot
 from polyfetch_scrape.retry import RetryPolicy
@@ -12,7 +12,7 @@ from polyfetch_scrape.retry import RetryPolicy
 
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.time.sleep", lambda _s: None)
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend.time.sleep", lambda _s: None)
 
 
 def _make_pw_chain(
@@ -54,18 +54,18 @@ def _make_pw_chain(
     pw_cm.__exit__ = MagicMock(return_value=False)
 
     monkeypatch.setattr(
-        "polyfetch_scrape._backends.playwright_backend.sync_playwright",
+        "polyfetch_scrape._backends.patchright_backend.sync_playwright",
         MagicMock(return_value=pw_cm),
     )
     return page, response
 
 
-def test_playwright_backend_returns_response_on_200(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_returns_response_on_200(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     _make_pw_chain(monkeypatch)
 
     # Act
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -75,18 +75,18 @@ def test_playwright_backend_returns_response_on_200(monkeypatch: pytest.MonkeyPa
 
     # Assert
     assert resp.status == 200
-    assert resp.backend == "playwright"
+    assert resp.backend == "patchright"
     assert b"ok" in resp.body
     assert resp.content_type == "text/html"
 
 
-def test_playwright_backend_raises_fingerprintblock_on_403(
+def test_patchright_backend_raises_fingerprintblock_on_403(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _make_pw_chain(monkeypatch, response_status=403)
 
     with pytest.raises(FingerprintBlock):
-        playwright_backend.attempt(
+        patchright_backend.attempt(
             method="GET",
             url="https://example.com",
             headers=None,
@@ -99,13 +99,13 @@ def test_playwright_backend_raises_fingerprintblock_on_403(
     ("status", "exc_type"),
     [(401, AuthRequired), (404, GoneError), (451, LegalBlock)],
 )
-def test_playwright_backend_raises_terminal_status(
+def test_patchright_backend_raises_terminal_status(
     monkeypatch: pytest.MonkeyPatch, status: int, exc_type: type[Exception]
 ) -> None:
     _make_pw_chain(monkeypatch, response_status=status)
 
     with pytest.raises(exc_type):
-        playwright_backend.attempt(
+        patchright_backend.attempt(
             method="GET",
             url="https://example.com",
             headers=None,
@@ -114,14 +114,14 @@ def test_playwright_backend_raises_terminal_status(
         )
 
 
-def test_playwright_backend_surfaces_permanent_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_surfaces_permanent_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
     _make_pw_chain(
         monkeypatch,
         response_status=301,
         response_headers={"location": "https://example.com/new", "content-type": "text/html"},
     )
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com/old",
         headers=None,
@@ -133,11 +133,11 @@ def test_playwright_backend_surfaces_permanent_redirect(monkeypatch: pytest.Monk
     assert resp.permanent_redirect_to == "https://example.com/new"
 
 
-def test_playwright_backend_captures_viewport_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_captures_viewport_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
     page.screenshot.return_value = b"\x89PNG-viewport"
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -150,11 +150,11 @@ def test_playwright_backend_captures_viewport_screenshot(monkeypatch: pytest.Mon
     assert resp.screenshot == b"\x89PNG-viewport"
 
 
-def test_playwright_backend_captures_element_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_captures_element_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
     page.locator.return_value.screenshot.return_value = b"\x89PNG-el"
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -168,10 +168,10 @@ def test_playwright_backend_captures_element_screenshot(monkeypatch: pytest.Monk
     assert resp.screenshot == b"\x89PNG-el"
 
 
-def test_playwright_backend_no_screenshot_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_no_screenshot_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -184,12 +184,12 @@ def test_playwright_backend_no_screenshot_by_default(monkeypatch: pytest.MonkeyP
     assert resp.screenshot is None
 
 
-def test_playwright_backend_captures_named_screenshots(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_captures_named_screenshots(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
     page.screenshot.return_value = b"VP"
     page.locator.return_value.screenshot.return_value = b"EL"
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -204,10 +204,10 @@ def test_playwright_backend_captures_named_screenshots(monkeypatch: pytest.Monke
     page.locator.assert_called_once_with("#chart")
 
 
-def test_playwright_backend_no_screenshots_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_no_screenshots_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     _make_pw_chain(monkeypatch)
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -218,10 +218,10 @@ def test_playwright_backend_no_screenshots_by_default(monkeypatch: pytest.Monkey
     assert resp.screenshots == {}
 
 
-def test_playwright_backend_uses_wait_until_from_render(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_uses_wait_until_from_render(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -233,10 +233,10 @@ def test_playwright_backend_uses_wait_until_from_render(monkeypatch: pytest.Monk
     page.goto.assert_called_once_with("https://example.com", wait_until="networkidle", timeout=5000)
 
 
-def test_playwright_backend_waits_for_function(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_waits_for_function(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -248,7 +248,7 @@ def test_playwright_backend_waits_for_function(monkeypatch: pytest.MonkeyPatch) 
     page.wait_for_function.assert_called_once_with("() => window.ready", timeout=5000)
 
 
-def test_playwright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     # First call raises TimeoutError; second succeeds
     response_ok = MagicMock(spec=pw_sync.Response)
     response_ok.status = 200
@@ -258,7 +258,7 @@ def test_playwright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) 
         monkeypatch, goto_side_effect=[pw_sync.TimeoutError("nav timeout"), response_ok]
     )
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -270,13 +270,13 @@ def test_playwright_backend_retries_on_timeout(monkeypatch: pytest.MonkeyPatch) 
     assert page.goto.call_count == 2
 
 
-def test_playwright_backend_raises_fetcherror_on_persistent_timeout(
+def test_patchright_backend_raises_fetcherror_on_persistent_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _make_pw_chain(monkeypatch, goto_side_effect=pw_sync.TimeoutError("perma timeout"))
 
     with pytest.raises(FetchError):
-        playwright_backend.attempt(
+        patchright_backend.attempt(
             method="GET",
             url="https://example.com",
             headers=None,
@@ -285,7 +285,7 @@ def test_playwright_backend_raises_fetcherror_on_persistent_timeout(
         )
 
 
-def test_playwright_backend_retries_on_5xx_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_retries_on_5xx_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     # First response is a retryable 503; second is a 200 — should retry, not return the 503.
     response_503 = MagicMock(spec=pw_sync.Response)
     response_503.status = 503
@@ -297,7 +297,7 @@ def test_playwright_backend_retries_on_5xx_then_succeeds(monkeypatch: pytest.Mon
 
     page, _ = _make_pw_chain(monkeypatch, goto_side_effect=[response_503, response_ok])
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -309,13 +309,13 @@ def test_playwright_backend_retries_on_5xx_then_succeeds(monkeypatch: pytest.Mon
     assert page.goto.call_count == 2
 
 
-def test_playwright_backend_raises_fetcherror_on_persistent_5xx(
+def test_patchright_backend_raises_fetcherror_on_persistent_5xx(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _make_pw_chain(monkeypatch, response_status=503)
 
     with pytest.raises(FetchError) as excinfo:
-        playwright_backend.attempt(
+        patchright_backend.attempt(
             method="GET",
             url="https://example.com",
             headers=None,
@@ -328,10 +328,10 @@ def test_playwright_backend_raises_fetcherror_on_persistent_5xx(
     assert "status=503" in str(excinfo.value)
 
 
-def test_playwright_backend_honors_retry_after_on_5xx(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_honors_retry_after_on_5xx(monkeypatch: pytest.MonkeyPatch) -> None:
     delays: list[float] = []
     monkeypatch.setattr(
-        "polyfetch_scrape._backends.playwright_backend.time.sleep",
+        "polyfetch_scrape._backends.patchright_backend.time.sleep",
         lambda s: delays.append(s),
     )
 
@@ -345,7 +345,7 @@ def test_playwright_backend_honors_retry_after_on_5xx(monkeypatch: pytest.Monkey
 
     _make_pw_chain(monkeypatch, goto_side_effect=[response_503, response_ok])
 
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -357,10 +357,10 @@ def test_playwright_backend_honors_retry_after_on_5xx(monkeypatch: pytest.Monkey
     assert delays == [7.0]
 
 
-def test_playwright_backend_passes_wait_for_selector(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_passes_wait_for_selector(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -372,12 +372,12 @@ def test_playwright_backend_passes_wait_for_selector(monkeypatch: pytest.MonkeyP
     page.wait_for_selector.assert_called_once_with("#main", timeout=5000)
 
 
-def test_playwright_backend_omits_wait_for_selector_when_none(
+def test_patchright_backend_omits_wait_for_selector_when_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -388,7 +388,7 @@ def test_playwright_backend_omits_wait_for_selector_when_none(
     page.wait_for_selector.assert_not_called()
 
 
-def test_playwright_backend_maps_each_action_verb(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_maps_each_action_verb(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
     actions = (
@@ -398,7 +398,7 @@ def test_playwright_backend_maps_each_action_verb(monkeypatch: pytest.MonkeyPatc
         RenderAction("wait_for_selector", selector="#c"),
         RenderAction("wait_ms", ms=250),
     )
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -415,12 +415,12 @@ def test_playwright_backend_maps_each_action_verb(monkeypatch: pytest.MonkeyPatc
     page.wait_for_timeout.assert_called_once_with(250)
 
 
-def test_playwright_backend_runs_actions_before_waits_in_order(
+def test_patchright_backend_runs_actions_before_waits_in_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -444,10 +444,10 @@ def test_playwright_backend_runs_actions_before_waits_in_order(
     page.wait_for_selector.assert_called_once_with("#done", timeout=5000)
 
 
-def test_playwright_backend_no_actions_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_no_actions_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    playwright_backend.attempt(
+    patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -487,12 +487,12 @@ def _page_handlers(page: MagicMock) -> dict[str, Any]:
     return {c.args[0]: c.args[1] for c in page.on.call_args_list}
 
 
-def test_playwright_backend_captures_console_and_network(
+def test_patchright_backend_captures_console_and_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -517,12 +517,12 @@ def test_playwright_backend_captures_console_and_network(
     assert not any(f.get("url") == "https://x/ok" for f in resp.network_failures)
 
 
-def test_playwright_backend_console_filter_ignores_non_error(
+def test_patchright_backend_console_filter_ignores_non_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,
@@ -536,10 +536,10 @@ def test_playwright_backend_console_filter_ignores_non_error(
     assert resp.console_errors == []
 
 
-def test_playwright_backend_no_capture_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patchright_backend_no_capture_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://example.com",
         headers=None,

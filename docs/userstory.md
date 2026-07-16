@@ -30,7 +30,7 @@ Covered by: `Response.permanent_redirect_to` on 301/308 (#31).
 > As someone scraping a client-rendered app, I want the hydrated DOM (and optionally a screenshot)
 > without hand-writing a Patchright script.
 
-Covered by: the playwright tier + `RenderOptions(wait_until="networkidle", wait_for_function=...,
+Covered by: the patchright tier + `RenderOptions(wait_until="networkidle", wait_for_function=...,
 screenshot=...)` → `Response.screenshot` (#67, #68), plus opt-in
 `RenderOptions(capture_console=True, capture_network_failures=True)` → `Response.console_errors` /
 `Response.network_failures` to assert the page hydrated without console/network errors (#118). For a

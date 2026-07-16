@@ -88,7 +88,7 @@ def test_fetch_render_flags_build_render_options(monkeypatch: pytest.MonkeyPatch
             "fetch",
             "https://x.test",
             "--tier",
-            "playwright",
+            "patchright",
             "--wait-until",
             "networkidle",
             "--wait-for-selector",
@@ -145,12 +145,12 @@ def test_fetch_tier_range_flags_reach_fetch(monkeypatch: pytest.MonkeyPatch) -> 
 
     result = runner.invoke(
         app,
-        ["fetch", "https://x.test", "--min-tier", "curl_cffi", "--max-tier", "playwright"],
+        ["fetch", "https://x.test", "--min-tier", "curl_cffi", "--max-tier", "patchright"],
     )
 
     assert result.exit_code == 0
     assert captured["min_tier"] == "curl_cffi"
-    assert captured["max_tier"] == "playwright"
+    assert captured["max_tier"] == "patchright"
 
 
 def test_fetch_rejects_unknown_tier_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -218,7 +218,7 @@ def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_pa
             headers={"content-type": "image/png"},
             body=b"x",
             content_type="image/png",
-            backend="playwright",
+            backend="patchright",
             screenshot=png,
         )
 
@@ -231,7 +231,7 @@ def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_pa
             "fetch",
             "https://x.test",
             "--tier",
-            "playwright",
+            "patchright",
             "--screenshot",
             "viewport",
             "--screenshot-out",
@@ -253,7 +253,7 @@ def test_fetch_json_includes_screenshot_b64(monkeypatch: pytest.MonkeyPatch) -> 
             headers={"content-type": "image/png"},
             body=b"x",
             content_type="image/png",
-            backend="playwright",
+            backend="patchright",
             screenshot=png,
         )
 
@@ -261,7 +261,7 @@ def test_fetch_json_includes_screenshot_b64(monkeypatch: pytest.MonkeyPatch) -> 
 
     result = runner.invoke(
         app,
-        ["fetch", "https://x.test", "--json", "--tier", "playwright", "--screenshot", "viewport"],
+        ["fetch", "https://x.test", "--json", "--tier", "patchright", "--screenshot", "viewport"],
     )
 
     assert result.exit_code == 0

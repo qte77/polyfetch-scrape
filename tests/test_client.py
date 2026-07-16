@@ -267,20 +267,20 @@ def test_fetch_raises_when_both_backends_fail(monkeypatch: pytest.MonkeyPatch) -
     def fake_curl_attempt(*_a: object, **_kw: object) -> Response:
         raise FetchError("curl exhausted")
 
-    def fake_playwright_attempt(*_a: object, **_kw: object) -> Response:
-        raise FetchError("playwright also gave up")
+    def fake_patchright_attempt(*_a: object, **_kw: object) -> Response:
+        raise FetchError("patchright also gave up")
 
     monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
     monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
     monkeypatch.setattr(
-        "polyfetch_scrape._backends.playwright_backend.attempt", fake_playwright_attempt
+        "polyfetch_scrape._backends.patchright_backend.attempt", fake_patchright_attempt
     )
 
     with pytest.raises(FetchError):
         fetch("https://example.com")
 
 
-def test_fetch_falls_through_to_playwright_when_curl_blocked(
+def test_fetch_falls_through_to_patchright_when_curl_blocked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pw_resp = Response(
@@ -289,7 +289,7 @@ def test_fetch_falls_through_to_playwright_when_curl_blocked(
         headers={},
         body=b"<html/>",
         content_type="text/html",
-        backend="playwright",
+        backend="patchright",
     )
 
     def fake_httpx_attempt(*_a: object, **_kw: object) -> Response:
@@ -300,7 +300,7 @@ def test_fetch_falls_through_to_playwright_when_curl_blocked(
 
     captured_kwargs: dict[str, object] = {}
 
-    def fake_playwright_attempt(
+    def fake_patchright_attempt(
         method: str,
         url: str,
         headers: Mapping[str, str] | None,
@@ -314,13 +314,13 @@ def test_fetch_falls_through_to_playwright_when_curl_blocked(
     monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx_attempt)
     monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl_attempt)
     monkeypatch.setattr(
-        "polyfetch_scrape._backends.playwright_backend.attempt", fake_playwright_attempt
+        "polyfetch_scrape._backends.patchright_backend.attempt", fake_patchright_attempt
     )
 
     resp = fetch("https://example.com", wait_for_selector="#main")
 
     assert resp is pw_resp
-    assert resp.backend == "playwright"
+    assert resp.backend == "patchright"
     assert captured_kwargs["wait_for_selector"] == "#main"
 
 
@@ -362,7 +362,7 @@ def _backend_response(backend: str) -> Response:
     )
 
 
-def test_fetch_tier_pin_forces_playwright(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_tier_pin_forces_patchright(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"httpx": 0, "curl": 0, "pw": 0}
 
     def fake_httpx(*_a: object, **_kw: object) -> Response:
@@ -375,15 +375,15 @@ def test_fetch_tier_pin_forces_playwright(monkeypatch: pytest.MonkeyPatch) -> No
 
     def fake_pw(*_a: object, **_kw: object) -> Response:
         calls["pw"] += 1
-        return _backend_response("playwright")
+        return _backend_response("patchright")
 
     monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
     monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
-    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend.attempt", fake_pw)
 
-    resp = fetch("https://example.com", tier="playwright")
+    resp = fetch("https://example.com", tier="patchright")
 
-    assert resp.backend == "playwright"
+    assert resp.backend == "patchright"
     assert calls == {"httpx": 0, "curl": 0, "pw": 1}
 
 
@@ -426,17 +426,17 @@ def test_fetch_tier_pin_forces_curl(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls == {"httpx": 0, "curl": 1}
 
 
-def test_fetch_forwards_render_to_playwright_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_forwards_render_to_patchright_tier(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_pw(*_a: object, render: RenderOptions | None = None, **_kw: object) -> Response:
         captured["render"] = render
-        return _backend_response("playwright")
+        return _backend_response("patchright")
 
-    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend.attempt", fake_pw)
 
     opts = RenderOptions(screenshot="viewport")
-    fetch("https://example.com", tier="playwright", render=opts)
+    fetch("https://example.com", tier="patchright", render=opts)
 
     assert captured["render"] == opts
 
@@ -459,7 +459,7 @@ def test_fetch_rejects_json_and_content_together() -> None:
         fetch("https://example.com", json={"a": 1}, content=b"x")
 
 
-def test_fetch_body_request_does_not_escalate_to_playwright(
+def test_fetch_body_request_does_not_escalate_to_patchright(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pw_called = False
@@ -473,13 +473,13 @@ def test_fetch_body_request_does_not_escalate_to_playwright(
     def fake_pw(*_a: object, **_kw: object) -> Response:
         nonlocal pw_called
         pw_called = True
-        return _backend_response("playwright")
+        return _backend_response("patchright")
 
     monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
     monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
-    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend.attempt", fake_pw)
 
-    # Both fingerprint tiers block a POST with a body → clear FetchError, no playwright replay.
+    # Both fingerprint tiers block a POST with a body → clear FetchError, no patchright replay.
     with pytest.raises(FetchError) as exc_info:
         fetch("https://example.com", method="POST", json={"a": 1})
 
@@ -487,23 +487,23 @@ def test_fetch_body_request_does_not_escalate_to_playwright(
     assert not isinstance(exc_info.value, FingerprintBlock)
 
 
-def test_fetch_tier_pin_playwright_rejects_body(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_tier_pin_patchright_rejects_body(monkeypatch: pytest.MonkeyPatch) -> None:
     pw_called = False
 
     def fake_pw(*_a: object, **_kw: object) -> Response:
         nonlocal pw_called
         pw_called = True
-        return _backend_response("playwright")
+        return _backend_response("patchright")
 
-    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend.attempt", fake_pw)
 
     with pytest.raises(FetchError):
-        fetch("https://example.com", tier="playwright", json={"a": 1})
+        fetch("https://example.com", tier="patchright", json={"a": 1})
     assert pw_called is False
 
 
 def _install_tier_spies(monkeypatch: pytest.MonkeyPatch, calls: dict[str, int]) -> None:
-    """Wire all three backends as counters; httpx/curl block, playwright returns."""
+    """Wire all three backends as counters; httpx/curl block, patchright returns."""
 
     def fake_httpx(*_a: object, **_kw: object) -> Response:
         calls["httpx"] += 1
@@ -515,14 +515,14 @@ def _install_tier_spies(monkeypatch: pytest.MonkeyPatch, calls: dict[str, int]) 
 
     def fake_pw(*_a: object, **_kw: object) -> Response:
         calls["pw"] += 1
-        return _backend_response("playwright")
+        return _backend_response("patchright")
 
     monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
     monkeypatch.setattr("polyfetch_scrape._backends.curl_backend.attempt", fake_curl)
-    monkeypatch.setattr("polyfetch_scrape._backends.playwright_backend.attempt", fake_pw)
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend.attempt", fake_pw)
 
 
-def test_fetch_max_tier_caps_before_playwright(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_max_tier_caps_before_patchright(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"httpx": 0, "curl": 0, "pw": 0}
     _install_tier_spies(monkeypatch, calls)
 
@@ -533,13 +533,13 @@ def test_fetch_max_tier_caps_before_playwright(monkeypatch: pytest.MonkeyPatch) 
     assert calls == {"httpx": 1, "curl": 1, "pw": 0}
 
 
-def test_fetch_min_tier_forces_playwright(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_min_tier_forces_patchright(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"httpx": 0, "curl": 0, "pw": 0}
     _install_tier_spies(monkeypatch, calls)
 
-    resp = fetch("https://example.com", min_tier="playwright")
+    resp = fetch("https://example.com", min_tier="patchright")
 
-    assert resp.backend == "playwright"
+    assert resp.backend == "patchright"
     assert calls == {"httpx": 0, "curl": 0, "pw": 1}
 
 
@@ -568,7 +568,7 @@ def test_fetch_rejects_min_tier_above_max_tier(monkeypatch: pytest.MonkeyPatch) 
     _install_tier_spies(monkeypatch, calls)
 
     with pytest.raises(FetchError):
-        fetch("https://example.com", min_tier="playwright", max_tier="httpx")
+        fetch("https://example.com", min_tier="patchright", max_tier="httpx")
 
     assert calls == {"httpx": 0, "curl": 0, "pw": 0}
 
@@ -583,13 +583,13 @@ def test_fetch_rejects_tier_combined_with_min_or_max(monkeypatch: pytest.MonkeyP
     assert calls == {"httpx": 0, "curl": 0, "pw": 0}
 
 
-def test_fetch_body_with_max_tier_curl_never_reaches_playwright(
+def test_fetch_body_with_max_tier_curl_never_reaches_patchright(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = {"httpx": 0, "curl": 0, "pw": 0}
     _install_tier_spies(monkeypatch, calls)
 
-    # A POST body capped at curl_cffi: both block → FetchError, playwright never in range.
+    # A POST body capped at curl_cffi: both block → FetchError, patchright never in range.
     with pytest.raises(FetchError):
         fetch("https://example.com", method="POST", json={"a": 1}, max_tier="curl_cffi")
 
