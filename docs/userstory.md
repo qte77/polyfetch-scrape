@@ -40,7 +40,11 @@ screenshot=...)` → `Response.screenshot` (#67, #68), plus opt-in
 `RenderOptions(capture_console=True, capture_network_failures=True)` → `Response.console_errors` /
 `Response.network_failures` to assert the page hydrated without console/network errors (#118). For a
 genuine **interactive** flow (act → assert → act — click, fill a composer, submit, re-assert), use
-`render_session(url)` for a managed multi-step `Page` instead of a single `fetch()` (#117).
+`render_session(url)` for a managed multi-step `Page` instead of a single `fetch()` (#117). To match how
+the target site actually appears to a real visitor — a mobile device, a given locale, a specific
+colour-scheme — pass `RenderOptions(device=..., viewport=..., locale=..., record_video_dir=...)` (or the
+same keywords on `render_session(...)`); the session recording lands on `Response.video_path` /
+`s.video_path` ([#162](https://github.com/qte77/polyfetch-scrape/issues/162)).
 
 ## Caller handling auth / gone / legal-block outcomes
 
