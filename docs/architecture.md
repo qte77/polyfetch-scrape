@@ -49,7 +49,7 @@ polyfetch has a supported **engine** and an unsupported-surface **scripting subs
 | `throttle.py` | `Throttle` — thread-safe per-host minimum inter-request spacing (proactive politeness); shared across a bulk worker pool. |
 | `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
-| `_backends/curl_backend.py` | Tier 2: `curl_cffi` Chrome TLS impersonation; engages on 403 / TLS error. |
+| `_backends/curl_backend.py` | Tier 2: `curl_cffi` (Python **CFFI** bindings to the **curl-impersonate** fork of curl) — replays a real browser's Chrome TLS/JA3 handshake, which UA/header edits alone can't; engages on 403 / TLS error. |
 | `_backends/patchright_backend.py` | Tier 3: headless Patchright/Chromium — Patchright is a stealth, API-compatible **Playwright fork** (the dependency is `patchright`, never `playwright`); applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture); emulation/video applied at `new_context()`. |
 | `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, video_path, console_errors, network_failures, screenshots). |
 | `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — patchright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures, device/viewport/color_scheme/user_agent/locale emulation, record_video_dir/record_video_size). |

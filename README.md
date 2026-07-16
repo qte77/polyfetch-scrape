@@ -59,7 +59,7 @@ uv run patchright install chromium   # one-off; required only for the patchright
 from polyfetch_scrape import fetch
 
 r = fetch("https://nowsecure.nl/")
-print(r.status, r.backend, len(r.body))     # 200 curl_cffi 179447
+print(r.status, r.backend, len(r.body))     # 200 httpx 179447  (the tier that answers depends on the target's current anti-bot posture)
 ```
 
 ### CLI

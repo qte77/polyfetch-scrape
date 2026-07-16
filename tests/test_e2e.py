@@ -62,15 +62,28 @@ def test_arxiv_abstract_page_succeeds_on_plain_httpx() -> None:
     assert "html" in resp.content_type.lower()
 
 
-def test_cloudflare_fronted_target_succeeds_via_curl_cffi() -> None:
-    """Stage 0.2.0: curl_cffi TLS fallback unblocks Cloudflare-fronted targets.
+def test_curl_backend_executes_against_real_target() -> None:
+    """Stage 0.2.0: direct-call proof that the curl_cffi tier executes correctly.
 
-    nowsecure.nl is the curl_cffi project's canonical anti-bot demo target.
-    Plain httpx gets 403; curl_cffi with chrome impersonation gets 200.
+    No public target reliably distinguishes 'needs curl_cffi' from 'httpx works'
+    over time — TLS-fingerprint blocking targets decay as sites' anti-bot posture
+    changes (see AGENT_LEARNINGS.md "Re-verify time-sensitive empirical data").
+    The auto-fallback trigger itself is covered by the mocked unit tests, so here
+    we drive curl_backend.attempt() directly to verify the tier connects with
+    chrome impersonation and returns a well-formed Response.
     """
-    resp = fetch("https://nowsecure.nl/", retry=RetryPolicy(max_attempts=1))
+    from polyfetch_scrape._backends import curl_backend
+
+    resp = curl_backend.attempt(
+        "GET",
+        "https://example.com",
+        None,
+        30.0,
+        RetryPolicy(max_attempts=2),
+        browser="chrome",
+    )
     assert resp.status == 200
-    assert resp.backend == "curl_cffi", "expected the fallback to engage"
+    assert resp.backend == "curl_cffi"
 
 
 def test_patchright_backend_executes_against_real_target() -> None:
