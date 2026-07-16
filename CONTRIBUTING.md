@@ -9,6 +9,7 @@
 
 - `make setup_dev` — sync dev deps via `uv`
 - `make setup_browsers` — one-off; install Patchright Chromium (~300 MB; required only for the playwright tier)
+- `make doctor` — check the browser-tier Chromium is installed and install it if missing (idempotent; handy when borrowing polyfetch's venv, where the Chromium cache can get wiped)
 
 **Inner loop:**
 
@@ -35,6 +36,7 @@
 | `make setup_uv` | Bootstrap uv + sync frozen deps | Only target that uses `pip` (one-line bootstrap) |
 | `make setup_dev` | Sync dev deps via uv | |
 | `make setup_browsers` | Install Patchright Chromium | Required only for playwright tier; ~300 MB |
+| `make doctor` | Check the browser-tier Chromium is installed; install if missing | Wraps `polyfetch doctor --fix`; idempotent; for borrowed-venv consumers |
 | `make lint_src` | Format + lint `src/` with ruff | |
 | `make lint_tests` | Format + lint `tests/` with ruff | |
 | `make type_check` | Static type check with pyright (strict) | |

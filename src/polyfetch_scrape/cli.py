@@ -1,5 +1,6 @@
 import base64
 import json
+import subprocess
 import sys
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -338,6 +339,53 @@ def discover_cmd(
 
 # Bind 'discover' as the command name (function name kept distinct from the import)
 app.registered_commands[-1].name = "discover"
+
+
+def _chromium_ok() -> bool:  # pragma: no cover - launches a real browser; not unit-testable
+    """True if headless Chromium launches (installed); False when the browser is missing.
+
+    A local, network-free probe: launch and immediately close a headless Patchright Chromium.
+    Any launch failure (most commonly the browser not being installed) reads as unhealthy.
+    """
+    from patchright.sync_api import sync_playwright
+
+    try:
+        with sync_playwright() as pw:
+            pw.chromium.launch(headless=True).close()
+    except Exception:
+        return False
+    return True
+
+
+def _install_chromium() -> int:  # pragma: no cover - shells out to the patchright installer
+    """Install Patchright's Chromium (``patchright install chromium``); return its exit code."""
+    return subprocess.run(
+        [sys.executable, "-m", "patchright", "install", "chromium"], check=False
+    ).returncode
+
+
+@app.command()
+def doctor(
+    fix: Annotated[bool, typer.Option("--fix", help="Install Chromium if it is missing.")] = False,
+) -> None:
+    """Check the Patchright Chromium the browser tier needs; ``--fix`` installs it if missing.
+
+    Exits non-zero when Chromium is unavailable (and ``--fix`` was not given, or the install
+    failed) so borrowed-venv consumers can gate their e2e on ``polyfetch doctor``.
+    """
+    if _chromium_ok():
+        typer.echo("chromium: ok")
+        return
+    if not fix:
+        typer.echo(
+            "chromium: missing — run `polyfetch doctor --fix` (or `make setup_browsers`)", err=True
+        )
+        raise typer.Exit(1)
+    typer.echo("chromium: missing — installing via patchright …")
+    if _install_chromium() != 0:
+        typer.echo("chromium: install failed", err=True)
+        raise typer.Exit(1)
+    typer.echo("chromium: ok (installed)")
 
 
 # --------------------------------------------------------------------------- #
