@@ -73,18 +73,18 @@ def test_cloudflare_fronted_target_succeeds_via_curl_cffi() -> None:
     assert resp.backend == "curl_cffi", "expected the fallback to engage"
 
 
-def test_playwright_backend_executes_against_real_target() -> None:
-    """Stage 0.3.0: direct-call proof that the Playwright tier executes correctly.
+def test_patchright_backend_executes_against_real_target() -> None:
+    """Stage 0.3.0: direct-call proof that the patchright tier executes correctly.
 
-    No public target cleanly distinguishes 'needs Playwright' from 'curl_cffi
-    works' in headless CI (headed Chrome would be needed for hardened
+    No public target cleanly distinguishes 'needs the patchright tier' from
+    'curl_cffi works' in headless CI (headed Chrome would be needed for hardened
     Cloudflare per Patchright's own README — see docs/scraping-landscape.md).
-    So we drive playwright_backend.attempt() directly to verify the tier
+    So we drive patchright_backend.attempt() directly to verify the tier
     connects, runs JS, and returns a well-formed Response.
     """
-    from polyfetch_scrape._backends import playwright_backend
+    from polyfetch_scrape._backends import patchright_backend
 
-    resp = playwright_backend.attempt(
+    resp = patchright_backend.attempt(
         method="GET",
         url="https://httpbin.org/html",
         headers=None,
@@ -92,7 +92,7 @@ def test_playwright_backend_executes_against_real_target() -> None:
         policy=RetryPolicy(max_attempts=1),
     )
     assert resp.status == 200
-    assert resp.backend == "playwright"
+    assert resp.backend == "patchright"
     assert b"<html" in resp.body.lower() or b"<body" in resp.body.lower()
 
 
@@ -132,7 +132,7 @@ def test_named_screenshots_capture_multiple() -> None:
     """RenderOptions.screenshots (#119) captures named PNGs in one render."""
     resp = fetch(
         "https://quotes.toscrape.com/js/",
-        tier="playwright",
+        tier="patchright",
         render=RenderOptions(
             wait_until="networkidle",
             screenshots=(Screenshot("viewport", "viewport"), Screenshot("footer", ".footer")),
