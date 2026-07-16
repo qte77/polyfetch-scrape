@@ -3,8 +3,10 @@
 #
 # "ToS-safe" = purpose-built scraping / anti-bot test sandboxes or fingerprint-echo
 # services whose own terms or robots.txt permit automated testing. Each was probed
-# with polyfetch on 2026-06 (the winning Response.backend is noted); live sites
-# drift, so re-verify before relying on a specific tier outcome.
+# with polyfetch on 2026-06 (the winning Response.backend is noted), with the
+# books.toscrape.com / quotes.toscrape.com/js/ / bot.sannysoft.com additions
+# re-probed 2026-07-16; live sites drift, so re-verify before relying on a
+# specific tier outcome.
 #
 #   Run one:        uv run polyfetch fetch <url> --json        # shows status + backend
 #   See the body:   uv run polyfetch fetch <url> --show-body
@@ -17,6 +19,10 @@
 # scrapethissite.com: its FAQ explicitly authorizes automated scraping (1 req/s,
 # set a User-Agent). robots allows /pages/. Probed: 200 [httpx].
 https://www.scrapethissite.com/pages/
+
+# books.toscrape.com: Zyte/Scrapy "we love being scraped" sandbox (structured HTML
+# + pagination); robots-friendly. Probed 2026-07-16: 200 [httpx].
+https://books.toscrape.com/
 
 # --- Tier 2: curl_cffi — TLS/JA3 fingerprint (echo services) ---
 # These reflect your TLS fingerprint instead of blocking, so fetch() resolves them
@@ -34,6 +40,15 @@ https://tls.peet.ws/api/all
 # exercising Patchright's stealth under scrutiny.
 https://www.scrapingcourse.com/javascript-rendering
 https://abrahamjuliot.github.io/creepjs/
+
+# quotes.toscrape.com/js/: quotes injected by JS; httpx gets a 200 shell without
+# the quotes, browser renders them. Probed 2026-07-16: 200 [httpx] (JS-gated body).
+https://quotes.toscrape.com/js/
+
+# bot.sannysoft.com: classic headless-detection page (navigator.webdriver,
+# chrome-runtime, plugin/WebGL checks) for exercising Patchright stealth.
+# Probed 2026-07-16: 200 [httpx].
+https://bot.sannysoft.com/
 
 # --- Ceiling: hardest ToS-safe — 403s ALL tiers, incl. headless Chromium ---
 # These anti-bot / Cloudflare challenge pages return 403 to httpx, curl_cffi, AND
