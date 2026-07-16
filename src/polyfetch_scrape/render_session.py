@@ -7,7 +7,7 @@ interactive flow (act → assert → act, branch on the DOM) needs a live ``Page
 console/network capture and screenshot helpers, so consumers stop re-hand-rolling
 raw Patchright launch/teardown/capture boilerplate.
 
-Chromium-only (headless), consistent with the playwright fetch tier.
+Chromium-only (headless), consistent with the patchright fetch tier.
 
 NOTE: like the fetch-tier capture, ``console_errors`` / ``network_failures``
 reflect only THIS process's network — a cross-origin failure a real user hits
@@ -20,7 +20,7 @@ from typing import Any
 from patchright.sync_api import TimeoutError as PwTimeoutError
 from patchright.sync_api import sync_playwright
 
-from polyfetch_scrape._backends.playwright_backend import attach_capture, capture_screenshot
+from polyfetch_scrape._backends.patchright_backend import attach_capture, capture_screenshot
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import RenderOptions, WaitUntil
 

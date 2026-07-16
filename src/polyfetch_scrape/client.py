@@ -6,7 +6,7 @@ from polyfetch_scrape._backends import (
     FingerprintBlock,
     curl_backend,
     httpx_backend,
-    playwright_backend,
+    patchright_backend,
 )
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.render_options import RenderAction, RenderOptions, Screenshot
@@ -26,20 +26,20 @@ __all__ = [
 ]
 
 Browser = Literal["chrome", "firefox"]
-Tier = Literal["httpx", "curl_cffi", "playwright"]
+Tier = Literal["httpx", "curl_cffi", "patchright"]
 
 _log = logging.getLogger(__name__)
 
-# The playwright tier is GET-only and cannot replay a request body, so a body request
+# The patchright tier is GET-only and cannot replay a request body, so a body request
 # is confined to the httpx/curl_cffi tiers (see #46).
-_BODY_ON_PLAYWRIGHT_MSG = (
-    "request body cannot be sent on the playwright tier (GET-only); "
+_BODY_ON_PATCHRIGHT_MSG = (
+    "request body cannot be sent on the patchright tier (GET-only); "
     "body requests are limited to the httpx/curl_cffi tiers: {url}"
 )
 
 # Cheapest → most capable. The auto chain escalates left-to-right; min_tier/max_tier
 # select a contiguous slice of this order (see #80).
-_TIER_ORDER: tuple[Tier, ...] = ("httpx", "curl_cffi", "playwright")
+_TIER_ORDER: tuple[Tier, ...] = ("httpx", "curl_cffi", "patchright")
 
 
 def _tier_index(tier: Tier) -> int:
@@ -70,7 +70,7 @@ def fetch(
     lo, hi = _resolve_tier_range(tier, min_tier, max_tier)
     policy = retry if retry is not None else RetryPolicy()
     headers = _with_conditional_headers(headers, etag, last_modified)
-    # `render` (RenderOptions) is the playwright-tier surface; `wait_for_selector` is a
+    # `render` (RenderOptions) is the patchright-tier surface; `wait_for_selector` is a
     # back-compat convenience that seeds it when no explicit `render` is given.
     render = render if render is not None else RenderOptions(wait_for_selector=wait_for_selector)
     active = _TIER_ORDER[_tier_index(lo) : _tier_index(hi) + 1]
@@ -111,7 +111,7 @@ def _resolve_tier_range(
             raise FetchError("pass either tier= or min_tier/max_tier, not both")
         return tier, tier
     lo: Tier = min_tier if min_tier is not None else "httpx"
-    hi: Tier = max_tier if max_tier is not None else "playwright"
+    hi: Tier = max_tier if max_tier is not None else "patchright"
     if _tier_index(lo) > _tier_index(hi):
         raise FetchError(f"min_tier ({lo}) must not exceed max_tier ({hi})")
     return lo, hi
@@ -154,7 +154,7 @@ def _dispatch(
     json: Any | None,
     content: bytes | None,
 ) -> Response:
-    """Call one backend. Playwright is GET-only and cannot carry a request body."""
+    """Call one backend. Patchright is GET-only and cannot carry a request body."""
     if tier == "httpx":
         return httpx_backend.attempt(
             method, url, headers, timeout, policy, json=json, content=content
@@ -164,5 +164,5 @@ def _dispatch(
             method, url, headers, timeout, policy, browser=browser, json=json, content=content
         )
     if json is not None or content is not None:
-        raise FetchError(_BODY_ON_PLAYWRIGHT_MSG.format(url=url))
-    return playwright_backend.attempt(method, url, headers, timeout, policy, render=render)
+        raise FetchError(_BODY_ON_PATCHRIGHT_MSG.format(url=url))
+    return patchright_backend.attempt(method, url, headers, timeout, policy, render=render)

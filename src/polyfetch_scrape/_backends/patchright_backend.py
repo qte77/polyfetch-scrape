@@ -37,7 +37,7 @@ def attempt(
     render: RenderOptions | None = None,
 ) -> Response:
     if method.upper() != "GET":
-        raise FetchError(f"playwright backend supports GET only, not {method}")
+        raise FetchError(f"patchright backend supports GET only, not {method}")
 
     opts = render if render is not None else RenderOptions()
     last = _Attempt(None, None, None)
@@ -58,7 +58,7 @@ def attempt(
     detail = (
         f"status={last.block_status}" if last.block_status is not None else f"error={last.error!r}"
     )
-    msg = f"playwright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
+    msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     if last.block_status in _FINGERPRINT_STATUSES:
         raise FingerprintBlock(msg) from last.error
     raise FetchError(msg) from last.error
@@ -84,7 +84,7 @@ def _attempt_once(
             return _Attempt(None, None, exc)
 
         if response is None:
-            return _Attempt(None, None, FetchError("playwright: no response object"))
+            return _Attempt(None, None, FetchError("patchright: no response object"))
 
         status = int(response.status)
         if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
@@ -105,7 +105,7 @@ def _attempt_once(
                 headers=all_headers,
                 body=body,
                 content_type=all_headers.get("content-type"),
-                backend="playwright",
+                backend="patchright",
                 permanent_redirect_to=permanent_redirect_target(status, all_headers),
                 screenshot=capture_screenshot(page, opts.screenshot),
                 console_errors=console_errors,

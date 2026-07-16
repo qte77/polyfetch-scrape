@@ -10,16 +10,16 @@ class Response:
     headers: Mapping[str, str]
     body: bytes
     content_type: str | None
-    backend: Literal["httpx", "curl_cffi", "playwright"]
+    backend: Literal["httpx", "curl_cffi", "patchright"]
     # Set to the Location target on a permanent redirect (301/308) so callers can
     # update stored URLs; None for non-permanent responses (temporary 302/303/307).
     permanent_redirect_to: str | None = None
-    # PNG bytes when a screenshot was requested on the playwright tier; else None.
+    # PNG bytes when a screenshot was requested on the patchright tier; else None.
     screenshot: bytes | None = None
     # Browser-tier diagnostics — opt-in via RenderOptions.capture_*; empty on the httpx/curl tiers.
     # NOTE: reflects only THIS process's network — a failure a real user hits (CORS / extension /
     # proxy) can read clean here. Force a known failure to trust it (AGENT_LEARNINGS #3).
     console_errors: list[str] = field(default_factory=list[str])
     network_failures: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
-    # Named PNGs from RenderOptions.screenshots (playwright tier); empty otherwise.
+    # Named PNGs from RenderOptions.screenshots (patchright tier); empty otherwise.
     screenshots: dict[str, bytes] = field(default_factory=dict[str, bytes])
