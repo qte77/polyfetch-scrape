@@ -41,12 +41,27 @@ call already honor `Retry-After` / backoff. Per-process (not distributed).
 ```python
 RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selector=None,
               wait_for_function=None, screenshot=None, actions=(), screenshots=(),
-              capture_console=False, capture_network_failures=False)
+              capture_console=False, capture_network_failures=False,
+              viewport=None, device=None, color_scheme=None, user_agent=None, locale=None,
+              record_video_dir=None, record_video_size=None)
       # patchright tier only; screenshot="viewport"|"<css-selector>" → Response.screenshot (PNG bytes)
       # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
       # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
       # capture_console → Response.console_errors (console + uncaught-JS errors)
       # capture_network_failures → Response.network_failures (failed requests + HTTP >= 400)
+      # --- emulation + video: set at browser new_context() time (both the fetch tier and
+      #     render_session apply these the same way) ---
+      # device="<preset name>" (e.g. "iPhone 13") → spreads Patchright's device dict
+      #     (user_agent/viewport/is_mobile/has_touch/device_scale_factor/default_browser_type/...);
+      #     explicit viewport/user_agent/locale/color_scheme below override the preset's values.
+      #     NOTE: on an is_mobile device the "full-page" screenshot clips rather than scrolling.
+      # viewport=(width, height) — also changeable post-hoc via page.set_viewport_size(...)
+      # color_scheme="light"|"dark"|"no-preference" — also changeable post-hoc via
+      #     page.emulate_media(color_scheme=...)
+      # user_agent=<str> / locale=<str> (BCP 47, e.g. "en-US") — context-time only
+      # record_video_dir=<path> (+ optional record_video_size=(width, height)) → records a
+      #     VP8 .webm of the session into that directory; Patchright only finalizes the file on
+      #     context.close(), so the path lands on Response.video_path once fetch() returns
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
       # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -62,26 +77,32 @@ Screenshot(name, target="viewport")
 A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on.
 
 ```python
-with render_session(url, *, wait_until="domcontentloaded", timeout=30.0) as s:
+with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
+                     device=None, viewport=None, color_scheme=None, user_agent=None,
+                     locale=None, record_video_dir=None, record_video_size=None) as s:
     s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
     s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
     s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
     s.page           # the managed Patchright Page (escape hatch for structural reads)
+    s.video_path     # Path to the recorded .webm once set (only after the `with` block exits)
 # auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
-#   on an exception inside the block → an "exception" screenshot is captured first.
+#   on an exception inside the block → an "exception" screenshot is captured first;
+#   s.video_path is set once the context closes, when record_video_dir was given.
 # a navigation timeout raises FetchError.
 ```
 
-`submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
+`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video semantics. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
 
 ## `Response` and `RetryPolicy`
 
 ```python
 Response(url, status, headers, body, content_type, backend,
-         permanent_redirect_to=None, screenshot=None,
+         permanent_redirect_to=None, screenshot=None, video_path=None,
          console_errors=[], network_failures=[], screenshots={})
       # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
       # screenshot: PNG bytes when requested on the patchright tier, else None
+      # video_path: Path to the recorded VP8 .webm when RenderOptions.record_video_dir was set
+      #   (patchright tier), else None
       # screenshots: dict[name, PNG bytes] from RenderOptions.screenshots; {} otherwise
       # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
       # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)

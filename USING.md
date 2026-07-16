@@ -70,6 +70,8 @@ with render_session(url) as s:
 
 `fetch` **patchright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
 
+`fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path`, not yet surfaced in `--json`).
+
 `bulk` flags: `--workers N` (concurrency), `--delay S` (per-host polite spacing — min seconds between same-host requests, shared across workers), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 
 (The optional `contrib` scanner `polyfetch easter-hunt scan` is unsupported and out of this contract — see [`CONTRIBUTING.md`](CONTRIBUTING.md).)
