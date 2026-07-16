@@ -31,6 +31,15 @@ How a single `fetch(url)` call flows through the three-tier fallback chain to a 
 Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and returns the same typed
 `Response`, so callers never branch on which tier succeeded — `Response.backend` records it.
 
+## Two layers: engine and scripts
+
+polyfetch has a supported **engine** and an unsupported-surface **scripting substrate**:
+
+- **Engine (stable, semver'd):** `fetch`, `render_session`, `discover`, and the value objects `Response`, `RenderOptions`, `RenderAction`, `Screenshot`, `RetryPolicy`, `Throttle`, plus the `FetchError` hierarchy. This is the public API.
+- **Scripts:** the live `render_session().page` (stealth-Patchright `Page`) for app-specific flows. `_backends/` is private; `contrib/` is unsupported and never imported by core.
+
+**The ownership line (decidable):** polyfetch owns X iff X is **(a) generic** — true for any target site, not tied to one app's DOM/flow — **and (b) construction-time or shared plumbing** — set at browser/`new_context()` time, or boilerplate every consumer re-implements identically (install, teardown, capture, SSRF). Otherwise the consumer owns it (app-specific, or a few lines on `.page`). Applied: device/locale/video/user-agent emulation → engine (`new_context()`-time); `aria_snapshot` and multi-step walks → scripted `.page` recipes.
+
 ## Component responsibilities
 
 | Module | Responsibility |
@@ -40,7 +49,7 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
 | `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
 | `_backends/curl_backend.py` | Tier 2: `curl_cffi` Chrome TLS impersonation; engages on 403 / TLS error. |
-| `_backends/patchright_backend.py` | Tier 3: headless Patchright/Chromium; applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture). |
+| `_backends/patchright_backend.py` | Tier 3: headless Patchright/Chromium — Patchright is a stealth, API-compatible **Playwright fork** (the dependency is `patchright`, never `playwright`); applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture). |
 | `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, console_errors, network_failures, screenshots). |
 | `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — patchright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures). |
 | `render_session.py` | `render_session()` — managed headless multi-step Patchright `Page` context manager for interactive act→assert→act flows; reuses the backend's `attach_capture`/`capture_screenshot`. |
@@ -64,3 +73,5 @@ Every tier runs the same retry loop (`RetryPolicy`, honoring `Retry-After`) and 
 - **Core is horizontal.** Domain API wrappers and content extraction live in downstream packages that
   consume `fetch()`; `contrib/` extras are unsupported and never imported by core.
 - **No unconditional network at import.** Fetching happens only inside `fetch()` / a backend `attempt()`.
+- **Value objects are frozen dataclasses, not validation models.** `Response` / `RenderOptions` / `RetryPolicy` / `Throttle` are `@dataclass(frozen=True, slots=True)` — *outputs and config*, not an input-validation boundary. polyfetch therefore uses **no `pydantic` / `pydantic-settings`** and **no env/global settings** (it's a library, not an app; configuration is explicit function parameters). Untrusted input is validated where it enters: `defusedxml` / `json` parsing and the shared `utils/_ssrf.py` literal-IP guard. Whether the estate standardises on pydantic downstream is tracked separately as an open cross-repo question.
+- **polyfetch owns the substrate, not app-specific e2e.** The engine + the `new_context()`-time knobs + shared plumbing (install/teardown/capture/SSRF) are core; per-app walks, selectors, and assertions belong to the consumer (see the ownership line above).

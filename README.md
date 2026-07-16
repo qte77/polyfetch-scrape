@@ -13,9 +13,9 @@
 
 - **One call, typed result.** `fetch(url)` returns a typed `Response` (`status`, `body`, `backend`, …) no matter which backend succeeded — you never pick a scraping tool per site.
 - **Three-tier fallback, reactive.** `httpx` → `curl_cffi` (Chrome TLS/JA3 impersonation) → Patchright (headless Chromium, anti-detection). Escalates only on a real `403` or TLS block, so the cheap tier is always tried first — or pin one tier / bound the range with `tier` / `min_tier` / `max_tier`.
-- **Beats blocks a UA swap can't.** Real TLS impersonation + a headless-Chromium fallback clear sites that reject header-only spoofing ([empirical findings](docs/scraping-landscape.md)).
+- **Handles TLS-fingerprint blocks, not just UA checks.** Real TLS/JA3 impersonation plus a headless-Chromium fallback reach sites that reject header-only spoofing ([empirical findings](docs/scraping-landscape.md)).
 - **Typed error taxonomy.** Terminal statuses (`401/407/404/410/451`) raise typed exceptions; `429/5xx` retry honouring `Retry-After`.
-- **Conditional GET + deep render controls.** `etag`/`last_modified` for `304`s; on the browser tier: waits, single + named screenshots, scripted actions, an interactive multi-step `render_session`, and opt-in console/network capture.
+- **Conditional GET + deep render controls.** `etag`/`last_modified` for `304`s; on the browser tier: waits, single + named screenshots, scripted actions, an interactive multi-step `render_session`, and **DevTools capture** — console messages, network failures, and uncaught JS errors (opt-in on `fetch`, always-on in `render_session`, or wire your own `page.on(...)` listeners).
 - **POST bodies + polite throttling.** Send `json`/`content` request bodies (httpx/curl tiers); pass a per-host `Throttle` to stay under published rate limits.
 - **Structured-first discovery.** `discover(url)` (and `polyfetch discover`) reports the cheaper-than-HTML entrypoints a site exposes — sitemaps, RSS/Atom/iCal feeds, `llms.txt`, JSON-LD `@type`s — so consumers parse structured data instead of scraping HTML.
 - **Library, CLI, or env-borrow.** `import fetch`, run `polyfetch`, or sideload from another repo/agent without installing ([USING.md](USING.md)).
@@ -33,9 +33,18 @@ Regenerate with `make screencast` ([`examples/navigate_screencast.py`](examples/
 </details>
 <!-- markdownlint-enable MD033 -->
 
+## Two layers: engine + scripting substrate
+
+polyfetch is two things behind one install:
+
+1. **The engine** — the supported, stable, typed surface: `fetch(url) -> Response` (the reactive fallback chain), `render_session(url)` (managed multi-step browser sessions), and `discover(url)`. Most callers only ever touch this.
+2. **A scripting substrate** — for flows the engine does not express directly, `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page` to drive yourself, with the full Chromium **DevTools/CDP surface**: live console / network / JS-error capture (`page.on("console", …)` and friends), multi-step walks, `page.locator(...).aria_snapshot()`, post-hoc `page.set_viewport_size(...)`, ad-hoc DOM reads. polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. The scripts under [`examples/`](examples/) show the pattern — they are examples, not part of the stable API.
+
+**Where the line falls:** options fixed at browser/`new_context()` time — device emulation, locale, recorded video, user-agent — belong to the engine as core render options; anything *after* the page exists — clicks, screenshots, `set_viewport_size`, `aria_snapshot` — is scriptable on `.page`. (Viewport and colour scheme sit on the seam: set them once as options, or change them live on `.page`.)
+
 ## How
 
-**I am a:** [Library user](#library) | [CLI user](#cli) | [Agent / sideload](USING.md) | [Contributor](#development)
+**I am a:** [Library user](#library) | [CLI user](#cli) | [Script author](#two-layers-engine--scripting-substrate) | [Agent / sideload](USING.md) | [Contributor](#development)
 
 ### Install
 
@@ -100,6 +109,24 @@ Per PR, add a changelog fragment (`make changelog_new`) instead of editing `CHAN
 ## Why
 
 Claude Code's built-in **WebFetch** exposes no header parameters in its public schema, so callers cannot set `User-Agent`, `Accept`, or `Referer` — and its default UA is empirically rejected (HTTP 403) by sites with non-trivial bot detection (`hamiltoncompany.com`, `thingiverse.com`, `web.archive.org`). Header spoofing alone often isn't enough: many blocks key on the TLS/JA3 fingerprint, not the UA string. `polyfetch-scrape` is the next rung — browser-shape headers in the cheap tier, real TLS impersonation in the middle tier, and headless Chromium with anti-detection patches as the fallback — escalating only when a tier is actually blocked.
+
+## How it compares
+
+| Instead of… | polyfetch gives you |
+|---|---|
+| `httpx` / `requests` alone | the same simple call, plus automatic TLS impersonation and a browser fallback when a site blocks the plain client |
+| `curl_cffi` / `cloudscraper` alone | TLS impersonation *and* a real headless browser behind one typed `Response` — no manual tier-picking |
+| raw Playwright / Patchright | the browser install, launch/teardown, capture, retries and SSRF guard already wired; drop to `.page` only when you need to |
+| a hosted scraping API | a dependency you run in-process: no per-request cost, no data leaving your machine, no vendor account |
+
+Each row is a trade-off, not a claim of superiority. See the [scraping landscape](docs/scraping-landscape.md) for dated, empirical probes.
+
+## What it does not do
+
+Two kinds of "no":
+
+- **Out of scope** (use a dedicated tool): proxy / residential-IP rotation, LLM-ready HTML→markdown extraction, a hosted/managed scraping service, and domain API wrappers (arXiv, patents, …) — those belong in downstream packages that consume `fetch()`.
+- **Not in the engine, but scriptable today** on `render_session().page`: accessibility snapshots (`aria_snapshot`), multi-step interactive walks, ad-hoc element screenshots, and live `set_viewport_size` — a few lines on the `.page` hatch rather than a core knob (see [Two layers](#two-layers-engine--scripting-substrate)).
 
 ## References
 

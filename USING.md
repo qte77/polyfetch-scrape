@@ -20,6 +20,41 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
   - **out-of-process** (recommended for agents): call the CLI, parse `--json`.
   - **in-clone script**: `uv run --directory <polyfetch> python /abs/path/script.py` → full Python API, run with the clone's interpreter. Pass **absolute paths** — `--directory` makes CWD the clone.
 
+## Scripting substrate
+
+Beyond the CLI, polyfetch is a **substrate you script against**: `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page`, with the **full Chromium DevTools / CDP surface** — for flows the CLI doesn't cover.
+
+### DevTools capture (console, network, JS errors)
+
+Attach any `page.on(...)` listener and react to the browser's DevTools events as the page runs — the same signals you'd read in the Chrome DevTools console/network panels:
+
+```python
+with render_session(url) as s:
+    s.page.on("console", lambda m: print(m.type, m.text))          # console.log / warn / error
+    s.page.on("pageerror", lambda e: print("uncaught JS:", e))     # uncaught JS exceptions
+    s.page.on("requestfailed", lambda r: print(r.url, r.failure))  # failed network requests
+    s.click_text("Load more")                                      # …then drive the page
+```
+
+You don't even have to wire listeners: capture is **always on out of the box** — `s.console_errors`
+(console errors + uncaught JS errors) and `s.network_failures` (failed / `≥400` requests) fill for the
+whole session, initial page load included. On the one-shot `fetch()` tier the same capture is opt-in
+via `RenderOptions(capture_console=True, capture_network_failures=True)` → `Response.console_errors` /
+`Response.network_failures`.
+
+> **Caveat:** a headless capture reflects only *this* runner's network — a failure a real user hits
+> (CORS / a browser extension / a proxy) can succeed here and read clean. Treat an empty capture as
+> "no error *on this network*", not "no error".
+
+### Other `.page` recipes
+
+```python
+with render_session(url) as s:
+    snap = s.page.locator("body").aria_snapshot()   # accessibility tree of the page
+```
+
+(`aria_snapshot()` is the current Patchright API; `page.accessibility.snapshot()` was removed upstream.) polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. See README's [Two layers](README.md#two-layers-engine--scripting-substrate) for the full engine/scripts split.
+
 ## Commands
 
 | Invocation | Purpose |
