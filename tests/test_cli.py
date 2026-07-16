@@ -350,6 +350,30 @@ def test_fetch_json_omits_screenshot_b64_when_absent(monkeypatch: pytest.MonkeyP
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert "screenshot_b64" not in payload
+    assert "video_path" not in payload
+
+
+def test_fetch_json_includes_video_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake(url: str, **_kw: object) -> Response:
+        return Response(
+            url=url,
+            status=200,
+            headers={"content-type": "text/html"},
+            body=b"x",
+            content_type="text/html",
+            backend="patchright",
+            video_path=Path("vids/rec.webm"),
+        )
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app, ["fetch", "https://x.test", "--json", "--tier", "patchright", "--video-out", "vids"]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["video_path"] == "vids/rec.webm"
 
 
 def test_browser_flag_rejects_invalid_choice(monkeypatch: pytest.MonkeyPatch) -> None:
