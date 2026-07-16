@@ -8,35 +8,15 @@ Security: a literal-IP SSRF guard runs before every fetch. It is literal-IP only
 are out of scope for v0.1 and pass through. DNS-based SSRF mitigation is deferred.
 """
 
-import ipaddress
 from collections.abc import Iterable
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin
 
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.contrib.easter_hunt.detectors import DETECTORS, Detector
 from polyfetch_scrape.contrib.easter_hunt.finding import Finding
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
-
-
-def _check_ssrf(url: str) -> None:
-    """Raise ValueError for a literal private/internal IP host, before any fetch."""
-    host = urlsplit(url).hostname
-    if host is None:
-        return
-    try:
-        addr = ipaddress.ip_address(host)
-    except ValueError:
-        return  # not a literal IP — the literal-IP guard does not apply
-    if (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_unspecified
-        or addr.is_reserved
-        or addr.is_multicast
-    ):
-        raise ValueError(f"SSRF guard: blocked internal address {host!r}")
+from polyfetch_scrape.utils._ssrf import check_ssrf
 
 
 def _safe_fetch(url: str, *, timeout: float) -> Response | None:
@@ -66,7 +46,7 @@ def hunt(
     for seed in seeds:
         for path in path_list:
             url = urljoin(seed, path)
-            _check_ssrf(url)
+            check_ssrf(url)
             response = _safe_fetch(url, timeout=timeout)
             if response is None:
                 continue
