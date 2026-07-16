@@ -13,6 +13,52 @@ Per-PR changes are staged as [scriv](https://scriv.readthedocs.io/) fragments in
 
 <!-- scriv-insert-here -->
 
+## [0.7.0] - 2026-07-16
+
+### Added
+
+- Structured-source discovery at the fetch layer: `utils.discovery.discover(url) -> DiscoveredSources` reports the cheaper-than-HTML entrypoints a site advertises — sitemaps (incl. event variants, from robots.txt `Sitemap:` lines + confirmed common paths), RSS/Atom/iCal feeds (`<link rel="alternate">`), `llms.txt`, and embedded JSON-LD `@type` values. Soft-404s (a 200 HTML shell for every path) are rejected. Exposed via a new `polyfetch discover <url> [--json]` CLI command, a `make discover URL=...` recipe, and `examples/structured_source_discovery.py`. Stays at the transport-layer boundary (returns entrypoint URLs/types only; no content extraction). Closes #135.
+
+- README screencast: a `make screencast` recipe + `examples/navigate_screencast.py` that drives the public `render_session` API through a live multi-step site navigation (paginate → login form → fill → submit → logged-in), capturing a frame per step into `assets/usage.gif`. Embedded in the README as a theme-aware `<details>` block. Reproducible — re-run on any change instead of hand-capturing.
+
+- `polyfetch fetch --json` now surfaces the browser-tier screenshot inline as base64
+  `screenshot_b64` (present only when `--screenshot` captured one), so env-borrow / agent
+  consumers get the PNG without `--screenshot-out` writing a file (#105).
+- `--browser` is now a validated `chrome|firefox` choice (typer rejects other values in `--help`).
+
+- `polyfetch doctor` checks that the browser-tier Chromium is installed and exits non-zero
+  when it is missing; `polyfetch doctor --fix` (or `make doctor`) installs it. Handy for
+  consumers borrowing polyfetch's venv, where the Chromium cache can get wiped (#145).
+
+- `RenderOptions` gains browser-`new_context()`-time emulation and video-recording
+  controls: `device` (Patchright device preset, e.g. `"iPhone 13"`), `viewport`,
+  `color_scheme`, `user_agent`, `locale`, `record_video_dir`, `record_video_size`.
+  Applied on both the `fetch()` browser tier and `render_session`, since these can only
+  be set at context-creation time, not on an existing `.page`.
+- `Response.video_path` — path to the recorded VP8 `.webm` when `record_video_dir` was
+  set; `RenderSession.video_path` mirrors it, set once the session's context closes.
+- CLI: `polyfetch fetch` gains `--device`, `--viewport WxH`, `--color-scheme
+  light|dark|no-preference`, `--user-agent`, `--locale`, `--video-out DIR`.
+
+- `polyfetch fetch --json` now surfaces `video_path` (the exact recorded `.webm` path) when
+  `--video-out DIR` records on the patchright tier, so CLI consumers learn Patchright's
+  auto-generated filename without scanning the directory. Absent when not recording.
+- `docs/scripting.md` — a scripting cookbook of `render_session().page` recipes (DevTools
+  `page.on(...)` capture, `aria_snapshot`, multi-step walks, live `set_viewport_size` /
+  `emulate_media`), making the "scripts" layer of the two-layer model concrete.
+
+### Changed
+
+- CI/release: adopted the [scriv](https://scriv.readthedocs.io/) `changelog.d/` fragment workflow — per-PR fragments (`make changelog_new`) are collected into a dated `CHANGELOG.md` section by the **Bump version** workflow (`scriv collect`), replacing manual `## [Unreleased]` editing (and its merge conflicts). `bump-my-version` no longer rewrites `CHANGELOG.md`. Mirrors the qte77 sibling repos.
+
+- **BREAKING:** the JS-render tier is renamed `playwright` → `patchright` (the engine is Patchright, a stealth Playwright fork). `Response.backend` now returns `"patchright"`; `--tier patchright` / `tier="patchright"`. There is no `playwright` alias — `--tier playwright` is now an invalid choice. Migrate: replace `playwright` with `patchright` in `--tier`/`--min-tier`/`--max-tier` and any `tier=`/`backend==` checks.
+
+- Docs: restated positioning around **two layers** — a stable typed engine (`fetch`/`discover`/`render_session`) and a scripting substrate you drive on `render_session().page`. Added "How it compares" and "What it does not do"; documented the ownership boundary and the no-pydantic decision in `docs/architecture.md`; neutral tone throughout.
+
+### Fixed
+
+- Package `description` in `pyproject.toml` no longer advertises "document-domain API wrappers" — those were removed from core in 0.5.0 (domain adapters live in downstream packages that consume `fetch()`). Project metadata (`pyproject` description, README hero, repo About) is now consistent and matches the shipped, horizontal-fetch surface; the README hero also names the already-shipped JA3 impersonation and screenshot capabilities.
+
 ## [0.6.0] - 2026-07-11
 
 ### Added
