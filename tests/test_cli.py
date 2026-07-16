@@ -299,6 +299,44 @@ def test_browser_flag_rejects_invalid_choice(monkeypatch: pytest.MonkeyPatch) ->
     assert called is True
 
 
+def test_doctor_ok_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: True)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "chromium: ok" in result.stdout
+
+
+def test_doctor_missing_without_fix_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 1
+    assert "missing" in result.output
+
+
+def test_doctor_fix_installs_and_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
+    monkeypatch.setattr("polyfetch_scrape.cli._install_chromium", lambda: 0)
+
+    result = runner.invoke(app, ["doctor", "--fix"])
+
+    assert result.exit_code == 0
+    assert "installed" in result.stdout
+
+
+def test_doctor_fix_install_failure_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
+    monkeypatch.setattr("polyfetch_scrape.cli._install_chromium", lambda: 1)
+
+    result = runner.invoke(app, ["doctor", "--fix"])
+
+    assert result.exit_code == 1
+    assert "install failed" in result.output
+
+
 def test_fetch_exits_1_on_fetcherror(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(*_a: object, **_kw: object) -> Response:
         raise FetchError("simulated")
