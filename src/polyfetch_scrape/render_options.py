@@ -1,10 +1,12 @@
 """Browser-tier render controls, grouped into one options object for ``fetch()``."""
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 WaitUntil = Literal["domcontentloaded", "load", "networkidle"]
 ActionVerb = Literal["click", "click_text", "fill", "wait_for_selector", "wait_ms"]
+ColorScheme = Literal["light", "dark", "no-preference"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,16 @@ class RenderOptions:
     - ``capture_console``: collect console + uncaught-JS errors onto ``Response.console_errors``.
     - ``capture_network_failures``: collect failed requests + HTTP ``>= 400`` responses onto
       ``Response.network_failures``. Both off by default (zero overhead unless asked).
+    - ``device``: a Patchright device preset name (e.g. ``"iPhone 13"``) — spreads
+      ``pw.devices[device]`` (user_agent/viewport/is_mobile/...) at ``new_context()`` time.
+    - ``viewport`` / ``color_scheme`` / ``user_agent`` / ``locale``: emulation set at
+      ``new_context()`` time; explicit values override anything ``device`` set. These are
+      also changeable post-hoc on ``.page`` for the scripting substrate (``render_session``) —
+      set them here for the uniform, one-shot ``fetch()`` path.
+    - ``record_video_dir`` / ``record_video_size``: record a VP8 ``.webm`` of the session into
+      this directory; the finished file's path lands on ``Response.video_path``. Patchright only
+      finalizes the file on ``context.close()``, so the path is unavailable until the attempt
+      completes.
     """
 
     wait_until: WaitUntil = "domcontentloaded"
@@ -67,3 +79,10 @@ class RenderOptions:
     screenshots: tuple[Screenshot, ...] = ()
     capture_console: bool = False
     capture_network_failures: bool = False
+    viewport: tuple[int, int] | None = None
+    device: str | None = None
+    color_scheme: ColorScheme | None = None
+    user_agent: str | None = None
+    locale: str | None = None
+    record_video_dir: str | Path | None = None
+    record_video_size: tuple[int, int] | None = None

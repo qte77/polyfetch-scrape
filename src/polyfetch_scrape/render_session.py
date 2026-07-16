@@ -15,14 +15,19 @@ reflect only THIS process's network — a cross-origin failure a real user hits
 """
 
 import contextlib
+from pathlib import Path
 from typing import Any
 
 from patchright.sync_api import TimeoutError as PwTimeoutError
 from patchright.sync_api import sync_playwright
 
-from polyfetch_scrape._backends.patchright_backend import attach_capture, capture_screenshot
+from polyfetch_scrape._backends.patchright_backend import (
+    attach_capture,
+    capture_screenshot,
+    context_kwargs,
+)
 from polyfetch_scrape.errors import FetchError
-from polyfetch_scrape.render_options import RenderOptions, WaitUntil
+from polyfetch_scrape.render_options import ColorScheme, RenderOptions, WaitUntil
 
 
 class RenderSession:
@@ -35,15 +40,39 @@ class RenderSession:
     """
 
     def __init__(
-        self, url: str, *, wait_until: WaitUntil = "domcontentloaded", timeout: float = 30.0
+        self,
+        url: str,
+        *,
+        wait_until: WaitUntil = "domcontentloaded",
+        timeout: float = 30.0,
+        device: str | None = None,
+        viewport: tuple[int, int] | None = None,
+        color_scheme: ColorScheme | None = None,
+        user_agent: str | None = None,
+        locale: str | None = None,
+        record_video_dir: str | Path | None = None,
+        record_video_size: tuple[int, int] | None = None,
     ) -> None:
         self._url = url
         self._wait_until = wait_until
         self._timeout_ms = int(timeout * 1000)
+        self._opts = RenderOptions(
+            capture_console=True,
+            capture_network_failures=True,
+            device=device,
+            viewport=viewport,
+            color_scheme=color_scheme,
+            user_agent=user_agent,
+            locale=locale,
+            record_video_dir=record_video_dir,
+            record_video_size=record_video_size,
+        )
         self._pw: Any = None
         self._browser: Any = None
         self._context: Any = None
+        self._video: Any = None
         self.page: Any = None
+        self.video_path: Path | None = None
         self.screenshots: dict[str, bytes] = {}
         self.console_errors: list[str] = []
         self.network_failures: list[dict[str, object]] = []
@@ -51,11 +80,10 @@ class RenderSession:
     def __enter__(self) -> "RenderSession":
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(headless=True)
-        self._context = self._browser.new_context()
+        self._context = self._browser.new_context(**context_kwargs(self._pw, self._opts))
         self.page = self._context.new_page()
-        self.console_errors, self.network_failures = attach_capture(
-            self.page, RenderOptions(capture_console=True, capture_network_failures=True)
-        )
+        self.console_errors, self.network_failures = attach_capture(self.page, self._opts)
+        self._video = self.page.video if self._opts.record_video_dir is not None else None
         try:
             self.page.goto(self._url, wait_until=self._wait_until, timeout=self._timeout_ms)
         except PwTimeoutError as exc:
@@ -106,12 +134,33 @@ class RenderSession:
             if obj is not None:
                 with contextlib.suppress(Exception):
                     getattr(obj, method)()
+        # The video file is only finalized once its context has closed (above), so read
+        # the path last — after the loop, regardless of browser/pw teardown outcome.
+        if self._video is not None:
+            with contextlib.suppress(Exception):
+                self.video_path = Path(self._video.path())
 
 
 def render_session(
-    url: str, *, wait_until: WaitUntil = "domcontentloaded", timeout: float = 30.0
+    url: str,
+    *,
+    wait_until: WaitUntil = "domcontentloaded",
+    timeout: float = 30.0,
+    device: str | None = None,
+    viewport: tuple[int, int] | None = None,
+    color_scheme: ColorScheme | None = None,
+    user_agent: str | None = None,
+    locale: str | None = None,
+    record_video_dir: str | Path | None = None,
+    record_video_size: tuple[int, int] | None = None,
 ) -> RenderSession:
     """Open a managed headless Patchright session for an interactive multi-step flow.
+
+    ``device``/``viewport``/``color_scheme``/``user_agent``/``locale`` set emulation at
+    ``new_context()`` time (mirrors ``RenderOptions``). ``record_video_dir`` (+ optional
+    ``record_video_size``) records a VP8 ``.webm``; the finished path lands on
+    ``RenderSession.video_path`` once the ``with`` block exits (Patchright finalizes the
+    file on context close, not before).
 
     Use as a context manager::
 
@@ -121,6 +170,17 @@ def render_session(
             s.fill("input", "hello"); s.submit()
             s.shot("after")
         # auto: console/network capture on s.console_errors / s.network_failures,
-        #       screenshot-on-exception, teardown.
+        #       screenshot-on-exception, teardown, s.video_path if recording.
     """
-    return RenderSession(url, wait_until=wait_until, timeout=timeout)
+    return RenderSession(
+        url,
+        wait_until=wait_until,
+        timeout=timeout,
+        device=device,
+        viewport=viewport,
+        color_scheme=color_scheme,
+        user_agent=user_agent,
+        locale=locale,
+        record_video_dir=record_video_dir,
+        record_video_size=record_video_size,
+    )

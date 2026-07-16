@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 
@@ -16,6 +17,8 @@ class Response:
     permanent_redirect_to: str | None = None
     # PNG bytes when a screenshot was requested on the patchright tier; else None.
     screenshot: bytes | None = None
+    # Path to the recorded .webm when record_video_dir was set (browser tier); else None.
+    video_path: Path | None = None
     # Browser-tier diagnostics — opt-in via RenderOptions.capture_*; empty on the httpx/curl tiers.
     # NOTE: reflects only THIS process's network — a failure a real user hits (CORS / extension /
     # proxy) can read clean here. Force a known failure to trust it (AGENT_LEARNINGS #3).

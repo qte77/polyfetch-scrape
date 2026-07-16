@@ -14,7 +14,7 @@ import typer
 
 from polyfetch_scrape.client import Browser, Tier, fetch
 from polyfetch_scrape.errors import FetchError
-from polyfetch_scrape.render_options import RenderOptions
+from polyfetch_scrape.render_options import ColorScheme, RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
 from polyfetch_scrape.throttle import Throttle
@@ -50,6 +50,30 @@ class _BrowserChoice(StrEnum):
 def _as_browser(choice: _BrowserChoice) -> Browser:
     """Validated choice → the ``Browser`` Literal (values are exactly the Literal members)."""
     return choice.value
+
+
+class _ColorSchemeChoice(StrEnum):
+    """CLI choice for ``--color-scheme`` — typer validates the value and shows it in --help.
+
+    Values mirror ``RenderOptions.color_scheme``; ``_as_color_scheme`` bridges to that Literal.
+    """
+
+    light = "light"
+    dark = "dark"
+    no_preference = "no-preference"
+
+
+def _as_color_scheme(choice: _ColorSchemeChoice | None) -> ColorScheme | None:
+    """Validated choice → the ``ColorScheme`` Literal (values are exactly the Literal members)."""
+    return cast("ColorScheme | None", choice.value) if choice is not None else None
+
+
+def _parse_viewport(value: str) -> tuple[int, int]:
+    """Parse a ``WxH`` viewport string (e.g. ``1280x720``) into ``(width, height)``."""
+    parts = value.lower().split("x")
+    if len(parts) != 2 or not all(p.isdigit() for p in parts):
+        raise typer.BadParameter(f"viewport must be WxH (e.g. 1280x720), got: {value}")
+    return int(parts[0]), int(parts[1])
 
 
 app = typer.Typer(
@@ -104,6 +128,33 @@ def _error_payload(url: str, exc: FetchError) -> dict[str, Any]:
     }
 
 
+def _build_render_options(
+    *,
+    wait_until: str,
+    wait_for_selector: str | None,
+    wait_for_function: str | None,
+    screenshot: str | None,
+    device: str | None,
+    viewport: str | None,
+    color_scheme: _ColorSchemeChoice | None,
+    user_agent: str | None,
+    locale: str | None,
+    video_out: Path | None,
+) -> RenderOptions:
+    return RenderOptions(
+        wait_until=wait_until,  # type: ignore[arg-type]
+        wait_for_selector=wait_for_selector,
+        wait_for_function=wait_for_function,
+        screenshot=screenshot,
+        device=device,
+        viewport=_parse_viewport(viewport) if viewport is not None else None,
+        color_scheme=_as_color_scheme(color_scheme),
+        user_agent=user_agent,
+        locale=locale,
+        record_video_dir=video_out,
+    )
+
+
 @app.command()
 def fetch_cmd(
     url: str,
@@ -138,6 +189,35 @@ def fetch_cmd(
     screenshot_out: Annotated[
         Path | None,
         typer.Option("--screenshot-out", help="Write the --screenshot PNG to this path."),
+    ] = None,
+    device: Annotated[
+        str | None,
+        typer.Option(
+            "--device", help="Browser tier: emulate a Patchright device preset (e.g. 'iPhone 13')."
+        ),
+    ] = None,
+    viewport: Annotated[
+        str | None,
+        typer.Option("--viewport", help="Browser tier: WxH viewport, e.g. 1280x720."),
+    ] = None,
+    color_scheme: Annotated[
+        _ColorSchemeChoice | None,
+        typer.Option("--color-scheme", help="Browser tier: light|dark|no-preference."),
+    ] = None,
+    user_agent: Annotated[
+        str | None,
+        typer.Option("--user-agent", help="Browser tier: override the context User-Agent."),
+    ] = None,
+    locale: Annotated[
+        str | None,
+        typer.Option("--locale", help="Browser tier: BCP 47 locale, e.g. en-US."),
+    ] = None,
+    video_out: Annotated[
+        Path | None,
+        typer.Option(
+            "--video-out",
+            help="Browser tier: record a VP8 .webm of the session into this directory.",
+        ),
     ] = None,
     tier: Annotated[
         _TierChoice | None,
@@ -179,11 +259,17 @@ def fetch_cmd(
 ) -> None:
     """Fetch a single URL through the fallback chain."""
     policy = RetryPolicy(max_attempts=max_attempts)
-    render = RenderOptions(
-        wait_until=wait_until,  # type: ignore[arg-type]
+    render = _build_render_options(
+        wait_until=wait_until,
         wait_for_selector=wait_for_selector,
         wait_for_function=wait_for_function,
         screenshot=screenshot,
+        device=device,
+        viewport=viewport,
+        color_scheme=color_scheme,
+        user_agent=user_agent,
+        locale=locale,
+        video_out=video_out,
     )
     try:
         resp = fetch(
