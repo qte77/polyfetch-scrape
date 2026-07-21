@@ -8,6 +8,11 @@ name: Bump version
 # by tag-release.yaml when this PR merges to main (so the tag lands on the merge
 # commit, not a throwaway bump-branch commit).
 #
+# The release commit is created through the GraphQL createCommitOnBranch mutation
+# so GitHub signs it with the web-flow key — main's signed-commits ruleset then
+# accepts it with no GPG secret and no manual re-sign (previously the unsigned
+# bump-my-version commit blocked the PR until an --amend --reset-author dance).
+#
 # NOTE: merge the bump PR with a PAT — a push made by GITHUB_TOKEN does not
 # re-trigger workflows, so tag-release.yaml would not fire otherwise.
 
@@ -65,7 +70,7 @@ jobs:
             echo "no changelog fragments to collect"
           fi
 
-      - name: Commit, push branch, open PR
+      - name: Create signed release commit + open PR
         if: steps.bump.outputs.bumped == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -74,17 +79,52 @@ jobs:
           VERSION: ${{ steps.bump.outputs.current-version }}
           PREV_VERSION: ${{ steps.bump.outputs.previous-version }}
         run: |
-          git config user.name "bump-my-version"
-          git config user.email "bump-my-version@qte77.gha"
-          git checkout -b "$BRANCH"
-          # -a stages the bumped version files, the scriv-collected CHANGELOG.md,
-          # and the removed changelog.d/ fragment files in one release commit.
-          git commit -am "chore(release): bump $PREV_VERSION -> $VERSION"
-          # The bump-my-version Docker action disrupts the persisted git
-          # credential, so push to an explicitly token-authenticated URL.
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          set -euo pipefail
+          # Commit via the GraphQL createCommitOnBranch mutation: GitHub signs
+          # commits made through the API (web-flow key), so main's signed-commits
+          # ruleset accepts them — no GPG secret, no extra allow-listed action, no
+          # manual re-sign. The mutation applies fileChanges on top of an existing
+          # branch ref, so create the branch at the pre-bump base commit first.
+          BASE_OID="$(git rev-parse HEAD)"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/heads/${BRANCH}" -f sha="${BASE_OID}"
+
+          # Enumerate what bump-my-version + scriv changed, relative to base:
+          # ACMR = files to add/update (need base64 contents), D = fragments scriv
+          # deleted. The mutation reads ONLY these, not local git state.
+          git add -A
+          mapfile -t ADDED < <(git diff --cached --name-only --diff-filter=ACMR "${BASE_OID}")
+          mapfile -t DELETED < <(git diff --cached --name-only --diff-filter=D "${BASE_OID}")
+
+          additions='[]'
+          for f in "${ADDED[@]:-}"; do
+            [ -n "$f" ] || continue
+            additions="$(jq -c --arg p "$f" --arg c "$(base64 -w0 "$f")" \
+              '. + [{path: $p, contents: $c}]' <<<"$additions")"
+          done
+          deletions='[]'
+          for f in "${DELETED[@]:-}"; do
+            [ -n "$f" ] || continue
+            deletions="$(jq -c --arg p "$f" '. + [{path: $p}]' <<<"$deletions")"
+          done
+
+          jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg branch "$BRANCH" \
+            --arg oid "$BASE_OID" \
+            --arg headline "chore(release): bump $PREV_VERSION -> $VERSION" \
+            --argjson additions "$additions" \
+            --argjson deletions "$deletions" \
+            '{query: "mutation($i: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $i) { commit { oid } } }",
+              variables: {i: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                message: {headline: $headline},
+                expectedHeadOid: $oid,
+                fileChanges: {additions: $additions, deletions: $deletions}}}}' \
+            | gh api graphql --input -
+
           gh pr create \
             --base "$BASE" \
             --head "$BRANCH" \
             --title "chore(release): bump $PREV_VERSION -> $VERSION" \
-            --body "Automated version bump \`v$PREV_VERSION\` -> \`v$VERSION\`. **Merge with a PAT** (not the default GITHUB_TOKEN) so \`tag-release.yaml\` fires — it tags \`v$VERSION\` on the \`$BASE\` merge commit and publishes the GitHub Release from the CHANGELOG section."
+            --body "Automated version bump \`v$PREV_VERSION\` -> \`v$VERSION\` (signed via createCommitOnBranch). **Merge with a PAT** (not the default GITHUB_TOKEN) so \`tag-release.yaml\` fires — it tags \`v$VERSION\` on the \`$BASE\` merge commit and publishes the GitHub Release from the CHANGELOG section."
