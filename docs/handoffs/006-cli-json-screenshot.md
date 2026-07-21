@@ -46,6 +46,7 @@ One **small CLI unit**. **Read the plan's "Source map" first** — it names ever
 - **#125 → #122** — `record_video` capability → `make gif` example; **reconcile the #125/#122 scope split
   first**; both build on `render_session`.
 - **#132** — full_page-screenshot empirical re-test; fold into any `capture_screenshot` touch.
+  **(Done: shipped in #184, 2026-07-21 — the 1.61.2 re-probe was non-zero, full_page re-enabled.)**
 - **#134** — local `utils.to_markdown` (trafilatura, Apache-2.0, zero-network); build **only on a concrete
   need** (YAGNI). Hosted readers (r.jina.ai) rejected — wrong trust boundary. PDF → `doc-pipeline-engine`.
 - **Decisions:** **#59** — ship only the CI-testable slice (detect challenge → typed `ChallengeBlock`); the
