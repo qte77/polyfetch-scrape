@@ -189,6 +189,23 @@ def test_patchright_backend_captures_viewport_screenshot(monkeypatch: pytest.Mon
     assert resp.screenshot == b"\x89PNG-viewport"
 
 
+def test_patchright_backend_captures_full_page_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    page.screenshot.return_value = b"\x89PNG-full"
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(screenshot="full_page"),
+    )
+
+    page.screenshot.assert_called_once_with(full_page=True)
+    assert resp.screenshot == b"\x89PNG-full"
+
+
 def test_patchright_backend_captures_element_screenshot(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
     page.locator.return_value.screenshot.return_value = b"\x89PNG-el"

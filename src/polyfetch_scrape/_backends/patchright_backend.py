@@ -259,13 +259,16 @@ def _apply_waits(page: Any, opts: RenderOptions, timeout_ms: int) -> None:
 
 
 def capture_screenshot(page: Any, target: str | None) -> bytes | None:
-    """Capture a PNG: ``"viewport"`` shot, or an element shot for a CSS selector.
+    """Capture a PNG: ``"viewport"``, ``"full_page"``, or an element shot for a CSS selector.
 
-    ``full_page`` is intentionally unsupported — Chromium writes 0 bytes on very
-    tall pages; use ``"viewport"`` or an element selector instead.
+    ``"full_page"`` captures the whole scrollable page (patchright >= 1.61.2 writes the
+    full image; older builds wrote 0 bytes on very tall pages). On an ``is_mobile``
+    emulated device it clips to the viewport rather than scrolling.
     """
     if target is None:
         return None
     if target == "viewport":
         return page.screenshot()
+    if target == "full_page":
+        return page.screenshot(full_page=True)
     return page.locator(target).screenshot()

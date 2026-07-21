@@ -46,7 +46,7 @@ RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selec
               capture_console=False, capture_network_failures=False,
               viewport=None, device=None, color_scheme=None, user_agent=None, locale=None,
               record_video_dir=None, record_video_size=None)
-      # patchright tier only; screenshot="viewport"|"<css-selector>" → Response.screenshot (PNG bytes)
+      # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
       # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
       # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
       # capture_console → Response.console_errors (console + uncaught-JS errors)
@@ -70,8 +70,8 @@ RenderAction(verb, selector=None, text=None, value=None, ms=None)
       #     | "wait_for_selector"(selector) | "wait_ms"(ms)
 
 Screenshot(name, target="viewport")
-      # target: "viewport" | "<css-selector>" (element shot — must match ONE element)
-      # full_page unsupported (0 bytes on tall pages)
+      # target: "viewport" | "full_page" | "<css-selector>" (element shot — must match ONE element)
+      # full_page → whole scrollable page (is_mobile devices clip to viewport, not scroll)
 ```
 
 ## Render session (interactive, patchright tier)

@@ -68,7 +68,7 @@ with render_session(url) as s:
 
 `fetch` flags: `--tier httpx|curl_cffi|patchright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|patchright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`.
 
-`fetch` **patchright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
+`fetch` **patchright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|full_page|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
 
 `fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path` and, with `--json`, is surfaced as `video_path` — the exact auto-generated filename).
 
