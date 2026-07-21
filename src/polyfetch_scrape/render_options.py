@@ -30,9 +30,9 @@ class RenderAction:
 class Screenshot:
     """One named screenshot taken **after** the render (waits/actions have run).
 
-    - ``target``: ``"viewport"`` or a CSS selector (element shot — must match a single
-      element). ``full_page`` is unsupported (Chromium writes 0 bytes on tall pages),
-      same as ``RenderOptions.screenshot``.
+    - ``target``: ``"viewport"``, ``"full_page"`` (whole scrollable page), or a CSS
+      selector (element shot — must match a single element), same as
+      ``RenderOptions.screenshot``.
 
     Collected into ``Response.screenshots`` keyed by ``name``.
     """
@@ -50,8 +50,8 @@ class RenderOptions:
     - ``wait_until``: page-load milestone before capture (``"networkidle"`` lets XHR settle).
     - ``wait_for_selector``: wait for this selector before capture.
     - ``wait_for_function``: wait until this JS predicate returns truthy (post-hydration values).
-    - ``screenshot``: ``"viewport"`` or a CSS selector (element shot) → PNG bytes on
-      ``Response.screenshot``. ``full_page`` is unsupported (0 bytes on tall pages).
+    - ``screenshot``: ``"viewport"``, ``"full_page"`` (whole scrollable page), or a CSS
+      selector (element shot) → PNG bytes on ``Response.screenshot``.
     - ``actions``: ``RenderAction`` steps (click/fill/…) run **in order, before** the
       waits/capture — drive the page, then settle, then capture.
     - ``screenshots``: ``Screenshot(name, target)`` captures taken after the waits →

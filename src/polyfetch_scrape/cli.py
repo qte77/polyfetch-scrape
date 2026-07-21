@@ -183,7 +183,7 @@ def fetch_cmd(
         str | None,
         typer.Option(
             "--screenshot",
-            help="Browser tier: PNG of 'viewport' or a CSS selector; write via --screenshot-out.",
+            help="Browser tier: PNG of 'viewport', 'full_page', or a CSS selector.",
         ),
     ] = None,
     screenshot_out: Annotated[

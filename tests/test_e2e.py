@@ -156,6 +156,20 @@ def test_named_screenshots_capture_multiple() -> None:
     assert resp.screenshots["footer"].startswith(_PNG_MAGIC)
 
 
+def test_patchright_full_page_screenshot_captures_nonzero_png() -> None:
+    """full_page screenshots (#132) write a real image under patchright >= 1.61.2
+    (older builds wrote 0 bytes on tall pages — this guards that regression)."""
+    resp = fetch(
+        "https://quotes.toscrape.com/js/",
+        tier="patchright",
+        render=RenderOptions(wait_until="networkidle", screenshot="full_page"),
+    )
+    assert resp.status == 200
+    assert resp.screenshot is not None
+    assert resp.screenshot.startswith(_PNG_MAGIC)
+    assert len(resp.screenshot) > 1000  # a real page render, not a 0-byte stub
+
+
 def test_patchright_emulation_and_video_record_real_webm(tmp_path) -> None:
     """Emulation (device/color_scheme) + video recording (#162) produce a real .webm.
 
