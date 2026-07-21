@@ -1,8 +1,11 @@
 # 008 — Post-v0.7.0 high-ROI enhancements
 
-> Status: **planned, not started.** Repo clean on `main` @ `dfbba22` (v0.7.0 shipped).
-> Handoff: `docs/handoffs/008-post-v070-enhancements.md`. Line numbers are as of `dfbba22` —
-> re-grep to confirm before editing. The **Source map** means the next session need not re-explore.
+> Status: **partially shipped (2026-07-21).** Item 2 (full_page) → #184, item 3a (estate doc)
+> → #185 (both merged); items 1 & 3c verified done; op2 closed (no org account). **Only op1
+> (release-commit signing) remains.** Base was `main` @ `dfbba22`; now @ `2677b50` — the
+> line numbers below are pre-#184/#185 and may have drifted; re-grep before editing.
+> Handoff: `docs/handoffs/008-post-v070-enhancements.md`. The **Source map** means the next
+> session need not re-explore.
 
 ## Context
 
@@ -53,7 +56,11 @@ steps). No source changes.
 
 ## 2. `#132` full_page screenshots — re-verify, then maybe re-enable
 
-`full_page` is intentionally rejected (documented as "Chromium writes 0 bytes on tall pages") — an
+> **SHIPPED in #184 (2026-07-21):** the 1.61.2 re-probe wrote 2,569,471 bytes (fixed), so
+> full_page support was built per Step 2 below. The gate/re-verify narrative that follows is
+> kept as the record of how the decision was reached.
+
+`full_page` **was** intentionally rejected (documented as "Chromium writes 0 bytes on tall pages") — an
 **older-patchright** limitation; v0.7.0 ships patchright **1.61.2**, which may have fixed it.
 
 **Step 1 (gate) — empirical re-probe, no code:** drive `page.screenshot(full_page=True)` against a tall
