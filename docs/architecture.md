@@ -41,6 +41,8 @@ polyfetch has a supported **engine** and an unsupported-surface **scripting subs
 
 **The ownership line (decidable):** polyfetch owns X iff X is **(a) generic** — true for any target site, not tied to one app's DOM/flow — **and (b) construction-time or shared plumbing** — set at browser/`new_context()` time, or boilerplate every consumer re-implements identically (install, teardown, capture, SSRF). Otherwise the consumer owns it (app-specific, or a few lines on `.page`). Applied: device/locale/video/user-agent emulation → engine (`new_context()`-time); `aria_snapshot` and multi-step walks → scripted `.page` recipes.
 
+For how the estate consumes this substrate across repos — and the promotion rule for when a consumer's need becomes core — see [`docs/estate.md`](estate.md).
+
 ## Component responsibilities
 
 | Module | Responsibility |

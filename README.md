@@ -138,6 +138,7 @@ Two kinds of "no":
 - [Public API reference](docs/api-reference.md) — full signatures for `fetch`, `RenderOptions`, `Response`, `RetryPolicy`, and the exception hierarchy
 - [Scripting cookbook](docs/scripting.md) — worked `render_session().page` recipes (DevTools capture, aria_snapshot, walks, live emulation)
 - [Using without installing](USING.md) — call polyfetch from another repo/agent via `uv run --directory` (env-borrow contract: invocation, JSON schema, errors, stable surface)
+- [Consuming across the estate](docs/estate.md) — the estate model, the ownership line, and the rule for when a consumer need becomes core
 - [Architecture](docs/architecture.md) — fallback-chain data flow, component responsibilities, invariants
 - [Roadmap](docs/roadmap.md) — delivery history + core directions ahead
 - [User stories](docs/userstory.md) — who it serves and what each need maps to
