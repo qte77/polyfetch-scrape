@@ -44,6 +44,13 @@ description: Non-obvious patterns that prevent repeated mistakes across sprints
 - **Example**: `page.evaluate("() => typeof window.Chart")` → `"undefined"` while the chart is visibly rendered; `page.locator('#chart-section').screenshot(...)` shows the real chart.
 - **References**: `src/polyfetch_scrape/_backends/patchright_backend.py` (the Patchright/Chromium backend). Pairs with the "Headless console/network capture only reflects the runner's own network" learning above. Workflow rule — stays in `AGENT_LEARNINGS.md`.
 
+### `fill()` silently no-ops on framework-controlled inputs — type instead
+
+- **Context**: Driving a form on a JS-framework app (React/Vue/Svelte controlled components) via `render_session().fill()`, `RenderAction(verb="fill")`, or raw `page.fill()` — login forms especially.
+- **Problem**: `fill()` sets the DOM value directly without firing the `keydown`/`input` events the framework's `onChange` listens for, so the component's internal state stays stale. The input *looks* filled, nothing raises, and the subsequent `submit()` sends empty or stale values. Observed on a Next.js/React login: `s.fill(email); s.fill(pw); s.submit()` → server received **empty credentials**. Same silent-false-result shape as the isolated-world `evaluate` learning above.
+- **Solution**: On controlled inputs use `page.locator(sel).press_sequentially(value, delay=25)` (char-by-char, fires real key events). Keep `fill()` for plain/uncontrolled forms — faster and correct there. When a submit mysteriously receives empty values, suspect this before suspecting the app.
+- **References**: `docs/scripting.md` "Framework-controlled inputs — type, don't fill"; issue #177. Pairs with the isolated-world learning above.
+
 ### Re-verify time-sensitive empirical data before merging — it decays
 
 - **Context**: Merging empirical / observational data that was captured earlier — in an issue body, a prior doc, or a past agent session — into the tree: anti-bot probe tables, "site X returns 403" claims, status-code observations, timing numbers.
