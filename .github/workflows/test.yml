@@ -21,3 +21,4 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - run: make ci
+      - run: make audit
