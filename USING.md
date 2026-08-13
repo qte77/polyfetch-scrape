@@ -15,7 +15,7 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 
 ## Why env-borrow (not `uv add`)
 
-- `uv add polyfetch-scrape` pulls polyfetch **and its heavy deps** (patchright, curl_cffi, httpx) into *your* lockfile → poison.
+- `uv add git+https://github.com/qte77/polyfetch-scrape` (it is not on PyPI) pulls polyfetch **and its heavy deps** (patchright, curl_cffi, httpx) into *your* lockfile → poison.
 - `uv run --directory <polyfetch> …` keeps all of that inside the clone. Two ways to consume:
   - **out-of-process** (recommended for agents): call the CLI, parse `--json`.
   - **in-clone script**: `uv run --directory <polyfetch> python /abs/path/script.py` → full Python API, run with the clone's interpreter. Pass **absolute paths** — `--directory` makes CWD the clone.

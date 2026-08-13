@@ -12,6 +12,10 @@
 [![Lint MD and Links](https://github.com/qte77/polyfetch-scrape/actions/workflows/lint-md-links.yml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/lint-md-links.yml)
 [![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+## Why
+
+Claude Code's built-in **WebFetch** exposes no header parameters in its public schema, so callers cannot set `User-Agent`, `Accept`, or `Referer` — and its default UA is empirically rejected (HTTP 403) by sites with non-trivial bot detection (`hamiltoncompany.com`, `thingiverse.com`, `web.archive.org`). Header spoofing alone often isn't enough: many blocks key on the TLS/JA3 fingerprint, not the UA string. `polyfetch-scrape` is the next rung — browser-shape headers in the cheap tier, real TLS impersonation in the middle tier, and headless Chromium with anti-detection patches as the fallback — escalating only when a tier is actually blocked.
+
 ## What
 
 - **One call, typed result.** `fetch(url)` returns a typed `Response` (`status`, `body`, `backend`, …) no matter which backend succeeded — you never pick a scraping tool per site.
@@ -43,7 +47,7 @@ polyfetch is two things behind one install:
 1. **The engine** — the supported, stable, typed surface: `fetch(url) -> Response` (the reactive fallback chain), `render_session(url)` (managed multi-step browser sessions), and `discover(url)`. Most callers only ever touch this.
 2. **A scripting substrate** — for flows the engine does not express directly, `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page` to drive yourself, with the full Chromium **DevTools/CDP surface**: live console / network / JS-error capture (`page.on("console", …)` and friends), multi-step walks, `page.locator(...).aria_snapshot()`, post-hoc `page.set_viewport_size(...)`, ad-hoc DOM reads. polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. The scripts under [`examples/`](examples/) show the pattern — they are examples, not part of the stable API.
 
-**Where the line falls:** options fixed at browser/`new_context()` time — device emulation, locale, recorded video, user-agent — belong to the engine as core render options; anything *after* the page exists — clicks, screenshots, `set_viewport_size`, `aria_snapshot` — is scriptable on `.page`. (Viewport and colour scheme sit on the seam: set them once as options, or change them live on `.page`.)
+Which side a given knob falls on is settled by the **ownership line** in [`docs/architecture.md`](docs/architecture.md#two-layers-engine-and-scripts); worked `.page` recipes live in the [scripting cookbook](docs/scripting.md).
 
 ## How
 
@@ -52,9 +56,11 @@ polyfetch is two things behind one install:
 ### Install
 
 ```bash
-uv add polyfetch-scrape
-uv run patchright install chromium   # one-off; required only for the patchright tier
+uv add git+https://github.com/qte77/polyfetch-scrape   # not published to PyPI
+uv run patchright install chromium                     # one-off; required only for the patchright tier
 ```
+
+Or **borrow it without installing at all** — see [`USING.md`](USING.md).
 
 ### Library
 
@@ -100,20 +106,7 @@ polyfetch --help
 
 ### Development
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full command reference, dev workflow, and pre-commit checklist. Quick start: `make setup_dev && make validate`. For AI-agent behavioural rules, see [`AGENTS.md`](AGENTS.md); for release notes, [`CHANGELOG.md`](CHANGELOG.md).
-
-### Versioning
-
-Two-step release pipeline (GitHub Actions), mirroring the qte77 sibling repos:
-
-1. **Bump** — run the **Bump version** workflow (`workflow_dispatch`; pick major/minor/patch). It bumps `pyproject.toml`, the `uv.lock` self-reference, and the README badge via [`bump-my-version`](https://github.com/callowayproject/bump-my-version), then collects the `changelog.d/` fragments into a dated `CHANGELOG.md` section via [`scriv`](https://scriv.readthedocs.io/), and opens a `chore(release)` PR.
-2. **Tag + release** — **merge that PR with a PAT** (a `GITHUB_TOKEN` push won't re-trigger workflows). The **Tag and Release** workflow then tags `vX.Y.Z` on the merge commit and publishes the GitHub Release from the matching `CHANGELOG.md` section.
-
-Per PR, add a changelog fragment (`make changelog_new`) instead of editing `CHANGELOG.md` — the bump collects them into the release section.
-
-## Why
-
-Claude Code's built-in **WebFetch** exposes no header parameters in its public schema, so callers cannot set `User-Agent`, `Accept`, or `Referer` — and its default UA is empirically rejected (HTTP 403) by sites with non-trivial bot detection (`hamiltoncompany.com`, `thingiverse.com`, `web.archive.org`). Header spoofing alone often isn't enough: many blocks key on the TLS/JA3 fingerprint, not the UA string. `polyfetch-scrape` is the next rung — browser-shape headers in the cheap tier, real TLS impersonation in the middle tier, and headless Chromium with anti-detection patches as the fallback — escalating only when a tier is actually blocked.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full command reference, dev workflow, pre-commit checklist, and the [release pipeline](CONTRIBUTING.md#releases-and-versioning). Quick start: `make setup_dev && make validate` (plus `make audit` for the dependency scan). For AI-agent behavioural rules, see [`AGENTS.md`](AGENTS.md); for release notes, [`CHANGELOG.md`](CHANGELOG.md).
 
 ## How it compares
 
