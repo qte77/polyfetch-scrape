@@ -676,6 +676,58 @@ def test_context_kwargs_empty_opts_is_empty_dict() -> None:
     assert patchright_backend.context_kwargs(pw, RenderOptions()) == {}
 
 
+def test_context_kwargs_storage_state_path_becomes_string() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(
+        pw, RenderOptions(storage_state=Path("auth/state.json"))
+    )
+
+    assert kwargs == {"storage_state": "auth/state.json"}
+
+
+def test_context_kwargs_storage_state_mapping_passes_through() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+    state = {"cookies": [{"name": "sid", "value": "abc"}], "origins": []}
+
+    kwargs = patchright_backend.context_kwargs(pw, RenderOptions(storage_state=state))
+
+    assert kwargs == {"storage_state": state}
+
+
+def test_context_kwargs_extra_http_headers_map() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(
+        pw, RenderOptions(extra_http_headers={"Authorization": "Bearer t"})
+    )
+
+    assert kwargs == {"extra_http_headers": {"Authorization": "Bearer t"}}
+
+
+def test_fetch_headers_merge_over_render_extra_http_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers={"X-Shared": "from-fetch"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(extra_http_headers={"X-Shared": "from-render", "X-Ctx": "keep"}),
+    )
+
+    context = page._test_browser.new_context.return_value
+    context.set_extra_http_headers.assert_called_once_with(
+        {"X-Shared": "from-fetch", "X-Ctx": "keep"}
+    )
+
+
 # --------------------------------------------------------------------------- #
 # fetch tier: context kwargs reach browser.new_context; video finalize on close
 # --------------------------------------------------------------------------- #

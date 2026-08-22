@@ -43,7 +43,7 @@ polyfetch is two things behind one install:
 1. **The engine** — the supported, stable, typed surface: `fetch(url) -> Response` (the reactive fallback chain), `render_session(url)` (managed multi-step browser sessions), and `discover(url)`. Most callers only ever touch this.
 2. **A scripting substrate** — for flows the engine does not express directly, `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page` to drive yourself, with the full Chromium **DevTools/CDP surface**: live console / network / JS-error capture (`page.on("console", …)` and friends), multi-step walks, `page.locator(...).aria_snapshot()`, post-hoc `page.set_viewport_size(...)`, ad-hoc DOM reads. polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. The scripts under [`examples/`](examples/) show the pattern — they are examples, not part of the stable API.
 
-**Where the line falls:** options fixed at browser/`new_context()` time — device emulation, locale, recorded video, user-agent — belong to the engine as core render options; anything *after* the page exists — clicks, screenshots, `set_viewport_size`, `aria_snapshot` — is scriptable on `.page`. (Viewport and colour scheme sit on the seam: set them once as options, or change them live on `.page`.)
+**Where the line falls:** options fixed at browser/`new_context()` time — device emulation, locale, recorded video, user-agent, restored auth state — belong to the engine as core render options; anything *after* the page exists — clicks, screenshots, `set_viewport_size`, `aria_snapshot` — is scriptable on `.page`. (Viewport and colour scheme sit on the seam: set them once as options, or change them live on `.page`.)
 
 ## How
 
@@ -136,7 +136,7 @@ Two kinds of "no":
 ## References
 
 - [Public API reference](docs/api-reference.md) — full signatures for `fetch`, `RenderOptions`, `Response`, `RetryPolicy`, and the exception hierarchy
-- [Scripting cookbook](docs/scripting.md) — worked `render_session().page` recipes (DevTools capture, aria_snapshot, walks, live emulation)
+- [Scripting cookbook](docs/scripting.md) — worked `render_session().page` recipes (DevTools capture, aria_snapshot, walks, authenticated sessions, live emulation)
 - [Using without installing](USING.md) — call polyfetch from another repo/agent via `uv run --directory` (env-borrow contract: invocation, JSON schema, errors, stable surface)
 - [Consuming across the estate](docs/estate.md) — the estate model, the ownership line, and the rule for when a consumer need becomes core
 - [Architecture](docs/architecture.md) — fallback-chain data flow, component responsibilities, invariants

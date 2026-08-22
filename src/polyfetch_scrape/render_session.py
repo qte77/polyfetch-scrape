@@ -15,6 +15,7 @@ reflect only THIS process's network — a cross-origin failure a real user hits
 """
 
 import contextlib
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,8 @@ class RenderSession:
     Console + network-failure capture is always on (``console_errors`` /
     ``network_failures``); ``shot(name)`` collects named PNG bytes into ``screenshots``.
     On an exception inside the ``with`` block a ``"exception"`` screenshot is captured
-    before teardown.
+    before teardown. ``storage_state`` restores a saved login; ``save_storage_state(path)``
+    writes the current one back out.
     """
 
     def __init__(
@@ -52,6 +54,8 @@ class RenderSession:
         locale: str | None = None,
         record_video_dir: str | Path | None = None,
         record_video_size: tuple[int, int] | None = None,
+        storage_state: str | Path | Mapping[str, Any] | None = None,
+        extra_http_headers: Mapping[str, str] | None = None,
     ) -> None:
         self._url = url
         self._wait_until = wait_until
@@ -66,6 +70,8 @@ class RenderSession:
             locale=locale,
             record_video_dir=record_video_dir,
             record_video_size=record_video_size,
+            storage_state=storage_state,
+            extra_http_headers=extra_http_headers,
         )
         self._pw: Any = None
         self._browser: Any = None
@@ -125,6 +131,26 @@ class RenderSession:
         self.screenshots[name] = data
         return data
 
+    def save_storage_state(self, path: str | Path) -> Path:
+        """Write the context's cookies + localStorage to ``path``; return that path.
+
+        Feed the file back as ``render_session(..., storage_state=path)`` on the next run to
+        start logged in. Call this **inside** the ``with`` block — teardown closes the context
+        and the state goes with it.
+        """
+        if self._context is None:
+            raise FetchError(
+                "save_storage_state: no live context — call it inside the `with` block"
+            )
+        dest = Path(path)
+        # Playwright creates parent dirs for screenshot/pdf/video paths but NOT for
+        # storage_state — a missing dir raises FileNotFoundError *after* a successful
+        # login, destroying the session we just paid for. Create it here to match the
+        # behaviour the rest of the API already has.
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        self._context.storage_state(path=str(dest))
+        return dest
+
     def _safe_shot(self, name: str) -> None:
         with contextlib.suppress(Exception):
             self.screenshots[name] = capture_screenshot(self.page, "viewport") or b""
@@ -134,6 +160,9 @@ class RenderSession:
             if obj is not None:
                 with contextlib.suppress(Exception):
                     getattr(obj, method)()
+        # Drop the closed context so save_storage_state() fails loudly instead of erroring
+        # deep inside a dead driver.
+        self._context = None
         # The video file is only finalized once its context has closed (above), so read
         # the path last — after the loop, regardless of browser/pw teardown outcome.
         if self._video is not None:
@@ -153,6 +182,8 @@ def render_session(
     locale: str | None = None,
     record_video_dir: str | Path | None = None,
     record_video_size: tuple[int, int] | None = None,
+    storage_state: str | Path | Mapping[str, Any] | None = None,
+    extra_http_headers: Mapping[str, str] | None = None,
 ) -> RenderSession:
     """Open a managed headless Patchright session for an interactive multi-step flow.
 
@@ -161,6 +192,12 @@ def render_session(
     ``record_video_size``) records a VP8 ``.webm``; the finished path lands on
     ``RenderSession.video_path`` once the ``with`` block exits (Patchright finalizes the
     file on context close, not before).
+
+    ``storage_state`` (a saved storage-state JSON path, or the equivalent mapping) restores
+    cookies + localStorage, so the session starts authenticated; ``extra_http_headers``
+    (mirrors ``fetch(headers=...)``) go on every request the context makes. Persist a fresh
+    login for the next run with ``s.save_storage_state(path)`` — recipe in
+    ``docs/scripting.md`` ("Authenticated session").
 
     Use as a context manager::
 
@@ -183,4 +220,6 @@ def render_session(
         locale=locale,
         record_video_dir=record_video_dir,
         record_video_size=record_video_size,
+        storage_state=storage_state,
+        extra_http_headers=extra_http_headers,
     )
