@@ -604,10 +604,182 @@ def test_patchright_backend_no_capture_by_default(monkeypatch: pytest.MonkeyPatc
     )
 
     # Opt-in gating → zero listeners registered, zero overhead.
+    capture_events = {"console", "pageerror", "requestfailed", "response", "requestfinished"}
     registered = {c.args[0] for c in page.on.call_args_list}
-    assert registered & {"console", "pageerror", "requestfailed", "response"} == set()
+    assert registered & capture_events == set()
     assert resp.console_errors == []
     assert resp.network_failures == []
+    assert resp.network_log == []
+
+
+def _fake_logged_request(
+    url: str,
+    method: str = "GET",
+    *,
+    status: int | None = 200,
+    response_end: float | None = 12.5,
+) -> MagicMock:
+    """A patchright Request as seen by requestfinished/requestfailed handlers.
+
+    ``status=None`` models a failed request (``request.response()`` is None); ``response_end=None``
+    models a browser that reported no timing (``request.timing`` empty).
+    """
+    req = MagicMock()
+    req.url = url
+    req.method = method
+    response = None
+    if status is not None:
+        response = MagicMock()
+        response.status = status
+    req.response.return_value = response
+    req.timing = {"startTime": 1.0, "responseEnd": response_end} if response_end is not None else {}
+    return req
+
+
+def test_patchright_backend_network_log_records_every_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network_log=True),
+    )
+
+    handlers = _page_handlers(page)
+    handlers["requestfinished"](_fake_logged_request("https://x/ok", response_end=12.5))
+    handlers["requestfinished"](
+        _fake_logged_request("https://x/api", "POST", status=204, response_end=3.0)
+    )
+    handlers["requestfinished"](
+        _fake_logged_request("https://x/500", status=500, response_end=8.0)
+    )
+
+    # Every request lands in the log — successes included, unlike network_failures.
+    assert resp.network_log == [
+        {"url": "https://x/ok", "method": "GET", "status": 200, "duration_ms": 12.5},
+        {"url": "https://x/api", "method": "POST", "status": 204, "duration_ms": 3.0},
+        {"url": "https://x/500", "method": "GET", "status": 500, "duration_ms": 8.0},
+    ]
+
+
+def test_patchright_backend_network_log_records_failed_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network_log=True),
+    )
+
+    # A failed request never fires requestfinished, so the log listens to requestfailed too.
+    _page_handlers(page)["requestfailed"](
+        _fake_logged_request("https://x/dead", status=None, response_end=None)
+    )
+
+    assert resp.network_log == [
+        {"url": "https://x/dead", "method": "GET", "status": None, "duration_ms": None}
+    ]
+
+
+def test_patchright_backend_network_log_duration_none_when_unmeasured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network_log=True),
+    )
+
+    # patchright uses -1 for "not measured" — it must not leak through as a duration.
+    unmeasured = _fake_logged_request("https://x/a", response_end=-1)
+    _page_handlers(page)["requestfinished"](unmeasured)
+
+    assert resp.network_log == [
+        {"url": "https://x/a", "method": "GET", "status": 200, "duration_ms": None}
+    ]
+
+
+def test_patchright_backend_network_log_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_console=True, capture_network_failures=True),
+    )
+
+    # The existing capture flags must NOT switch the full log on.
+    assert "requestfinished" not in {c.args[0] for c in page.on.call_args_list}
+    assert resp.network_log == []
+
+
+def test_patchright_backend_network_log_does_not_touch_network_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network_log=True),
+    )
+
+    handlers = _page_handlers(page)
+    dead = _fake_logged_request("https://x/dead", status=None, response_end=None)
+    handlers["requestfailed"](dead)
+
+    # capture_network_failures stayed off → no "response" listener, network_failures untouched.
+    assert "response" not in handlers
+    assert resp.network_failures == []
+    assert len(resp.network_log) == 1
+
+
+def test_patchright_backend_both_network_captures_are_independent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network_failures=True, capture_network_log=True),
+    )
+
+    # Both flags register a requestfailed handler; each must fill only its own sink.
+    failed_handlers = [c.args[1] for c in page.on.call_args_list if c.args[0] == "requestfailed"]
+    assert len(failed_handlers) == 2
+    for handler in failed_handlers:
+        handler(_fake_logged_request("https://x/dead", status=None, response_end=None))
+    _page_handlers(page)["response"](_fake_response(500, "https://x/500"))
+
+    assert {"url": "https://x/500", "status": 500} in resp.network_failures
+    assert resp.network_log == [
+        {"url": "https://x/dead", "method": "GET", "status": None, "duration_ms": None}
+    ]
 
 
 # --------------------------------------------------------------------------- #

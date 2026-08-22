@@ -6,8 +6,8 @@ owns the browser install, launch/teardown, console/network capture, and the SSRF
 guard; you own the app-specific steps once you have a live `Page` on `s.page`. Every
 snippet below uses only the public `RenderSession` surface: `click` / `click_text` /
 `fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot`,
-plus `.page`, `s.console_errors`, `s.network_failures`, `s.screenshots`, and
-`s.video_path`.
+plus `.page`, `s.console_errors`, `s.network_failures`, `s.network_log`,
+`s.screenshots`, and `s.video_path`.
 
 ## DevTools capture
 
@@ -33,6 +33,38 @@ fill for the whole session (initial page load included) with no setup.
 > **Caveat:** a headless capture reflects only *this* runner's network. A cross-origin
 > failure a real user hits (CORS, a browser extension, a proxy) can succeed here and
 > read clean — treat an empty capture as "no error on this network", not "no error".
+
+## Full network log
+
+`network_failures` only keeps the *bad* traffic. To audit **everything** a page loads —
+the third-party beacon, the 900 ms XHR, the request that fires twice — opt into the full
+log with `capture_network_log=True`. It is **off by default**: recording every request
+costs memory on a chatty page, and most flows only care about failures.
+
+```python
+with render_session(url, capture_network_log=True) as s:
+    s.click_text("Load more")
+
+print(len(s.network_log))            # every completed request, whole session
+for entry in s.network_log:
+    print(entry["method"], entry["status"], entry["duration_ms"], entry["url"])
+
+slow = [e for e in s.network_log if (e["duration_ms"] or 0) > 500]
+third_party = [e for e in s.network_log if "example.com" not in str(e["url"])]
+```
+
+Each entry is a plain dict — `{"url", "method", "status", "duration_ms"}`:
+
+| key | value |
+|---|---|
+| `url` | the request URL |
+| `method` | `"GET"`, `"POST"`, … |
+| `status` | HTTP status, or `None` when the request failed outright (DNS, connection reset, blocked) |
+| `duration_ms` | request start → `responseEnd` in ms, or `None` when the browser reported no timing |
+
+Entries land in completion order, not start order. `network_log` is independent of
+`network_failures`: failures appear in **both** (the log carries `status: None`, the
+failure list carries the `error` string), and the same runner-network caveat applies.
 
 ## Accessibility snapshot
 

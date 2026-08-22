@@ -9,9 +9,9 @@ raw Patchright launch/teardown/capture boilerplate.
 
 Chromium-only (headless), consistent with the patchright fetch tier.
 
-NOTE: like the fetch-tier capture, ``console_errors`` / ``network_failures``
-reflect only THIS process's network — a cross-origin failure a real user hits
-(CORS / extension / proxy) can succeed here and read clean.
+NOTE: like the fetch-tier capture, ``console_errors`` / ``network_failures`` /
+``network_log`` reflect only THIS process's network — a cross-origin failure a
+real user hits (CORS / extension / proxy) can succeed here and read clean.
 """
 
 import contextlib
@@ -34,7 +34,8 @@ class RenderSession:
     """A live managed ``Page`` with act→assert→act methods; use via :func:`render_session`.
 
     Console + network-failure capture is always on (``console_errors`` /
-    ``network_failures``); ``shot(name)`` collects named PNG bytes into ``screenshots``.
+    ``network_failures``); the full per-request trace (``network_log``) is opt-in via
+    ``capture_network_log``. ``shot(name)`` collects named PNG bytes into ``screenshots``.
     On an exception inside the ``with`` block a ``"exception"`` screenshot is captured
     before teardown.
     """
@@ -45,6 +46,7 @@ class RenderSession:
         *,
         wait_until: WaitUntil = "domcontentloaded",
         timeout: float = 30.0,
+        capture_network_log: bool = False,
         device: str | None = None,
         viewport: tuple[int, int] | None = None,
         color_scheme: ColorScheme | None = None,
@@ -59,6 +61,7 @@ class RenderSession:
         self._opts = RenderOptions(
             capture_console=True,
             capture_network_failures=True,
+            capture_network_log=capture_network_log,
             device=device,
             viewport=viewport,
             color_scheme=color_scheme,
@@ -76,13 +79,17 @@ class RenderSession:
         self.screenshots: dict[str, bytes] = {}
         self.console_errors: list[str] = []
         self.network_failures: list[dict[str, object]] = []
+        self.network_log: list[dict[str, object]] = []
 
     def __enter__(self) -> "RenderSession":
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(headless=True)
         self._context = self._browser.new_context(**context_kwargs(self._pw, self._opts))
         self.page = self._context.new_page()
-        self.console_errors, self.network_failures = attach_capture(self.page, self._opts)
+        capture = attach_capture(self.page, self._opts)
+        self.console_errors = capture.console_errors
+        self.network_failures = capture.network_failures
+        self.network_log = capture.network_log
         self._video = self.page.video if self._opts.record_video_dir is not None else None
         try:
             self.page.goto(self._url, wait_until=self._wait_until, timeout=self._timeout_ms)
@@ -146,6 +153,7 @@ def render_session(
     *,
     wait_until: WaitUntil = "domcontentloaded",
     timeout: float = 30.0,
+    capture_network_log: bool = False,
     device: str | None = None,
     viewport: tuple[int, int] | None = None,
     color_scheme: ColorScheme | None = None,
@@ -162,6 +170,10 @@ def render_session(
     ``RenderSession.video_path`` once the ``with`` block exits (Patchright finalizes the
     file on context close, not before).
 
+    ``capture_network_log=True`` additionally records EVERY completed request onto
+    ``RenderSession.network_log`` as ``{url, method, status, duration_ms}`` — off by
+    default; ``console_errors`` / ``network_failures`` stay always-on either way.
+
     Use as a context manager::
 
         with render_session(url) as s:
@@ -176,6 +188,7 @@ def render_session(
         url,
         wait_until=wait_until,
         timeout=timeout,
+        capture_network_log=capture_network_log,
         device=device,
         viewport=viewport,
         color_scheme=color_scheme,
