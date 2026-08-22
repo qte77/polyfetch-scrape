@@ -351,6 +351,7 @@ def test_fetch_json_omits_screenshot_b64_when_absent(monkeypatch: pytest.MonkeyP
     payload = json.loads(result.stdout)
     assert "screenshot_b64" not in payload
     assert "video_path" not in payload
+    assert "permanent_redirect_to" not in payload
 
 
 def test_fetch_json_includes_video_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -374,6 +375,27 @@ def test_fetch_json_includes_video_path(monkeypatch: pytest.MonkeyPatch) -> None
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["video_path"] == "vids/rec.webm"
+
+
+def test_fetch_json_includes_permanent_redirect_to(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake(url: str, **_kw: object) -> Response:
+        return Response(
+            url=url,
+            status=301,
+            headers={"location": "https://example.com/new"},
+            body=b"",
+            content_type=None,
+            backend="httpx",
+            permanent_redirect_to="https://example.com/new",
+        )
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://example.com/old", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["permanent_redirect_to"] == "https://example.com/new"
 
 
 def test_browser_flag_rejects_invalid_choice(monkeypatch: pytest.MonkeyPatch) -> None:

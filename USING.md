@@ -90,6 +90,9 @@ with render_session(url) as s:
   `jq -r .screenshot_b64 | base64 -d`.
 - `video_path` (fetch `--json` only) = filesystem path to the recorded `.webm`, present **only** when
   `--video-out DIR` recorded one on the patchright tier; absent otherwise.
+- `permanent_redirect_to` (fetch `--json` only) = the `Location` target of a **permanent** redirect
+  (301/308), present **only** when the response was one; absent on temporary redirects (302/303/307)
+  and non-redirects. Read it with `jq -r .permanent_redirect_to` to update a stored URL.
 - Need the page content, not metadata? use `--show-body`.
 
 `discover --json` emits the structured entrypoints a site advertises (empty arrays when none):

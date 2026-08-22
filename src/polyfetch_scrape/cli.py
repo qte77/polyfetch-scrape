@@ -311,6 +311,10 @@ def fetch_cmd(
         # Surface the recorded .webm's exact path so --video-out consumers learn the
         # auto-generated filename (Patchright names it). Absent when not recording.
         payload["video_path"] = str(resp.video_path)
+    if json_output and resp.permanent_redirect_to is not None:
+        # Surface the 301/308 Location target so CLI consumers can update stored URLs
+        # (#188). Absent on temporary redirects and non-redirects.
+        payload["permanent_redirect_to"] = resp.permanent_redirect_to
     typer.echo(json.dumps(payload) if json_output else _format_text(payload))
 
 
