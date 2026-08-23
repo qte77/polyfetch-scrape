@@ -102,4 +102,7 @@ def _resolve(host: str) -> list[str]:
         infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except socket.gaierror:
         return []
-    return [info[4][0] for info in infos]
+    # sockaddr is (host, port) for IPv4 and (host, port, flowinfo, scope_id) for IPv6,
+    # so element 0 is typed str | int. Keep only the str form — an int there would not
+    # be an address we could check anyway.
+    return [addr for info in infos if isinstance(addr := info[4][0], str)]

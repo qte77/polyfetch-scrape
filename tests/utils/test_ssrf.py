@@ -79,7 +79,7 @@ def test_error_names_both_the_host_and_the_resolved_address(
     # The operator needs to see WHY a public-looking name was blocked.
     _pin(monkeypatch, {"sneaky.test": ["169.254.169.254"]})
 
-    with pytest.raises(ValueError, match="sneaky.test.*169"):
+    with pytest.raises(ValueError, match=r"sneaky\.test.*169"):
         check_ssrf("http://sneaky.test/")
 
 
