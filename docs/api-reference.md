@@ -138,8 +138,30 @@ discover(url: str) -> DiscoveredSources
       # feeds ← <link rel="alternate" type="application/rss+xml|atom+xml|text/calendar"> (resolved absolute)
       # llms_txt ← /llms.txt, /llms-full.txt (soft-404-guarded: a 200 HTML shell is not counted)
       # json_ld_types ← <script type="application/ld+json"> @type values (handles lists + @graph nesting)
-      # Never raises for an absent source; raises ValueError if url/a probe is a literal internal IP (SSRF guard).
+      # Never raises for an absent source; raises ValueError if url/a probe is, resolves to, or
+      # redirects to an internal address (SSRF guard — see below).
 ```
+
+### SSRF guard
+
+`discover()`, `utils.sitemap.fetch_sitemap_urls()` and the `easter_hunt` contrib take
+attacker-influenced URLs, so each one runs the shared guard in `utils/_ssrf.py` before it
+connects and again on the response:
+
+- **Literal IPs** — a private (RFC1918), loopback, link-local, unspecified, reserved or
+  multicast address is rejected outright, IPv4 and IPv6 alike.
+- **Hostnames are resolved** — every A/AAAA answer must be external. `localhost`, an internal
+  DNS name, and a name that mixes one public answer with `169.254.169.254` are all rejected.
+  A name that does not resolve passes through (it cannot be connected to either).
+- **Redirect targets** — the URL a response actually landed on (the `curl_cffi` and browser
+  tiers follow redirects themselves) and an unfollowed 301/308 `Location` both go back through
+  the same check, so a public host cannot bounce a fetch onto an internal one.
+
+Blocks raise a plain `ValueError` (never a `FetchError`, which callers swallow); the CLI surfaces
+it as exit code 2. **Not covered:** DNS rebinding — the resolver's answer can change between the
+check and the connection, and pinning the connect IP is not exposed by `httpx`, `curl_cffi` or
+Patchright. `fetch()` itself is deliberately unguarded: it keeps the "fetch any URL" contract, so
+a caller passing untrusted URLs should call `check_ssrf` itself or go through these utils.
 
 CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(DiscoveredSources)`).
 

@@ -16,6 +16,7 @@ from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 
 _FETCH = "polyfetch_scrape.contrib.easter_hunt.orchestrator.fetch"
+_RESOLVER = "polyfetch_scrape.utils._ssrf._resolve"
 
 
 def _resp(url: str, *, body: bytes = b"", headers: dict[str, str] | None = None) -> Response:
@@ -240,8 +241,7 @@ def test_hunt_ssrf_raises_valueerror_not_fetcherror(monkeypatch: pytest.MonkeyPa
     "url",
     [
         "http://93.184.216.34/",  # public literal IP
-        "http://example.com/",  # public DNS name (ip_address raises -> passes guard)
-        "http://localhost/",  # DNS alias: literal-IP-only guard does NOT resolve it
+        "http://example.com/",  # DNS name resolving only to a public address
     ],
 )
 def test_hunt_ssrf_allows_public_and_dns_hosts(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -256,6 +256,51 @@ def test_hunt_ssrf_allows_public_and_dns_hosts(url: str, monkeypatch: pytest.Mon
     hunt([url], detectors=())
 
     assert len(captured) == 1  # guard passed through; fetch was reached
+
+
+# --------------------------------------------------------------------------- #
+# SSRF guard — DNS-resolved hosts and redirect targets (#181)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("host", "address"),
+    [
+        ("localhost", "127.0.0.1"),  # loopback alias — passed the old literal-IP guard
+        ("metadata.google.internal", "169.254.169.254"),  # cloud IMDS
+    ],
+)
+def test_hunt_ssrf_blocks_hostname_resolving_to_internal(
+    host: str, address: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(_RESOLVER, lambda h: [address] if h == host else ["93.184.216.34"])
+    calls: list[str] = []
+    monkeypatch.setattr(_FETCH, lambda u, **_kw: calls.append(u))
+
+    with pytest.raises(ValueError, match="SSRF"):
+        hunt([f"http://{host}/"])
+
+    assert calls == []  # the guard fires BEFORE any network call
+
+
+def test_hunt_ssrf_blocks_redirect_onto_internal_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The seed itself is public; the serving tier followed a 30x onto the IMDS
+    # address. The response body must never reach the detectors.
+    monkeypatch.setattr(
+        _RESOLVER, lambda h: ["169.254.169.254"] if h == "imds.test" else ["93.184.216.34"]
+    )
+    monkeypatch.setattr(_FETCH, lambda u, **_kw: _resp("http://imds.test/latest/meta-data/"))
+
+    seen: list[Response] = []
+
+    def spy_detector(response: Response) -> list[object]:
+        seen.append(response)
+        return []
+
+    with pytest.raises(ValueError, match="SSRF"):
+        hunt(["https://public.test/"], detectors=(spy_detector,))
+
+    assert seen == []  # blocked before any detector saw the body
 
 
 # --------------------------------------------------------------------------- #
