@@ -26,6 +26,7 @@ from polyfetch_scrape._backends.patchright_backend import (
     capture_screenshot,
     context_kwargs,
 )
+from polyfetch_scrape._platform import ensure_browser_tier_supported
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import ColorScheme, RenderOptions, WaitUntil
 
@@ -78,6 +79,8 @@ class RenderSession:
         self.network_failures: list[dict[str, object]] = []
 
     def __enter__(self) -> "RenderSession":
+        # Same platform gate as the fetch tier: no patchright wheel on musl (#197).
+        ensure_browser_tier_supported()
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(headless=True)
         self._context = self._browser.new_context(**context_kwargs(self._pw, self._opts))

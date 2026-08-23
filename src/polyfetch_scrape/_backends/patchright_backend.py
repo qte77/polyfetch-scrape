@@ -14,6 +14,7 @@ from polyfetch_scrape._backends import (
     permanent_redirect_target,
     raise_for_terminal_status,
 )
+from polyfetch_scrape._platform import ensure_browser_tier_supported
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import RenderAction, RenderOptions
 from polyfetch_scrape.response import Response
@@ -38,6 +39,9 @@ def attempt(
     policy: RetryPolicy,
     render: RenderOptions | None = None,
 ) -> Response:
+    # Platform gate first: on musl there is no patchright wheel, so fail with the
+    # named limitation + workaround instead of a cryptic browser-launch error (#197).
+    ensure_browser_tier_supported()
     if method.upper() != "GET":
         raise FetchError(f"patchright backend supports GET only, not {method}")
 
