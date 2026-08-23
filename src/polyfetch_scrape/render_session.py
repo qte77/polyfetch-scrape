@@ -129,16 +129,24 @@ class RenderSession:
         with contextlib.suppress(Exception):
             self.screenshots[name] = capture_screenshot(self.page, "viewport") or b""
 
-    def _teardown(self) -> None:
-        for obj, method in ((self._context, "close"), (self._browser, "close"), (self._pw, "stop")):
-            if obj is not None:
-                with contextlib.suppress(Exception):
-                    getattr(obj, method)()
-        # The video file is only finalized once its context has closed (above), so read
-        # the path last — after the loop, regardless of browser/pw teardown outcome.
-        if self._video is not None:
+    @staticmethod
+    def _close_quietly(obj: Any, method: str) -> None:
+        if obj is not None:
             with contextlib.suppress(Exception):
+                getattr(obj, method)()
+
+    def _teardown(self) -> None:
+        # Ordering is load-bearing: Patchright finalizes the .webm on context close, but
+        # ``video.path()`` needs a live driver — so read the path AFTER closing the context
+        # and BEFORE stopping the driver. The read is deliberately not suppressed: a failed
+        # read must surface rather than silently orphan the recording.
+        try:
+            self._close_quietly(self._context, "close")
+            if self._video is not None:
                 self.video_path = Path(self._video.path())
+        finally:
+            self._close_quietly(self._browser, "close")
+            self._close_quietly(self._pw, "stop")
 
 
 def render_session(

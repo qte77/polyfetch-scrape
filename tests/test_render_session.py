@@ -190,6 +190,46 @@ def test_video_path_set_after_teardown_when_recording(monkeypatch: pytest.Monkey
     page.video.path.assert_called_once_with()
 
 
+def test_video_path_read_while_driver_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression (#199): the path must be read after context.close() but before pw.stop().
+
+    A real ``video.path()`` raises against a stopped driver, so the mock mirrors that —
+    reading the path too late leaves ``video_path`` unset instead of silently passing.
+    """
+    page, context, browser, pw = _make_session_chain(monkeypatch)
+
+    def _path_requiring_live_driver() -> str:
+        if pw.stop.called or browser.close.called:
+            raise RuntimeError("Playwright driver already stopped")
+        if not context.close.called:
+            raise RuntimeError("video not finalized until the context closes")
+        return "captured-videos/session.webm"
+
+    page.video.path.side_effect = _path_requiring_live_driver
+
+    with render_session("https://example.com", record_video_dir="captured-videos"):
+        pass
+
+    assert page.video.path.call_count == 1
+    browser.close.assert_called_once_with()
+    pw.stop.assert_called_once_with()
+
+
+def test_video_path_read_failure_is_not_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _context, browser, pw = _make_session_chain(monkeypatch)
+    page.video.path.side_effect = RuntimeError("path unavailable")
+
+    with (
+        pytest.raises(RuntimeError, match=r"path unavailable"),
+        render_session("https://example.com", record_video_dir="captured-videos"),
+    ):
+        pass
+
+    # Teardown still completes despite the failed read.
+    browser.close.assert_called_once_with()
+    pw.stop.assert_called_once_with()
+
+
 def test_video_path_none_when_not_recording(monkeypatch: pytest.MonkeyPatch) -> None:
     page, *_ = _make_session_chain(monkeypatch)
 
