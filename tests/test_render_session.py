@@ -198,3 +198,66 @@ def test_video_path_none_when_not_recording(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert s.video_path is None
     page.video.path.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# authenticated sessions: storage_state in, extra headers, storage_state out
+# --------------------------------------------------------------------------- #
+
+
+def test_storage_state_path_reaches_new_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com", storage_state=Path("auth/state.json")):
+        pass
+
+    assert browser.new_context.call_args.kwargs["storage_state"] == "auth/state.json"
+
+
+def test_storage_state_mapping_reaches_new_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, browser, _pw = _make_session_chain(monkeypatch)
+    state = {"cookies": [{"name": "sid", "value": "abc"}], "origins": []}
+
+    with render_session("https://example.com", storage_state=state):
+        pass
+
+    assert browser.new_context.call_args.kwargs["storage_state"] == state
+
+
+def test_extra_http_headers_reach_new_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com", extra_http_headers={"Authorization": "Bearer t"}):
+        pass
+
+    assert browser.new_context.call_args.kwargs["extra_http_headers"] == {
+        "Authorization": "Bearer t"
+    }
+
+
+def test_save_storage_state_writes_and_returns_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com") as s:
+        out = s.save_storage_state(Path("auth/state.json"))
+
+    assert out == Path("auth/state.json")
+    context.storage_state.assert_called_once_with(path="auth/state.json")
+
+
+def test_save_storage_state_after_exit_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com") as s:
+        pass
+
+    with pytest.raises(FetchError, match="no live context"):
+        s.save_storage_state("auth/state.json")
+    context.storage_state.assert_not_called()
+
+
+def test_save_storage_state_before_enter_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _make_session_chain(monkeypatch)
+
+    with pytest.raises(FetchError, match="no live context"):
+        render_session("https://example.com").save_storage_state("auth/state.json")

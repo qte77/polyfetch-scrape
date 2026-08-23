@@ -68,10 +68,11 @@ def attempt(
 
 
 def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
-    """Build browser.new_context(**kwargs) from RenderOptions emulation/video fields.
+    """Build browser.new_context(**kwargs) from RenderOptions emulation/video/session fields.
 
     Device preset first (a bundle of user_agent/viewport/is_mobile/...), then explicit
     fields override it. record_video_* map to Patchright's {width,height} shape.
+    ``storage_state`` passes through as a path string or an inline state mapping.
     """
     kwargs: dict[str, Any] = {}
     if opts.device is not None:
@@ -93,6 +94,11 @@ def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
                 "width": opts.record_video_size[0],
                 "height": opts.record_video_size[1],
             }
+    if opts.storage_state is not None:
+        state = opts.storage_state
+        kwargs["storage_state"] = dict(state) if isinstance(state, Mapping) else str(state)
+    if opts.extra_http_headers is not None:
+        kwargs["extra_http_headers"] = dict(opts.extra_http_headers)
     return kwargs
 
 
@@ -107,7 +113,9 @@ def _attempt_once(
 ) -> _Attempt:
     context = browser.new_context(**context_kwargs)
     if headers:
-        context.set_extra_http_headers(dict(headers))
+        # opts.extra_http_headers already went in via new_context; re-send the union so a
+        # context-level replace can't drop them, with explicit fetch headers winning per key.
+        context.set_extra_http_headers({**dict(opts.extra_http_headers or {}), **dict(headers)})
     page = context.new_page()
     console_errors, network_failures = attach_capture(page, opts)
     video = page.video if opts.record_video_dir is not None else None

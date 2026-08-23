@@ -1,8 +1,9 @@
 """Browser-tier render controls, grouped into one options object for ``fetch()``."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 WaitUntil = Literal["domcontentloaded", "load", "networkidle"]
 ActionVerb = Literal["click", "click_text", "fill", "wait_for_selector", "wait_ms"]
@@ -69,6 +70,13 @@ class RenderOptions:
       this directory; the finished file's path lands on ``Response.video_path``. Patchright only
       finalizes the file on ``context.close()``, so the path is unavailable until the attempt
       completes.
+    - ``storage_state``: a previously saved session — a path to a Patchright storage-state JSON
+      file, or the equivalent ``{"cookies": [...], "origins": [...]}`` mapping — restored at
+      ``new_context()`` time, so the context starts logged in. Write one back out with
+      ``RenderSession.save_storage_state(path)``.
+    - ``extra_http_headers``: headers sent with every request the context makes (mirrors
+      ``fetch(headers=...)``, e.g. an ``Authorization`` bearer). On the ``fetch()`` path an
+      explicit ``headers=`` entry wins per key.
     """
 
     wait_until: WaitUntil = "domcontentloaded"
@@ -86,3 +94,5 @@ class RenderOptions:
     locale: str | None = None
     record_video_dir: str | Path | None = None
     record_video_size: tuple[int, int] | None = None
+    storage_state: str | Path | Mapping[str, Any] | None = None
+    extra_http_headers: Mapping[str, str] | None = None

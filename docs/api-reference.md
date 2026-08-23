@@ -45,7 +45,8 @@ RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selec
               wait_for_function=None, screenshot=None, actions=(), screenshots=(),
               capture_console=False, capture_network_failures=False,
               viewport=None, device=None, color_scheme=None, user_agent=None, locale=None,
-              record_video_dir=None, record_video_size=None)
+              record_video_dir=None, record_video_size=None,
+              storage_state=None, extra_http_headers=None)
       # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
       # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
       # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
@@ -64,6 +65,11 @@ RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selec
       # record_video_dir=<path> (+ optional record_video_size=(width, height)) → records a
       #     VP8 .webm of the session into that directory; Patchright only finalizes the file on
       #     context.close(), so the path lands on Response.video_path once fetch() returns
+      # storage_state=<path> | {"cookies": [...], "origins": [...]} → restores a saved session
+      #     (cookies + localStorage) at new_context() time; write one out with
+      #     RenderSession.save_storage_state(path)
+      # extra_http_headers={"Header": "value"} — sent with every request the context makes;
+      #     mirrors fetch(headers=...), which wins per key when both are given
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
       # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -81,10 +87,12 @@ A managed, **headless** Patchright `Page` for multi-step interactive flows (act 
 ```python
 with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
                      device=None, viewport=None, color_scheme=None, user_agent=None,
-                     locale=None, record_video_dir=None, record_video_size=None) as s:
+                     locale=None, record_video_dir=None, record_video_size=None,
+                     storage_state=None, extra_http_headers=None) as s:
     s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
     s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
     s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
+    s.save_storage_state(path)  # write cookies + localStorage → returns Path; inside the block only
     s.page           # the managed Patchright Page (escape hatch for structural reads)
     s.video_path     # Path to the recorded .webm once set (only after the `with` block exits)
 # auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
@@ -93,7 +101,7 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
 # a navigation timeout raises FetchError.
 ```
 
-`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video semantics. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
+`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`storage_state`/`extra_http_headers` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video/session semantics. `submit()` presses Enter on the focused element. `save_storage_state(path)` persists the live context's cookies + localStorage for a later `storage_state=` run (raises `FetchError` if called outside the `with` block, where the context no longer exists) — recipe: [scripting cookbook → Authenticated session](scripting.md#authenticated-session). **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
 
 ## `Response` and `RetryPolicy`
 

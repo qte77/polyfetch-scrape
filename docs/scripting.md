@@ -5,9 +5,9 @@ layers](../README.md#two-layers-engine--scripting-substrate). `render_session(ur
 owns the browser install, launch/teardown, console/network capture, and the SSRF
 guard; you own the app-specific steps once you have a live `Page` on `s.page`. Every
 snippet below uses only the public `RenderSession` surface: `click` / `click_text` /
-`fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot`,
-plus `.page`, `s.console_errors`, `s.network_failures`, `s.screenshots`, and
-`s.video_path`.
+`fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot` /
+`save_storage_state`, plus `.page`, `s.console_errors`, `s.network_failures`,
+`s.screenshots`, and `s.video_path`.
 
 ## DevTools capture
 
@@ -63,6 +63,61 @@ On an exception inside the `with` block, `render_session` captures an `"exceptio
 screenshot into `s.screenshots` before teardown — useful for post-mortem debugging a
 failed walk without adding your own try/except.
 
+## Authenticated session
+
+A fresh `render_session(url)` gets an empty browser context — no cookies, no
+localStorage — so a login-gated SPA logs you out on every run. Log in **once**, save the
+context's state, then restore it on later runs with `storage_state=`:
+
+```python
+import os
+from pathlib import Path
+
+from polyfetch_scrape import render_session
+
+STATE = Path("auth/state.json")   # cookies + localStorage; treat as a secret
+
+# 1. First run: log in, then persist the session (inside the `with` block).
+with render_session("https://app.example.com/login") as s:
+    s.fill("#email", "user@example.com")
+    s.fill("#password", os.environ["APP_PASSWORD"])
+    s.submit()
+    s.wait_for_selector("[data-testid=dashboard]")
+    s.save_storage_state(STATE)
+
+# 2. Every later run: start already logged in — no second login, no token rotation.
+with render_session("https://app.example.com/dashboard", storage_state=STATE) as s:
+    s.wait_for_selector("[data-testid=dashboard]")
+    s.shot("dashboard")
+    s.save_storage_state(STATE)   # optional: keep refreshed cookies for the next run
+```
+
+`storage_state` also accepts the state **mapping** itself
+(`{"cookies": [...], "origins": [...]}`) if you keep credentials in a secret store rather
+than on disk. For token-based APIs, send the credential as a header instead —
+`extra_http_headers` mirrors `fetch(headers=...)` and applies to every request the context
+makes, page navigations included:
+
+```python
+with render_session(url, extra_http_headers={"Authorization": f"Bearer {token}"}) as s:
+    s.wait_for_selector("main")
+```
+
+Notes:
+
+- `save_storage_state(path)` must run **inside** the `with` block — teardown closes the
+  context and the state goes with it. It raises `FetchError` otherwise. It returns the
+  `Path` it wrote.
+- Both options are context-time only (they apply at `new_context()`), like `device` and
+  `locale` — pass them to `render_session(...)`, not to `.page` afterwards.
+- The state file contains live session cookies: keep it out of git, and prefer refreshing
+  it (step 2's trailing `save_storage_state`) over re-running the login flow, which burns
+  single-use refresh tokens.
+- **`extra_http_headers` is context-wide, so a credential put there leaks off-origin.**
+  The headers ride on *every* request the context makes — third-party CDNs, analytics,
+  fonts, trackers — not only your target host. Think twice before sending an
+  `Authorization` bearer this way on a page that loads third-party resources.
+
 ## Live emulation on `.page`
 
 `s.page` exposes Patchright's live emulation calls for changes mid-session:
@@ -73,8 +128,8 @@ with render_session(url) as s:
     s.page.emulate_media(color_scheme="dark")
 ```
 
-These are the *post-hoc* hatches. `device` / `locale` / `user_agent` / video are
-context-time only — set once as `render_session(...)` (or `RenderOptions`) arguments,
+These are the *post-hoc* hatches. `device` / `locale` / `user_agent` / video /
+`storage_state` / `extra_http_headers` are context-time only — set once as `render_session(...)` (or `RenderOptions`) arguments,
 because they apply at browser `new_context()` time and can't be changed after the page
 exists. `viewport` and `color_scheme` sit on the seam: pass them once at
 `render_session(...)` time, or change them live on `.page` as above — see
