@@ -9,8 +9,11 @@ Scope: this **stays at the transport-layer boundary** — it returns entrypoint
 URLs/types only and never parses or extracts the content behind them (that remains a
 downstream concern, per the README/architecture invariants).
 
-Security: every fetched URL passes through the shared literal-IP SSRF guard first
-(:func:`polyfetch_scrape.utils._ssrf.check_ssrf`). Soft-404s are rejected — a site that
+Security: every fetched URL passes through the shared SSRF guard first
+(:func:`polyfetch_scrape.utils._ssrf.check_ssrf`) — which resolves the hostname and
+rejects it if *any* answer is an internal address — and every response is re-checked
+against :func:`~polyfetch_scrape.utils._ssrf.check_redirect` so a public host cannot
+30x a probe onto an internal one. Soft-404s are rejected — a site that
 returns a ``200`` HTML shell for every path (SPA) must not read as "``/llms.txt``
 present", so probes sniff the content-type/body before counting an entrypoint.
 """
@@ -23,7 +26,7 @@ from urllib.parse import urljoin, urlsplit
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
-from polyfetch_scrape.utils._ssrf import check_ssrf
+from polyfetch_scrape.utils._ssrf import check_redirect, check_ssrf
 
 # Arbitrary parsed JSON (``json.loads`` output). A recursive alias lets pyright-strict
 # narrow ``isinstance`` branches within the union — no ``Any`` and no casts needed.
@@ -60,7 +63,8 @@ def discover(url: str) -> DiscoveredSources:
     """Report the structured entrypoints ``url``'s site advertises (never raises for absence).
 
     Returns empty tuples for sources the site does not expose. Raises ``ValueError`` if
-    ``url`` (or a probed path) resolves to a literal internal IP (SSRF guard).
+    ``url`` (or a probed path) is, resolves to, or redirects to an internal address
+    (SSRF guard).
     """
     target = url if "://" in url else f"https://{url}"
     origin = _origin(target)
@@ -87,9 +91,11 @@ def _fetch(url: str) -> Response | None:
     """Fetch ``url`` (structured sources never need JS); None on 404 / fetch failure."""
     check_ssrf(url)
     try:
-        return fetch(url, max_tier="curl_cffi")
+        resp = fetch(url, max_tier="curl_cffi")
     except FetchError:
         return None  # absent source — same swallow-to-None convention as utils.sitemap
+    check_redirect(url, resp)  # a public host may have 30x-ed us onto an internal one
+    return resp
 
 
 def _head(body: bytes, size: int = 512) -> str:

@@ -6,9 +6,10 @@ child sitemaps, transparently decompresses ``.xml.gz`` payloads, and parses the
 (untrusted) XML with :mod:`defusedxml`.
 
 Security: every fetched URL — the initial sitemap **and** each child sitemap URL
-parsed from an index (attacker-controlled) — is passed through a literal-IP SSRF
-guard first. The guard is literal-IP only: DNS names (incl. ``localhost``) pass
-through, matching the ``easter_hunt`` contrib's documented scope.
+parsed from an index (attacker-controlled) — is passed through the shared SSRF
+guard first, which resolves the hostname and rejects it if *any* answer is an
+internal address; the URL a response actually landed on (or redirects to) is
+re-checked before its body is parsed.
 """
 
 import gzip
@@ -19,7 +20,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
-from polyfetch_scrape.utils._ssrf import check_ssrf
+from polyfetch_scrape.utils._ssrf import check_redirect, check_ssrf
 
 _GZIP_MAGIC = b"\x1f\x8b"
 
@@ -29,7 +30,8 @@ def fetch_sitemap_urls(domain: str, *, max_urls: int = 10_000) -> list[str]:
 
     Follows a ``<sitemapindex>`` one level into its child sitemaps. Returns ``[]``
     when the site has no sitemap (404 / fetch failure) or the payload is unparseable.
-    Raises ``ValueError`` if any fetched URL resolves to a literal internal IP.
+    Raises ``ValueError`` if any fetched URL — the address its host resolves to, or a
+    redirect it lands on — is internal (SSRF guard).
     """
     urls: list[str] = []
     root = _fetch_and_parse(_sitemap_url(domain))
@@ -58,6 +60,7 @@ def _fetch_and_parse(url: str) -> Element | None:
         resp = fetch(url, max_tier="curl_cffi")  # sitemaps never need JS
     except FetchError:
         return None  # 404 / retries exhausted → treat as "no sitemap"
+    check_redirect(url, resp)  # a public host may have 30x-ed us onto an internal one
     body = gzip.decompress(resp.body) if resp.body[:2] == _GZIP_MAGIC else resp.body
     try:
         return fromstring(body)
