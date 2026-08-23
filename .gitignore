@@ -12,3 +12,7 @@ htmlcov/
 
 # Generated screenshots from the example scripts (regenerable via make demo_tiers / make render)
 examples/screenshots/*.png
+
+# Agent memory scaffold — the real agent memory lives in the harness
+# per-project store (~/.claude/…), not in the working tree.
+/MEMORY.md
