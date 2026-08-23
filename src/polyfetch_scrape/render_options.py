@@ -58,7 +58,12 @@ class RenderOptions:
       ``Response.screenshots`` (``dict[name, PNG bytes]``); complements the single ``screenshot``.
     - ``capture_console``: collect console + uncaught-JS errors onto ``Response.console_errors``.
     - ``capture_network_failures``: collect failed requests + HTTP ``>= 400`` responses onto
-      ``Response.network_failures``. Both off by default (zero overhead unless asked).
+      ``Response.network_failures``.
+    - ``capture_network_log``: collect **every** completed request (not just failures) onto
+      ``Response.network_log`` as ``{url, method, status, duration_ms}`` — a full HAR-lite
+      network trace for auditing what a page actually loads. Independent of
+      ``capture_network_failures``; enabling both is fine (failures appear in both lists).
+      All three off by default (zero overhead unless asked).
     - ``device``: a Patchright device preset name (e.g. ``"iPhone 13"``) — spreads
       ``pw.devices[device]`` (user_agent/viewport/is_mobile/...) at ``new_context()`` time.
     - ``viewport`` / ``color_scheme`` / ``user_agent`` / ``locale``: emulation set at
@@ -79,6 +84,7 @@ class RenderOptions:
     screenshots: tuple[Screenshot, ...] = ()
     capture_console: bool = False
     capture_network_failures: bool = False
+    capture_network_log: bool = False
     viewport: tuple[int, int] | None = None
     device: str | None = None
     color_scheme: ColorScheme | None = None

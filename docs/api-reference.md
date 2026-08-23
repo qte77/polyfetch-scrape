@@ -43,7 +43,7 @@ call already honor `Retry-After` / backoff. Per-process (not distributed).
 ```python
 RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selector=None,
               wait_for_function=None, screenshot=None, actions=(), screenshots=(),
-              capture_console=False, capture_network_failures=False,
+              capture_console=False, capture_network_failures=False, capture_network_log=False,
               viewport=None, device=None, color_scheme=None, user_agent=None, locale=None,
               record_video_dir=None, record_video_size=None)
       # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
@@ -51,6 +51,7 @@ RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selec
       # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
       # capture_console → Response.console_errors (console + uncaught-JS errors)
       # capture_network_failures → Response.network_failures (failed requests + HTTP >= 400)
+      # capture_network_log → Response.network_log (EVERY completed request, not just failures)
       # --- emulation + video: set at browser new_context() time (both the fetch tier and
       #     render_session apply these the same way) ---
       # device="<preset name>" (e.g. "iPhone 13") → spreads Patchright's device dict
@@ -76,16 +77,18 @@ Screenshot(name, target="viewport")
 
 ## Render session (interactive, patchright tier)
 
-A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on.
+A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on; the full per-request trace (`s.network_log`) is opt-in via `capture_network_log=True`.
 
 ```python
 with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
+                     capture_network_log=False,
                      device=None, viewport=None, color_scheme=None, user_agent=None,
                      locale=None, record_video_dir=None, record_video_size=None) as s:
     s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
     s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
     s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
     s.page           # the managed Patchright Page (escape hatch for structural reads)
+    s.network_log    # [{url, method, status, duration_ms}] — only when capture_network_log=True
     s.video_path     # Path to the recorded .webm once set (only after the `with` block exits)
 # auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
 #   on an exception inside the block → an "exception" screenshot is captured first;
@@ -100,7 +103,7 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
 ```python
 Response(url, status, headers, body, content_type, backend,
          permanent_redirect_to=None, screenshot=None, video_path=None,
-         console_errors=[], network_failures=[], screenshots={})
+         console_errors=[], network_failures=[], network_log=[], screenshots={})
       # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
       # screenshot: PNG bytes when requested on the patchright tier, else None
       # video_path: Path to the recorded VP8 .webm when RenderOptions.record_video_dir was set
@@ -109,8 +112,12 @@ Response(url, status, headers, body, content_type, backend,
       # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
       # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)
       #   opt-in via RenderOptions.capture_network_failures
-      # CAVEAT: console_errors / network_failures reflect only THIS process's network — a failure a
-      #   real user hits (CORS / extension / proxy) can read clean here; force a known failure to trust it
+      # network_log: [{url, method, status, duration_ms}] for EVERY completed request, in completion
+      #   order; status/duration_ms are None on a failed/untimed request. opt-in via
+      #   RenderOptions.capture_network_log; independent of capture_network_failures
+      # CAVEAT: console_errors / network_failures / network_log reflect only THIS process's
+      #   network — a failure a real user hits (CORS / extension / proxy) can read clean here;
+      #   force a known failure to trust it
 
 RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
             retry_on_status=frozenset({429, 500, 502, 503, 504}))

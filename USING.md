@@ -46,6 +46,20 @@ via `RenderOptions(capture_console=True, capture_network_failures=True)` → `Re
 > (CORS / a browser extension / a proxy) can succeed here and read clean. Treat an empty capture as
 > "no error *on this network*", not "no error".
 
+### Full network log (opt-in)
+
+The always-on capture keeps only the *bad* traffic. To audit **every** request a page makes — third-party beacons, slow XHRs, duplicated calls — opt into the full log. It is **off by default** (recording every request costs memory on a chatty page):
+
+```python
+with render_session(url, capture_network_log=True) as s:
+    s.click_text("Load more")
+
+for e in s.network_log:                 # every completed request, whole session
+    print(e["method"], e["status"], e["duration_ms"], e["url"])
+```
+
+Each entry is `{"url", "method", "status", "duration_ms"}`; `status` and `duration_ms` are `None` when the request failed outright or the browser reported no timing. Failures appear in **both** `network_log` and `network_failures` — the flags are independent. On the one-shot `fetch()` tier it is the same opt-in: `RenderOptions(capture_network_log=True)` → `Response.network_log`.
+
 ### Other `.page` recipes
 
 ```python

@@ -122,6 +122,56 @@ def test_console_capture_populates(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Uncaught Z" in s.console_errors
 
 
+def _fake_logged_request(
+    url: str,
+    method: str = "GET",
+    *,
+    status: int | None = 200,
+    response_end: float | None = 9.0,
+) -> MagicMock:
+    """A patchright Request as seen by requestfinished/requestfailed handlers."""
+    req = MagicMock()
+    req.url = url
+    req.method = method
+    response = None
+    if status is not None:
+        response = MagicMock()
+        response.status = status
+    req.response.return_value = response
+    req.timing = {"startTime": 1.0, "responseEnd": response_end} if response_end is not None else {}
+    return req
+
+
+def test_network_log_opt_in_records_every_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, *_ = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com", capture_network_log=True) as s:
+        _handlers(page)["requestfinished"](_fake_logged_request("https://x/ok"))
+        # Two "requestfailed" listeners are live here (failure capture + full log), and
+        # _handlers keeps only the last — fire every one so the assertion is order-agnostic.
+        dead = _fake_logged_request("https://x/dead", status=None, response_end=None)
+        for call in page.on.call_args_list:
+            if call.args[0] == "requestfailed":
+                call.args[1](dead)
+
+    assert s.network_log == [
+        {"url": "https://x/ok", "method": "GET", "status": 200, "duration_ms": 9.0},
+        {"url": "https://x/dead", "method": "GET", "status": None, "duration_ms": None},
+    ]
+
+
+def test_network_log_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, *_ = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com") as s:
+        # Console + failure capture stay always-on; only the full log is gated.
+        registered = {c.args[0] for c in page.on.call_args_list}
+        assert "requestfinished" not in registered
+        assert {"console", "pageerror", "requestfailed", "response"} <= registered
+
+    assert s.network_log == []
+
+
 def test_teardown_on_normal_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     _page, context, browser, pw = _make_session_chain(monkeypatch)
 

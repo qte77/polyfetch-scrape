@@ -30,6 +30,15 @@ class _Attempt:
     retry_after: float | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Capture:
+    """The still-filling sinks registered by :func:`attach_capture` (empty when opted out)."""
+
+    console_errors: list[str]
+    network_failures: list[dict[str, object]]
+    network_log: list[dict[str, object]]
+
+
 def attempt(
     method: str,
     url: str,
@@ -109,13 +118,11 @@ def _attempt_once(
     if headers:
         context.set_extra_http_headers(dict(headers))
     page = context.new_page()
-    console_errors, network_failures = attach_capture(page, opts)
+    capture = attach_capture(page, opts)
     video = page.video if opts.record_video_dir is not None else None
     try:
         try:
-            result = _run_page(
-                page, url, timeout_ms, opts, policy, console_errors, network_failures
-            )
+            result = _run_page(page, url, timeout_ms, opts, policy, capture)
         finally:
             context.close()
     except Exception:
@@ -133,8 +140,7 @@ def _run_page(
     timeout_ms: int,
     opts: RenderOptions,
     policy: RetryPolicy,
-    console_errors: list[str],
-    network_failures: list[dict[str, object]],
+    capture: Capture,
 ) -> _Attempt:
     """Navigate, check status/retry conditions, run actions/waits, and build the ``_Attempt``."""
     try:
@@ -167,8 +173,9 @@ def _run_page(
             backend="patchright",
             permanent_redirect_to=permanent_redirect_target(status, all_headers),
             screenshot=capture_screenshot(page, opts.screenshot),
-            console_errors=console_errors,
-            network_failures=network_failures,
+            console_errors=capture.console_errors,
+            network_failures=capture.network_failures,
+            network_log=capture.network_log,
             screenshots=screenshots,
         ),
         None,
@@ -216,23 +223,56 @@ def _record_bad_response(resp: Any, sink: list[dict[str, object]]) -> None:
         sink.append({"url": str(resp.url), "status": int(resp.status)})
 
 
-def attach_capture(page: Any, opts: RenderOptions) -> tuple[list[str], list[dict[str, object]]]:
-    """Register opt-in console/network listeners; return the (still-filling) capture lists.
+def _request_duration_ms(req: Any) -> float | None:
+    """Request start → ``responseEnd`` in ms, or None when the browser reported no timing.
+
+    Patchright's ``request.timing`` gives ``startTime`` as an epoch stamp and every later
+    marker as an offset from it, using ``-1`` for "not measured" — so ``responseEnd`` IS the
+    duration once it is non-negative.
+    """
+    with contextlib.suppress(Exception):
+        end = float(dict(req.timing).get("responseEnd", -1))
+        if end >= 0:
+            return end
+    return None
+
+
+def _record_network_entry(req: Any, sink: list[dict[str, object]]) -> None:
+    """Append one completed request (finished OR failed) to the full network log."""
+    response = None
+    with contextlib.suppress(Exception):
+        response = req.response()
+    sink.append(
+        {
+            "url": str(req.url),
+            "method": str(req.method),
+            "status": int(response.status) if response is not None else None,
+            "duration_ms": _request_duration_ms(req),
+        }
+    )
+
+
+def attach_capture(page: Any, opts: RenderOptions) -> Capture:
+    """Register opt-in console/network listeners; return the (still-filling) capture sinks.
 
     A headless capture reflects only THIS process's network — a cross-origin failure a real user
     hits (CORS / extension / proxy) can succeed here and read clean. Force a known failure to
     trust it (AGENT_LEARNINGS: "Headless console/network capture only reflects the runner's own
     network").
     """
-    console_errors: list[str] = []
-    network_failures: list[dict[str, object]] = []
+    capture = Capture(console_errors=[], network_failures=[], network_log=[])
     if opts.capture_console:
-        page.on("console", partial(_record_console, sink=console_errors))
-        page.on("pageerror", partial(_record_pageerror, sink=console_errors))
+        page.on("console", partial(_record_console, sink=capture.console_errors))
+        page.on("pageerror", partial(_record_pageerror, sink=capture.console_errors))
     if opts.capture_network_failures:
-        page.on("requestfailed", partial(_record_request_failure, sink=network_failures))
-        page.on("response", partial(_record_bad_response, sink=network_failures))
-    return console_errors, network_failures
+        page.on("requestfailed", partial(_record_request_failure, sink=capture.network_failures))
+        page.on("response", partial(_record_bad_response, sink=capture.network_failures))
+    if opts.capture_network_log:
+        # Both terminal request events — a failed request never fires "requestfinished", so
+        # listening to only one would silently drop half the trace.
+        page.on("requestfinished", partial(_record_network_entry, sink=capture.network_log))
+        page.on("requestfailed", partial(_record_network_entry, sink=capture.network_log))
+    return capture
 
 
 def _apply_actions(page: Any, actions: tuple[RenderAction, ...], timeout_ms: int) -> None:
