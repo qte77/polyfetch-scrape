@@ -396,7 +396,27 @@ def test_browser_flag_rejects_invalid_choice(monkeypatch: pytest.MonkeyPatch) ->
     assert called is True
 
 
+def test_doctor_on_musl_exits_1_without_probing_or_installing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No musllinux patchright wheel — `--fix` cannot help, so say so instead (#197)."""
+
+    def _must_not_run() -> object:
+        raise AssertionError("doctor must not touch the browser on musl")
+
+    monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: True)
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", _must_not_run)
+    monkeypatch.setattr("polyfetch_scrape.cli._install_chromium", _must_not_run)
+
+    result = runner.invoke(app, ["doctor", "--fix"])
+
+    assert result.exit_code == 1
+    assert "musllinux" in result.output  # names the limitation
+    assert "--max-tier curl_cffi" in result.output  # names the workaround
+
+
 def test_doctor_ok_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
     monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: True)
 
     result = runner.invoke(app, ["doctor"])
@@ -406,6 +426,7 @@ def test_doctor_ok_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_doctor_missing_without_fix_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
     monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
 
     result = runner.invoke(app, ["doctor"])
@@ -415,6 +436,7 @@ def test_doctor_missing_without_fix_exits_1(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_doctor_fix_installs_and_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
     monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
     monkeypatch.setattr("polyfetch_scrape.cli._install_chromium", lambda: 0)
 
@@ -425,6 +447,7 @@ def test_doctor_fix_installs_and_exits_0(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_doctor_fix_install_failure_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
     monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
     monkeypatch.setattr("polyfetch_scrape.cli._install_chromium", lambda: 1)
 

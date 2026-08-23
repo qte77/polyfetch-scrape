@@ -12,6 +12,7 @@ from typing import Annotated, Any, cast
 
 import typer
 
+from polyfetch_scrape._platform import MUSL_UNSUPPORTED_MSG, is_musl
 from polyfetch_scrape.client import Browser, Tier, fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import ColorScheme, RenderOptions
@@ -461,8 +462,13 @@ def doctor(
     """Check the Patchright Chromium the browser tier needs; ``--fix`` installs it if missing.
 
     Exits non-zero when Chromium is unavailable (and ``--fix`` was not given, or the install
-    failed) so borrowed-venv consumers can gate their e2e on ``polyfetch doctor``.
+    failed) so borrowed-venv consumers can gate their e2e on ``polyfetch doctor``. On musl
+    (Alpine) the browser tier is unsupported outright — reported before probing, since no
+    ``--fix`` can install a wheel that does not exist (#197).
     """
+    if is_musl():
+        typer.echo(f"chromium: unsupported platform — {MUSL_UNSUPPORTED_MSG}", err=True)
+        raise typer.Exit(1)
     if _chromium_ok():
         typer.echo("chromium: ok")
         return
