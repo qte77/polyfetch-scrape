@@ -143,7 +143,7 @@ Two kinds of "no":
 - [Roadmap](docs/roadmap.md) — delivery history + core directions ahead
 - [User stories](docs/userstory.md) — who it serves and what each need maps to
 - [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
-- [web-recon-kit](https://github.com/qte77/web-recon-kit) — reusable web/API recon & attack-surface assessment harness (endpoint enumeration, auth-posture matrix, cross-tenant BOLA/BFLA, cron/secret checks, gate classification). Builds on `render_session()` for JS-bundle mining + screenshots and `httpx` for the API tier — a concrete example of the **env-borrow consumer** pattern in [`USING.md`](USING.md)
+- [web-recon-kit](https://github.com/qte77/web-recon-kit) — reusable web/API recon & attack-surface assessment harness (endpoint enumeration, auth-posture matrix, cross-tenant BOLA/BFLA, cron/secret checks, gate classification). Its browser tier builds on `render_session()` for JS-bundle mining + screenshots; its API tier is plain `httpx`. Depends on polyfetch as an optional `browser` extra (git dependency), not an env-borrowed checkout
 - [gha-rxiv-feed-action](https://github.com/qte77/gha-rxiv-feed-action) — fetch arXiv/bioRxiv/medRxiv feeds (open APIs; polyfetch's fallback chain isn't needed for these)
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
 - [Codespaces — qte77/polyforge-orchestrator/docs/codespaces.md](https://github.com/qte77/polyforge-orchestrator/blob/main/docs/codespaces.md) — canonical cross-qte77 reference for Codespaces auth, token precedence, GPG signing, devcontainer lifecycle
