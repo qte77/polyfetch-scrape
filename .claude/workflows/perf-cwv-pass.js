@@ -1,7 +1,7 @@
 export const meta = {
   name: 'perf-cwv-pass',
   description: 'Measure CWV medians (FCP/LCP/CLS/bytes) for a repo web UI on its local serve; optionally compare vs a baseline for a regression verdict',
-  whenToUse: 'Estate-shared perf pass (hosted here; no polyfetch coupling — it only drives `make <target>` in a consumer repo). args: {repo} absolute path of the checkout to measure (default: the current session repo); {make_target} recipe name (default `perf_cwv`); {baseline} a prior metrics.json object for a per-combo regression verdict (omit to just record a fresh baseline). CONTRACT: the recipe writes results/ui-check/<ts>_perf/metrics.json shaped {"<page>-<profile>": {fcp,lcp,cls,dcl,load,requests,bytes}}. Reference implementation: fo-scraper-miwi scripts/perf_cwv.py.',
+  whenToUse: 'Estate-shared perf pass (hosted here; no polyfetch coupling — it only drives `make <target>` in a consumer repo). args: {repo} absolute path of the checkout to measure (default: the current session repo); {make_target} recipe name (default `perf_cwv`); {baseline} a prior metrics.json object for a per-combo regression verdict (omit to just record a fresh baseline). CONTRACT: the recipe writes results/ui-check/<ts>_perf/metrics.json shaped {"<page>-<profile>": {fcp,lcp,cls,dcl,load,requests,bytes}}. Reference implementation: the downstream consumer repo this was relocated from (see changelog.d for provenance) scripts/perf_cwv.py.',
   phases: [
     { title: 'Measure', detail: 'make <target> (cold-cache median runs) in the target repo' },
     { title: 'Compare', detail: 'current vs args.baseline -> regression verdict' },
