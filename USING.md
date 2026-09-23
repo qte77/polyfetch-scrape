@@ -45,7 +45,7 @@ via `RenderOptions(capture_console=True, capture_network_failures=True)` → `Re
 > **Caveat:** a headless capture reflects only *this* runner's network — a failure a real user hits
 > (CORS / a browser extension / a proxy) can succeed here and read clean. Treat an empty capture as
 > "no error *on this network*", not "no error".
-
+>
 > **Caveat:** `page.evaluate` runs in an **isolated world** under Patchright. The DOM is shared, but
 > globals defined by the page's own scripts (`window.Chart`, `window.THREE`, module-scoped vars) read
 > back `undefined` even when they exist and work. This fails *silently* — `evaluate` returns
