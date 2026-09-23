@@ -57,6 +57,9 @@ RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selec
       #     (user_agent/viewport/is_mobile/has_touch/device_scale_factor/default_browser_type/...);
       #     explicit viewport/user_agent/locale/color_scheme below override the preset's values.
       #     NOTE: on an is_mobile device the "full-page" screenshot clips rather than scrolling.
+      #     device={...} — a CUSTOM bundle for a device the registry does not carry; same
+      #     override precedence. An unknown preset NAME raises ValueError naming near-misses;
+      #     list the presets with `polyfetch devices`.
       # viewport=(width, height) — also changeable post-hoc via page.set_viewport_size(...)
       # color_scheme="light"|"dark"|"no-preference" — also changeable post-hoc via
       #     page.emulate_media(color_scheme=...)
@@ -67,7 +70,10 @@ RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selec
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
       # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
-      #     | "wait_for_selector"(selector) | "wait_ms"(ms)
+      #     | "type"(selector,value,ms) | "wait_for_selector"(selector) | "wait_ms"(ms)
+      # "type" presses keys one at a time (ms = per-key delay). Prefer it over "fill" on
+      #     framework-controlled inputs (React/Vue/Svelte): fill() sets the DOM value without
+      #     firing the events onChange listens for, so the submit silently sends stale/empty data.
 
 Screenshot(name, target="viewport")
       # target: "viewport" | "full_page" | "<css-selector>" (element shot — must match ONE element)
@@ -146,6 +152,8 @@ CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(Discov
 ## CLI-only commands
 
 `polyfetch doctor [--fix]` — checks whether the browser-tier (patchright) Chromium binary is installed; exits non-zero when it's missing. `--fix` installs it. No Python equivalent — CLI-only. Handy when borrowing this repo's venv via `uv run --directory` (see [USING.md](../USING.md)), where the Chromium cache can get wiped between runs.
+
+`polyfetch devices` — lists the Patchright device preset names usable with `fetch --device` (or `RenderOptions(device=...)`), one per line. Starts the Patchright driver but launches no browser. No public Python equivalent — the enumeration lives in the private backend. For a device the registry doesn't carry, pass a custom bundle instead: `fetch --device-json '{...}'` / `RenderOptions(device={...})`.
 
 ## Logging
 

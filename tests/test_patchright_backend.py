@@ -677,6 +677,74 @@ def test_context_kwargs_empty_opts_is_empty_dict() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Render INPUT surface: custom devices, the type verb
+# --------------------------------------------------------------------------- #
+
+
+def test_context_kwargs_accepts_a_custom_device_bundle() -> None:
+    """The patchright registry is not the ceiling — a caller may define its own device (#191)."""
+    pw = MagicMock()
+    pw.devices = {}
+    custom: dict[str, Any] = {
+        "user_agent": "UA-custom",
+        "viewport": {"width": 411, "height": 914},
+        "is_mobile": True,
+        "has_touch": True,
+    }
+
+    kwargs = patchright_backend.context_kwargs(pw, RenderOptions(device=custom))
+
+    assert kwargs == custom
+
+
+def test_context_kwargs_explicit_fields_still_override_a_custom_device_bundle() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+    custom: dict[str, Any] = {"user_agent": "UA-custom", "viewport": {"width": 411, "height": 914}}
+
+    kwargs = patchright_backend.context_kwargs(
+        pw, RenderOptions(device=custom, viewport=(800, 600))
+    )
+
+    assert kwargs["viewport"] == {"width": 800, "height": 600}
+    assert kwargs["user_agent"] == "UA-custom"
+
+
+def test_context_kwargs_unknown_device_name_names_the_alternatives() -> None:
+    """A bare KeyError told the caller nothing about what IS available (#191)."""
+    pw = MagicMock()
+    pw.devices = {"iPhone 13": dict(_IPHONE_13_DEVICE)}
+
+    with pytest.raises(ValueError, match="unknown device preset") as excinfo:
+        patchright_backend.context_kwargs(pw, RenderOptions(device="iPhone 99"))
+
+    message = str(excinfo.value)
+    assert "iPhone 99" in message
+    assert "iPhone 13" in message
+
+
+def test_patchright_backend_type_verb_types_character_by_character(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """fill() leaves framework state stale; the type verb fires real key events (#177)."""
+    page, _ = _make_pw_chain(monkeypatch)
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(
+            actions=(RenderAction("type", selector="#email", value="a@b.c", ms=25),)
+        ),
+    )
+
+    page.locator.assert_called_once_with("#email")
+    page.locator.return_value.press_sequentially.assert_called_once_with("a@b.c", delay=25)
+
+
+# --------------------------------------------------------------------------- #
 # fetch tier: context kwargs reach browser.new_context; video finalize on close
 # --------------------------------------------------------------------------- #
 

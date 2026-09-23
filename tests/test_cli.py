@@ -2,6 +2,7 @@ import base64
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -399,6 +400,53 @@ def test_fetch_json_includes_permanent_redirect_to(monkeypatch: pytest.MonkeyPat
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["permanent_redirect_to"] == "https://example.com/moved"
+
+
+def test_fetch_unknown_device_exits_2_naming_the_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An unknown preset used to traceback with a bare KeyError (#191)."""
+
+    def boom(*_a: object, **_kw: object) -> Response:
+        raise ValueError("unknown device preset 'iPhone 99'; available presets: iPhone 13")
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", boom)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--device", "iPhone 99"])
+
+    assert result.exit_code == 2
+    assert "iPhone 99" in result.output
+
+
+def test_devices_command_lists_available_presets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.available_devices", lambda: ["Pixel 7", "iPhone 13"])
+
+    result = runner.invoke(app, ["devices"])
+
+    assert result.exit_code == 0
+    assert "iPhone 13" in result.stdout
+    assert "Pixel 7" in result.stdout
+
+
+def test_fetch_device_json_passes_a_custom_bundle(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake(url: str, **kw: Any) -> Response:
+        seen["device"] = kw["render"].device
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app, ["fetch", "https://x.test", "--device-json", '{"user_agent": "UA-x"}']
+    )
+
+    assert result.exit_code == 0
+    assert seen["device"] == {"user_agent": "UA-x"}
+
+
+def test_fetch_device_json_rejects_malformed_json() -> None:
+    result = runner.invoke(app, ["fetch", "https://x.test", "--device-json", "{not json"])
+
+    assert result.exit_code == 2
 
 
 def test_bulk_json_includes_permanent_redirect_to(
