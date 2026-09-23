@@ -86,7 +86,7 @@ No code. Tone: **neutral** (drop "hostile"/"the moat"); sharpen value, no moat c
 
 ## Wave 2 — emulation + video → core `RenderOptions`  (`feat/render-context-options`)
 
-Resolves #148/#154/#155 (emulation) + #125/#122/#155 (video). Consumers (sfclarity, azure-doc-workflows, fo-scraper, ajoa-kit) hit this in GUI e2e today.
+Resolves #148/#154/#155 (emulation) + #125/#122/#155 (video). Consumers (azure-doc-workflows, ajoa-kit, and other downstream repos) hit this in GUI e2e today.
 
 ### Source map
 
@@ -121,7 +121,7 @@ Resolves #148/#154/#155 (emulation) + #125/#122/#155 (video). Consumers (sfclari
 
 ## Strategic — polyfetch's *estate contract*
 
-**Symptom:** the qte77 estate keeps re-filing the *same* substrate needs from different consumers — emulation (#148 fo-scraper, #154 sfclarity, #155 azure-doc-workflows), video (#122/#125 agenthud/ldnmxx-hack), a shared ui-check helper (#144 fo-scraper/ajoa-kit/sfclarity), doctor (#145), venv-borrow docs (#146), pydantic-settings divergence (`http_ua.py:19`). Each consumer hits the substrate's edge, **drops to raw patchright**, then files an issue → duplicate issues, per-repo script drift, and exactly the raw-patchright workarounds the two-layer positioning is meant to end (#155 explicitly wants polyfetch as "the single browser abstraction").
+**Symptom:** the qte77 estate keeps re-filing the *same* substrate needs from different consumers — emulation (#148/#154/#155 across several downstream consumers, including azure-doc-workflows), video (#122/#125 agenthud/ldnmxx-hack), a shared ui-check helper (#144 ajoa-kit and other downstream consumers), doctor (#145), venv-borrow docs (#146), pydantic-settings divergence (`http_ua.py:19`). Each consumer hits the substrate's edge, **drops to raw patchright**, then files an issue → duplicate issues, per-repo script drift, and exactly the raw-patchright workarounds the two-layer positioning is meant to end (#155 explicitly wants polyfetch as "the single browser abstraction").
 
 **Root cause:** polyfetch is the estate's shared fetch/browser substrate, but there's **no explicit contract** for what it owns vs. what each consumer owns — so limits are discovered ad hoc, N times.
 
