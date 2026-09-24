@@ -12,6 +12,7 @@ from typing import Annotated, Any, cast
 
 import typer
 
+from polyfetch_scrape._backends.patchright_backend import available_devices
 from polyfetch_scrape.client import Browser, Tier, fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.render_options import ColorScheme, RenderOptions
@@ -135,13 +136,28 @@ def _error_payload(url: str, exc: FetchError) -> dict[str, Any]:
     }
 
 
+def _resolve_device(device: str | None, device_json: str | None) -> str | dict[str, Any] | None:
+    """A registry preset name, or a custom bundle from --device-json. Never both."""
+    if device is not None and device_json is not None:
+        raise typer.BadParameter("use --device (a preset name) or --device-json, not both")
+    if device_json is None:
+        return device
+    try:
+        parsed = json.loads(device_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"--device-json is not valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise typer.BadParameter("--device-json must be a JSON object")
+    return cast("dict[str, Any]", parsed)
+
+
 def _build_render_options(
     *,
     wait_until: str,
     wait_for_selector: str | None,
     wait_for_function: str | None,
     screenshot: str | None,
-    device: str | None,
+    device: str | dict[str, Any] | None,
     viewport: str | None,
     color_scheme: _ColorSchemeChoice | None,
     user_agent: str | None,
@@ -200,7 +216,18 @@ def fetch_cmd(
     device: Annotated[
         str | None,
         typer.Option(
-            "--device", help="Browser tier: emulate a Patchright device preset (e.g. 'iPhone 13')."
+            "--device",
+            help="Browser tier: emulate a Patchright device preset (e.g. 'iPhone 13'). "
+            "List them with `polyfetch devices`.",
+        ),
+    ] = None,
+    device_json: Annotated[
+        str | None,
+        typer.Option(
+            "--device-json",
+            help="Browser tier: a custom device bundle as JSON "
+            '(e.g. \'{"user_agent": "...", "viewport": {"width": 411, "height": 914}}\'). '
+            "Mutually exclusive with --device.",
         ),
     ] = None,
     viewport: Annotated[
@@ -271,7 +298,7 @@ def fetch_cmd(
         wait_for_selector=wait_for_selector,
         wait_for_function=wait_for_function,
         screenshot=screenshot,
-        device=device,
+        device=_resolve_device(device, device_json),
         viewport=viewport,
         color_scheme=color_scheme,
         user_agent=user_agent,
@@ -292,6 +319,8 @@ def fetch_cmd(
             last_modified=if_modified_since,
             render=render,
         )
+    except ValueError as exc:  # bad argument (e.g. unknown device preset) — not a fetch failure
+        raise typer.BadParameter(str(exc)) from exc
     except FetchError as exc:
         if json_output:
             typer.echo(json.dumps(_error_payload(url, exc)))
@@ -436,6 +465,13 @@ def discover_cmd(
 
 # Bind 'discover' as the command name (function name kept distinct from the import)
 app.registered_commands[-1].name = "discover"
+
+
+@app.command()
+def devices() -> None:
+    """List the Patchright device presets usable with `fetch --device`."""
+    for name in available_devices():
+        typer.echo(name)
 
 
 def _chromium_ok() -> bool:  # pragma: no cover - launches a real browser; not unit-testable

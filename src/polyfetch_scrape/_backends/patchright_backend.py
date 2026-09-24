@@ -2,9 +2,10 @@ import contextlib
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from difflib import get_close_matches
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from patchright.sync_api import TimeoutError as PwTimeoutError
 from patchright.sync_api import sync_playwright
@@ -67,17 +68,46 @@ def attempt(
     raise FetchError(msg) from last.error
 
 
+def available_devices() -> list[str]:
+    """Sorted names of the Patchright device presets (starts the driver; launches no browser)."""
+    with sync_playwright() as pw:
+        # Same `pw: Any` convention as the rest of this module — patchright types `.devices`
+        # as Dict[Unknown, Unknown], and its keys are the preset names.
+        registry: Any = pw
+        return sorted(cast("dict[str, Any]", registry.devices))
+
+
+def _device_bundle(pw: Any, device: str | Mapping[str, Any]) -> Mapping[str, Any]:
+    """Resolve a device to its ``new_context`` kwargs: a registry name, or a custom bundle.
+
+    A mapping is used verbatim, so callers can drive a device the registry doesn't carry.
+    An unknown *name* raises ``ValueError`` naming the alternatives — a bare ``KeyError``
+    told the caller nothing about what was available.
+    """
+    if not isinstance(device, str):
+        return device
+    try:
+        return pw.devices[device]  # spread directly — new_context accepts default_browser_type
+    except KeyError:
+        # Name the near-misses rather than dumping ~200 presets — the full list is a
+        # command away, and a wall of text is no friendlier than the bare KeyError was.
+        close = get_close_matches(device, list(pw.devices), n=3)
+        hint = f" Did you mean: {', '.join(close)}?" if close else ""
+        raise ValueError(
+            f"unknown device preset {device!r} ({len(pw.devices)} available).{hint}"
+            " List them all with `polyfetch devices`."
+        ) from None
+
+
 def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
     """Build browser.new_context(**kwargs) from RenderOptions emulation/video fields.
 
-    Device preset first (a bundle of user_agent/viewport/is_mobile/...), then explicit
-    fields override it. record_video_* map to Patchright's {width,height} shape.
+    Device bundle first (user_agent/viewport/is_mobile/...), then explicit fields override
+    it. record_video_* map to Patchright's {width,height} shape.
     """
     kwargs: dict[str, Any] = {}
     if opts.device is not None:
-        kwargs.update(
-            pw.devices[opts.device]
-        )  # spread directly — new_context accepts default_browser_type
+        kwargs.update(_device_bundle(pw, opts.device))
     if opts.viewport is not None:
         kwargs["viewport"] = {"width": opts.viewport[0], "height": opts.viewport[1]}
     if opts.user_agent is not None:
@@ -244,6 +274,9 @@ def _apply_actions(page: Any, actions: tuple[RenderAction, ...], timeout_ms: int
             page.get_by_text(action.text).click(timeout=timeout_ms)
         elif action.verb == "fill":
             page.fill(action.selector, action.value, timeout=timeout_ms)
+        elif action.verb == "type":
+            # Char-by-char so a framework-controlled input's onChange actually fires (#177).
+            page.locator(action.selector).press_sequentially(action.value, delay=action.ms)
         elif action.verb == "wait_for_selector":
             page.wait_for_selector(action.selector, timeout=timeout_ms)
         elif action.verb == "wait_ms":

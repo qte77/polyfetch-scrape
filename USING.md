@@ -72,13 +72,14 @@ with render_session(url) as s:
 | `polyfetch bulk <file> [--workers N]` | one URL per line (`#`/blank skipped) → JSON-lines |
 | `polyfetch discover <url> [--json]` | structured entrypoints (sitemaps/feeds/`llms.txt`/JSON-LD `@type`s) → JSON |
 | `polyfetch doctor [--fix]` | check the browser-tier Chromium is installed (exit non-zero if missing); `--fix` installs it. Handy when borrowing this venv — the Chromium cache can get wiped |
+| `polyfetch devices` | list the device presets usable with `fetch --device`, one per line |
 | `polyfetch --help` / `polyfetch --version` | discover the surface / print version |
 
 `fetch` flags: `--tier httpx|curl_cffi|patchright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|patchright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`.
 
 `fetch` **patchright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|full_page|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
 
-`fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path` and, with `--json`, is surfaced as `video_path` — the exact auto-generated filename).
+`fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"` — list them with `polyfetch devices`; an unknown name exits `2` and suggests near-misses), `--device-json '<json object>'` (a custom device bundle for a device the registry doesn't carry, e.g. `'{"user_agent": "…", "viewport": {"width": 411, "height": 914}, "is_mobile": true}'` — mutually exclusive with `--device`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path` and, with `--json`, is surfaced as `video_path` — the exact auto-generated filename).
 
 `bulk` flags: `--workers N` (concurrency), `--delay S` (per-host polite spacing — min seconds between same-host requests, shared across workers), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 

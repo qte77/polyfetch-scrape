@@ -63,6 +63,34 @@ On an exception inside the `with` block, `render_session` captures an `"exceptio
 screenshot into `s.screenshots` before teardown — useful for post-mortem debugging a
 failed walk without adding your own try/except.
 
+## Framework-controlled inputs — type, don't fill
+
+`s.fill()` (and the `fill` action verb) sets the DOM value directly. On a **controlled
+component** — React/Vue/Svelte inputs whose value is bound to framework state — that
+leaves the framework's internal state stale, because the `keydown`/`input` events its
+`onChange` listens for never fire. The field *looks* filled and the submit sends the
+old or empty value:
+
+```python
+with render_session(url) as s:
+    s.fill("#email", user)       # DOM value set…
+    s.fill("#password", pw)      # …framework state never updated
+    s.submit()                   # server receives EMPTY credentials
+```
+
+Type character-by-character instead, which fires the real key events:
+
+```python
+with render_session(url) as s:
+    s.page.locator("#email").press_sequentially(user, delay=25)
+    s.page.locator("#password").press_sequentially(pw, delay=25)
+    s.submit()
+```
+
+Keep `s.fill()` for plain/uncontrolled forms — it is faster and perfectly correct there.
+Like the `evaluate` gotcha below, this one fails *silently*: nothing raises, you just get
+the wrong data submitted.
+
 ## Live emulation on `.page`
 
 `s.page` exposes Patchright's live emulation calls for changes mid-session:

@@ -12,3 +12,6 @@ htmlcov/
 
 # Generated screenshots from the example scripts (regenerable via make demo_tiers / make render)
 examples/screenshots/*.png
+
+# Agent scratch memory — per-session, never shared state
+MEMORY.md

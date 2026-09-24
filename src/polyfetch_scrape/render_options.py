@@ -1,11 +1,12 @@
 """Browser-tier render controls, grouped into one options object for ``fetch()``."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 WaitUntil = Literal["domcontentloaded", "load", "networkidle"]
-ActionVerb = Literal["click", "click_text", "fill", "wait_for_selector", "wait_ms"]
+ActionVerb = Literal["click", "click_text", "fill", "type", "wait_for_selector", "wait_ms"]
 ColorScheme = Literal["light", "dark", "no-preference"]
 
 
@@ -14,7 +15,12 @@ class RenderAction:
     """One scripted step run on the patchright tier *before* capture.
 
     - ``click`` (selector) / ``click_text`` (text): click an element.
-    - ``fill`` (selector, value): type ``value`` into an input.
+    - ``fill`` (selector, value): set ``value`` on an input in one shot.
+    - ``type`` (selector, value, ms): type ``value`` character-by-character with an
+      optional ``ms`` per-key delay. Prefer this over ``fill`` on **framework-controlled
+      inputs** (React/Vue/Svelte): ``fill`` sets the DOM value without firing the
+      ``keydown``/``input`` events the framework's ``onChange`` listens for, so its state
+      stays stale and the submit silently carries empty or old values.
     - ``wait_for_selector`` (selector): block until the selector appears.
     - ``wait_ms`` (ms): fixed pause, for SPAs that settle on a timer.
     """
@@ -59,8 +65,11 @@ class RenderOptions:
     - ``capture_console``: collect console + uncaught-JS errors onto ``Response.console_errors``.
     - ``capture_network_failures``: collect failed requests + HTTP ``>= 400`` responses onto
       ``Response.network_failures``. Both off by default (zero overhead unless asked).
-    - ``device``: a Patchright device preset name (e.g. ``"iPhone 13"``) — spreads
-      ``pw.devices[device]`` (user_agent/viewport/is_mobile/...) at ``new_context()`` time.
+    - ``device``: either a Patchright device preset **name** (e.g. ``"iPhone 13"``) or a full
+      custom bundle as a mapping (``user_agent``/``viewport``/``is_mobile``/``has_touch``/
+      ``device_scale_factor``/...) for a device the registry does not carry. Spread at
+      ``new_context()`` time. An unknown preset name raises ``ValueError`` naming the
+      available presets.
     - ``viewport`` / ``color_scheme`` / ``user_agent`` / ``locale``: emulation set at
       ``new_context()`` time; explicit values override anything ``device`` set. These are
       also changeable post-hoc on ``.page`` for the scripting substrate (``render_session``) —
@@ -80,7 +89,7 @@ class RenderOptions:
     capture_console: bool = False
     capture_network_failures: bool = False
     viewport: tuple[int, int] | None = None
-    device: str | None = None
+    device: str | Mapping[str, Any] | None = None
     color_scheme: ColorScheme | None = None
     user_agent: str | None = None
     locale: str | None = None
