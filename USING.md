@@ -45,6 +45,14 @@ via `RenderOptions(capture_console=True, capture_network_failures=True)` → `Re
 > **Caveat:** a headless capture reflects only *this* runner's network — a failure a real user hits
 > (CORS / a browser extension / a proxy) can succeed here and read clean. Treat an empty capture as
 > "no error *on this network*", not "no error".
+>
+> **Caveat:** `page.evaluate` runs in an **isolated world** under Patchright. The DOM is shared, but
+> globals defined by the page's own scripts (`window.Chart`, `window.THREE`, module-scoped vars) read
+> back `undefined` even when they exist and work. This fails *silently* — `evaluate` returns
+> `undefined` rather than raising, so an assertion on page state yields a confident, wrong "it did not
+> render". Use **screenshots as ground truth** for "did it render", `page.on(...)` for "did it load",
+> and reserve `evaluate` for DOM you set or read structurally (element presence, attributes,
+> `textContent`).
 
 ### Other `.page` recipes
 
@@ -90,6 +98,10 @@ with render_session(url) as s:
   `jq -r .screenshot_b64 | base64 -d`.
 - `video_path` (fetch `--json` only) = filesystem path to the recorded `.webm`, present **only** when
   `--video-out DIR` recorded one on the patchright tier; absent otherwise.
+- `permanent_redirect_to` (fetch **and** every `bulk` line) = the `Location` target of a **permanent**
+  redirect (301/308), present **only** when the response was one; absent otherwise. polyfetch does not
+  auto-follow redirects (SSRF-safe, transparent), so on a 301 you get `status:301, bytes:0` — read this
+  key and re-fetch the target yourself. Temporary redirects (302/303/307) never set it.
 - Need the page content, not metadata? use `--show-body`.
 
 `discover --json` emits the structured entrypoints a site advertises (empty arrays when none):
@@ -124,6 +136,20 @@ uv run --directory <polyfetch> patchright install chromium   # ~300 MB; tiers 1�
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
+- **SSRF guard is literal-IP-only, and only on the discovery paths.** `discover()` /
+  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the `easter-hunt` contrib follow
+  attacker-influenced URLs (sitemap entries, feed links, JSON-LD), so they refuse a host that is a
+  literal internal IP. Plain `fetch()` is **not** guarded. The scope is deliberate but asymmetric:
+
+  | URL passed to `discover()` | Result |
+  |---|---|
+  | `http://127.0.0.1:8080/` | blocked — `ValueError` (CLI: exit `2`) |
+  | `http://localhost:8080/` | **passes** — a DNS name, not a literal IP |
+
+  Same destination, opposite outcome. Any DNS name resolving to an internal address passes, so this
+  is not a defence against a hostile sitemap; treat it as a guard against the obvious mistake. The
+  `localhost` route is load-bearing for local E2E (driving a dev server) — use `localhost`, not
+  `127.0.0.1`, when pointing polyfetch at your own machine.
 
 ## Stable surface (what you may depend on)
 

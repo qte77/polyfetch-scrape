@@ -100,13 +100,20 @@ def main_callback(  # pyright: ignore[reportUnusedFunction]
 
 
 def _summarize(resp: Response) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "url": resp.url,
         "status": resp.status,
         "backend": resp.backend,
         "bytes": len(resp.body),
         "content_type": resp.content_type,
     }
+    if resp.permanent_redirect_to is not None:
+        # Present only on a permanent redirect (301/308), mirroring the conditional
+        # screenshot_b64 / video_path keys. Lives here rather than at the fetch call site
+        # because bulk needs it too: without it a CLI consumer sees status:301, bytes:0 and
+        # cannot learn where to re-fetch (#188).
+        payload["permanent_redirect_to"] = resp.permanent_redirect_to
+    return payload
 
 
 def _format_text(payload: dict[str, Any]) -> str:
