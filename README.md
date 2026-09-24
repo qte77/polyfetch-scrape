@@ -16,6 +16,26 @@
 
 Claude Code's built-in **WebFetch** exposes no header parameters in its public schema, so callers cannot set `User-Agent`, `Accept`, or `Referer` — and its default UA is empirically rejected (HTTP 403) by sites with non-trivial bot detection (`hamiltoncompany.com`, `thingiverse.com`, `web.archive.org`). Header spoofing alone often isn't enough: many blocks key on the TLS/JA3 fingerprint, not the UA string. `polyfetch-scrape` is the next rung — browser-shape headers in the cheap tier, real TLS impersonation in the middle tier, and headless Chromium with anti-detection patches as the fallback — escalating only when a tier is actually blocked.
 
+## Quickstart
+
+### Install
+
+```bash
+uv add git+https://github.com/qte77/polyfetch-scrape   # not published to PyPI
+uv run patchright install chromium                     # one-off; required only for the patchright tier
+```
+
+Or **borrow it without installing at all** — see [`USING.md`](USING.md).
+
+### Library
+
+```python
+from polyfetch_scrape import fetch
+
+r = fetch("https://nowsecure.nl/")
+print(r.status, r.backend, len(r.body))     # 200 httpx 179447  (the tier that answers depends on the target's current anti-bot posture)
+```
+
 ## What
 
 - **One call, typed result.** `fetch(url)` returns a typed `Response` (`status`, `body`, `backend`, …) no matter which backend succeeded — you never pick a scraping tool per site.
@@ -52,24 +72,6 @@ Which side a given knob falls on is settled by the **ownership line** in [`docs/
 ## How
 
 **I am a:** [Library user](#library) | [CLI user](#cli) | [Script author](#two-layers-engine--scripting-substrate) | [Agent / sideload](USING.md) | [Contributor](#development)
-
-### Install
-
-```bash
-uv add git+https://github.com/qte77/polyfetch-scrape   # not published to PyPI
-uv run patchright install chromium                     # one-off; required only for the patchright tier
-```
-
-Or **borrow it without installing at all** — see [`USING.md`](USING.md).
-
-### Library
-
-```python
-from polyfetch_scrape import fetch
-
-r = fetch("https://nowsecure.nl/")
-print(r.status, r.backend, len(r.body))     # 200 httpx 179447  (the tier that answers depends on the target's current anti-bot posture)
-```
 
 ### CLI
 
