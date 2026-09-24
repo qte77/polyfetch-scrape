@@ -16,6 +16,7 @@
 - `make quick_validate` — fast feedback (lint + pyright)
 - `make test` — unit tests (no network)
 - `make validate` — full pre-commit: lint + pyright + complexipy + coverage
+- `make audit` — dependency vulnerability scan (needs network; separate from `validate`)
 
 **Probing (ad-hoc URL fetches via the CLI):**
 
@@ -41,6 +42,7 @@
 | `make lint_tests` | Format + lint `tests/` with ruff | |
 | `make type_check` | Static type check with pyright (strict) | |
 | `make complexity` | Cognitive complexity with complexipy | Default threshold 15 |
+| `make audit` | Scan dependencies for known vulnerabilities (`pip-audit`) | Queries PyPI's advisory API, so it needs network — deliberately **not** part of `validate`, which must stay runnable offline. CI runs it as its own step. |
 | `make test` | Run unit tests (verbose; e2e skipped) | |
 | `make test_e2e` | Run e2e tests against real network | Opt-in; requires `make setup_browsers` |
 | `make test_coverage` | Unit tests with coverage threshold | Threshold 90 % |
@@ -103,7 +105,16 @@ All non-trivial changes add a [scriv](https://scriv.readthedocs.io/) **fragment*
 - **Topical commits within a PR** — split by concern, not by file. Each commit should be reviewable independently.
 - **Squash-merge** PRs into `main`; keep the topical-commit list in the PR description for the merge commit body.
 - **Branch names**: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, etc.
-- **Releases** are automated — see [README → Versioning](README.md#versioning): run the **Bump version** workflow (it bumps the version files and runs `scriv collect` to fold `changelog.d/` fragments into a dated `CHANGELOG.md` section), then merge the `chore(release)` PR **with a PAT** so **Tag and Release** fires.
+- **Releases** are automated — see [Releases and versioning](#releases-and-versioning) below.
+
+## Releases and versioning
+
+Two-step release pipeline (GitHub Actions), mirroring the qte77 sibling repos:
+
+1. **Bump** — run the **Bump version** workflow (`workflow_dispatch`; pick major/minor/patch). It bumps `pyproject.toml`, the `uv.lock` self-reference, and the README badge via [`bump-my-version`](https://github.com/callowayproject/bump-my-version), then collects the `changelog.d/` fragments into a dated `CHANGELOG.md` section via [`scriv`](https://scriv.readthedocs.io/), and opens a `chore(release)` PR.
+2. **Tag + release** — **merge that PR with a PAT** (a `GITHUB_TOKEN` push won't re-trigger workflows). The **Tag and Release** workflow then tags `vX.Y.Z` on the merge commit and publishes the GitHub Release from the matching `CHANGELOG.md` section.
+
+Per PR, add a changelog fragment (`make changelog_new`) instead of editing `CHANGELOG.md` — the bump collects them into the release section.
 
 ## Project conventions (quick reference)
 

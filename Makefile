@@ -1,5 +1,5 @@
 .PHONY: setup_uv setup_dev setup_browsers doctor lint_src lint_tests type_check complexity \
-        test test_e2e test_coverage validate ci quick_validate probe probe_bulk hunt \
+        audit test test_e2e test_coverage validate ci quick_validate probe probe_bulk hunt \
         discover demo_tiers render screencast changelog_new changelog_preview changelog_release help
 .DEFAULT_GOAL := help
 
@@ -37,6 +37,11 @@ type_check:  ## Static type check with pyright
 
 complexity:  ## Cognitive complexity with complexipy
 	uv run complexipy -q .
+
+# Queries PyPI's advisory API, so it is deliberately NOT part of validate —
+# the pre-commit gate must stay runnable offline. CI runs it as its own step.
+audit:  ## Scan dependencies for known vulnerabilities (needs network)
+	uv run pip-audit --skip-editable
 
 test:  ## Run unit tests (verbose; e2e skipped by default)
 	uv run pytest -vv --tb=short
