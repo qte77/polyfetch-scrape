@@ -13,6 +13,112 @@ Per-PR changes are staged as [scriv](https://scriv.readthedocs.io/) fragments in
 
 <!-- scriv-insert-here -->
 
+## [0.8.0] - 2026-09-25
+
+### Added
+
+- `make audit` — dependency vulnerability scan via `pip-audit`. Runs as its own CI step; deliberately
+  kept out of `make validate` so the pre-commit gate stays runnable offline.
+
+- `permanent_redirect_to` is now emitted in `polyfetch fetch --json` **and** every `polyfetch bulk`
+  JSON line, present only when the response was a permanent redirect (301/308). polyfetch does not
+  auto-follow redirects, so previously a CLI consumer saw `status:301, bytes:0` with no way to learn
+  the target and dead-ended on any redirecting URL. The library already captured it on `Response`;
+  only the CLI schema was missing.
+
+- **Custom device bundles** (#191): `RenderOptions(device=...)` now also accepts a mapping
+  (`user_agent`/`viewport`/`is_mobile`/`has_touch`/`device_scale_factor`/...) for a device the
+  Patchright registry doesn't carry; on the CLI, `fetch --device-json '<json object>'` (mutually
+  exclusive with `--device`). Explicit `viewport`/`user_agent`/`locale`/`color_scheme` still
+  override the bundle.
+- **`polyfetch devices`** (#191) lists the device preset names usable with `--device`.
+- **`RenderAction("type", selector, value, ms)`** (#177): types character-by-character via
+  `press_sequentially`, with an optional per-key delay. Use it instead of `fill` on
+  framework-controlled (React/Vue/Svelte) inputs, where `fill` leaves framework state stale and
+  the submit silently sends empty values.
+
+- `docs/estate.md` — "Consuming polyfetch across the estate": the estate model (one
+  horizontal substrate, many consumers), the decidable ownership line, the env-borrow
+  consumption path, and the promotion rule for when a consumer need becomes core. Linked
+  from `README.md` References and `docs/architecture.md`.
+
+- `full_page` screenshot target on the patchright tier — `--screenshot full_page`,
+  `RenderOptions(screenshot="full_page")`, and `Screenshot(target="full_page")` capture the
+  whole scrollable page. Previously disabled because older patchright wrote 0 bytes on tall
+  pages; re-enabled after verifying patchright 1.61.2 writes the full image. On an
+  `is_mobile` emulated device the capture clips to the viewport rather than scrolling.
+  ([#132](https://github.com/qte77/polyfetch-scrape/issues/132))
+
+- **`.claude/workflows/perf-cwv-pass.js`** — the estate-shared CWV perf pass (relocated here from
+  a downstream consumer repo by owner decision). It drives `make <target>` (default `perf_cwv`) in a consumer repo
+  passed via `args.repo` (default: the current session repo) and, given `args.baseline`, returns a
+  per-combo regression verdict. **No polyfetch coupling** — polyfetch only hosts the file; the contract
+  is that the consumer's recipe writes `results/ui-check/<ts>_perf/metrics.json`
+  (`{"<page>-<profile>": {fcp,lcp,cls,dcl,load,requests,bytes}}`). Reference implementation:
+  that consumer repo's own `scripts/perf_cwv.py`.
+
+### Changed
+
+- `examples/render_screenshot.py` / `make render` now demo the emulation/video
+  RenderOptions (`--device`/`--color-scheme`/`--video-out`).
+
+- Aligned the README badge block to the `qte77` sibling-repo convention (License/Version/Coverage/Python/CodeQL/CodeFactor/Test/Lint MD and Links), adding CodeQL and Lint MD and Links badges and a static coverage badge for this repo's existing workflows/threshold.
+- Refreshed `examples/fallback-tier-targets.txt` and the `docs/scraping-landscape.md` empirical probe table with live 2026-07-16 re-probe results (new demo targets; two stale rows marked decayed).
+
+- `README.md` restructured to lead with **Why** (previously stranded below ~100 lines of What/How),
+  followed by a new **Quickstart** (install + a two-line `fetch()` example, moved up from How) so
+  something runnable is on the first screen: hero → why → quickstart → what → how → references →
+  license.
+- Release/versioning detail moved from `README.md` into
+  `CONTRIBUTING.md` → "Releases and versioning"; the README now
+  links to it instead of duplicating it. The README's engine/scripts "where the line falls" paragraph
+  likewise defers to the ownership line in `docs/architecture.md`.
+
+- `USING.md` now documents three things consumers previously had to discover the hard way: the new
+  `permanent_redirect_to` key, the **isolated-world `page.evaluate`** caveat (page-script globals read
+  back `undefined` even when they exist — a silent false negative), and the **literal-IP-only scope**
+  of the SSRF guard, including why `localhost` is reachable while `127.0.0.1` is not.
+
+- `docs/architecture.md` records the ratified estate decision on pydantic (#164): polyfetch stays
+  pydantic-free at the substrate; consumers own their own config choice.
+- `README.md` references [web-recon-kit](https://github.com/qte77/web-recon-kit) as a downstream
+  consumer whose browser tier builds on `render_session()`.
+
+- An unknown `--device` / `RenderOptions(device=...)` preset name now raises `ValueError` naming
+  up to three near-misses (CLI: exits `2`) instead of a bare `KeyError`.
+- `docs/scripting.md` gains a recipe for framework-controlled inputs: prefer
+  `press_sequentially()` over `fill()`.
+
+- Release-bump commits are now created via the GitHub GraphQL `createCommitOnBranch` mutation,
+  so GitHub signs them with its web-flow key and `main`'s signed-commits ruleset accepts them
+  automatically. This removes the manual `git commit --amend --reset-author` re-sign step from
+  every release, and needs no GPG secret and no additional allow-listed action.
+
+### Fixed
+
+- e2e: replaced the decay-prone `curl_cffi` auto-fallback e2e (its TLS-blocking target now answers on `httpx`) with a direct `curl_backend` capability test; corrected the README `nowsecure.nl` example (now `httpx`).
+
+- Install instructions pointed at `uv add polyfetch-scrape`, but the package is not published to
+  PyPI, so the documented install could never succeed. `README.md` and `USING.md` now use the
+  `git+https://` form.
+
+- `docs/roadmap.md` still listed permanent-redirect surfacing (#31) as ahead; it is marked shipped,
+  together with the `--json` surfacing (#188), custom device bundles + `polyfetch devices` (#191),
+  and the `type` action verb (#177).
+- `README.md` CLI examples now show `--device-json` and `polyfetch devices`; the `docs/architecture.md`
+  `cli.py` row lists every subcommand; `docs/userstory.md` notes the `--json` redirect key.
+
+- The **Bump version** workflow failed at job setup after `callowayproject/bump-my-version` moved to
+  1.5: the action became a composite that nests unpinned `actions/checkout@v7`,
+  `actions/setup-python@v7` and `ad-m/github-push-action@master` (the last one force-pushes to the
+  branch), which the repository's SHA-pinning Actions policy rejects. The workflow now runs the
+  pinned CLI directly (`uvx bump-my-version@1.5.1`), with the same outputs, and no third-party
+  action.
+- Its signed-commit step (first exercised end-to-end here) died with `jq: Argument list too long`:
+  each changed file's base64 was passed as a command-line argument, and `uv.lock` alone exceeds
+  Linux's 128 KiB per-argument limit. The payload is now built through files, and the release
+  branch is only created once the payload is ready, so a failure leaves no orphan branch.
+
 ## [0.7.0] - 2026-07-16
 
 ### Added
