@@ -8,7 +8,7 @@ urls_validated: 2026-07-06
 
 The scraping / crawling / extraction **tool catalog** (HTTP clients, browser automation, frameworks, AI scrapers, search APIs, managed platforms, document extraction, anti-bot bypass, decision flowchart) is maintained as a single source of truth in `ai-agents-research`:
 
-→ **[Web Scraping & Data Extraction — Tool Landscape (SSOT)](https://github.com/qte77/ai-agents-research/blob/main/docs/non-cc/web-scraping-extraction-landscape.md)** — catalog moved here 2026-06-16 ([ai-agents-research#248](https://github.com/qte77/ai-agents-research/pull/248)).
+→ **[Web Scraping & Data Extraction — Tool Landscape (SSOT)](https://github.com/qte77/ai-agents-research/blob/main/docs/non-cc/infrastructure/web-scraping-extraction-landscape.md)** — catalog moved here 2026-06-16 ([ai-agents-research#248](https://github.com/qte77/ai-agents-research/pull/248)); relocated under `infrastructure/` 2026-09-25 ([ai-agents-research#495](https://github.com/qte77/ai-agents-research/pull/495)).
 
 This repo retains only its own implementation-specific probe data below.
 

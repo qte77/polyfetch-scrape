@@ -28,7 +28,7 @@ Covered by: conditional requests — `fetch(url, etag=..., last_modified=...)` �
 > As a source-of-truth list, I want to know when a URL moved *permanently* so I can update my stored
 > address — and ignore temporary redirects.
 
-Covered by: `Response.permanent_redirect_to` on 301/308 (#31).
+Covered by: `Response.permanent_redirect_to` on 301/308 (#31), also emitted as `permanent_redirect_to` by `fetch` / `bulk --json` (#188).
 
 ## Caller scraping a JS-rendered page
 

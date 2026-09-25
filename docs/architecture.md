@@ -60,7 +60,7 @@ For how the estate consumes this substrate across repos — and the promotion ru
 | `utils/discovery.py` | `discover()` — structured-entrypoint discovery (sitemaps/feeds/`llms.txt`/JSON-LD `@type`) over `fetch()`; soft-404-guarded; returns URLs/types only (no extraction). Shares the SSRF guard via `utils/_ssrf.py`. |
 | `retry.py` | `RetryPolicy` + `should_retry` + `Retry-After` parsing and capped backoff. |
 | `errors.py` | Exception taxonomy: `FetchError` base + terminal `AuthRequired` / `GoneError` / `LegalBlock`. |
-| `cli.py` | Thin typer CLI over `fetch` / bulk; opt-in `contrib` subcommands. |
+| `cli.py` | Thin typer CLI: `fetch` / `bulk` / `discover`, plus the `devices` (list emulation presets) and `doctor` (browser-tier Chromium check) utilities; opt-in `contrib` subcommands. |
 
 ## Invariants
 
