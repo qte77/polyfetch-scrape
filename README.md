@@ -3,7 +3,7 @@
 > HTTP scraping toolkit: one typed `fetch()` over a reactive httpx → curl_cffi → Patchright fallback chain — TLS/JA3 impersonation, JS rendering, screenshots + interactive browser sessions, and a typed error taxonomy behind a single `Response`.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-informational)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-blue)](pyproject.toml)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](pyproject.toml)
 [![CodeQL](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml)
