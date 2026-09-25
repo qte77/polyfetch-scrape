@@ -36,8 +36,8 @@ Patch-stage refinements to the existing three-tier fallback so that
 non-fingerprint failure modes (auth, gone, rate-limit, legal block) are
 handled per RFC 9110 semantics instead of being retried/escalated blindly.
 
-**Status (2026-07):** #26, #27, #28, #29, #30, and #34 have shipped. Only **#31**
-(surfacing permanent redirects) remains before 0.3.x closes and v0.4.0 can be cut.
+**Status:** complete. #26, #27, #28, #29, #30, and #34 had shipped by 2026-07; #31
+(surfacing permanent redirects) closed on 2026-07-03.
 
 **Goals** (each tracked as its own issue):
 
@@ -67,9 +67,9 @@ scope** — they belong in downstream packages that consume `fetch()` (e.g.
 
 Core themes still ahead:
 
-- **Status-code completeness** — surface permanent redirects (301/308) on `Response` — [#31](https://github.com/qte77/polyfetch-scrape/issues/31)
+- **Status-code completeness** — ✅ shipped: permanent redirects (301/308) surfaced as `Response.permanent_redirect_to` ([#31](https://github.com/qte77/polyfetch-scrape/issues/31)) and in `fetch` / `bulk --json` ([#188](https://github.com/qte77/polyfetch-scrape/issues/188))
 - **Request bodies** — ✅ shipped: POST/PUT via `json` / `content` in `fetch()` (httpx/curl tiers) — [#46](https://github.com/qte77/polyfetch-scrape/issues/46)
-- **Browser-tier depth** — ✅ shipped: screenshots ([#68](https://github.com/qte77/polyfetch-scrape/issues/68); base64 inline in `fetch --json` [#105](https://github.com/qte77/polyfetch-scrape/issues/105)) + wait strategies / client-hydrated values ([#67](https://github.com/qte77/polyfetch-scrape/issues/67)) + scripted interactions ([#71](https://github.com/qte77/polyfetch-scrape/issues/71)) + opt-in console/network-failure capture ([#118](https://github.com/qte77/polyfetch-scrape/issues/118)) + interactive multi-step `render_session` ([#117](https://github.com/qte77/polyfetch-scrape/issues/117)) + named multi-screenshots ([#119](https://github.com/qte77/polyfetch-scrape/issues/119)) via `RenderOptions` / `render_session` + device/viewport/color-scheme/user-agent/locale emulation and VP8 video recording ([#162](https://github.com/qte77/polyfetch-scrape/issues/162)). Ahead: headed manual-takeover for captcha [#59](https://github.com/qte77/polyfetch-scrape/issues/59)
+- **Browser-tier depth** — ✅ shipped: screenshots ([#68](https://github.com/qte77/polyfetch-scrape/issues/68); base64 inline in `fetch --json` [#105](https://github.com/qte77/polyfetch-scrape/issues/105)) + wait strategies / client-hydrated values ([#67](https://github.com/qte77/polyfetch-scrape/issues/67)) + scripted interactions ([#71](https://github.com/qte77/polyfetch-scrape/issues/71)) + opt-in console/network-failure capture ([#118](https://github.com/qte77/polyfetch-scrape/issues/118)) + interactive multi-step `render_session` ([#117](https://github.com/qte77/polyfetch-scrape/issues/117)) + named multi-screenshots ([#119](https://github.com/qte77/polyfetch-scrape/issues/119)) via `RenderOptions` / `render_session` + device/viewport/color-scheme/user-agent/locale emulation and VP8 video recording ([#162](https://github.com/qte77/polyfetch-scrape/issues/162)) + custom device bundles (`device={...}` / `fetch --device-json`) and preset listing (`polyfetch devices`) ([#191](https://github.com/qte77/polyfetch-scrape/issues/191)) + a `type` action verb that fires real key events for framework-controlled inputs ([#177](https://github.com/qte77/polyfetch-scrape/issues/177)). Ahead: headed manual-takeover for captcha [#59](https://github.com/qte77/polyfetch-scrape/issues/59)
 - **Politeness & control** — ✅ shipped: min/max tier range (`min_tier`/`max_tier` — cap escalation or force a tier) [#80](https://github.com/qte77/polyfetch-scrape/issues/80); per-host polite throttle (`Throttle` / `bulk --delay`) [#49](https://github.com/qte77/polyfetch-scrape/issues/49)
 - **Operational tooling** — ✅ shipped: `polyfetch doctor [--fix]` checks (and can install) the browser-tier Chromium — handy when borrowing this venv, where the Chromium cache can get wiped ([#145](https://github.com/qte77/polyfetch-scrape/issues/145))
 - **Generic crawl utility** — ✅ shipped: sitemap.xml URL discovery (`utils.sitemap.fetch_sitemap_urls` — index recursion, gzip, `defusedxml`, SSRF-guarded) [#33](https://github.com/qte77/polyfetch-scrape/issues/33); structured-source discovery (`utils.discovery.discover` / `polyfetch discover` — sitemaps/feeds/`llms.txt`/JSON-LD entrypoints, soft-404-guarded) [#135](https://github.com/qte77/polyfetch-scrape/issues/135)
