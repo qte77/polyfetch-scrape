@@ -15,3 +15,8 @@ examples/screenshots/*.png
 
 # Agent scratch memory — per-session, never shared state
 MEMORY.md
+
+# Ephemeral local artifacts — never tracked. Put logs, PR-body drafts and throwaway
+# scripts under .scratch/ (CI logs, validate output, payload tests, ...).
+*.log
+.scratch/
