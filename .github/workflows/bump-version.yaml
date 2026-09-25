@@ -1,9 +1,11 @@
 ---
 name: Bump version
 
-# Step 1 of 2 of the release pipeline (see README "Versioning").
+# Step 1 of 2 of the release pipeline (see CONTRIBUTING "Releases and versioning").
 # Bumps the version files (pyproject.toml, uv.lock self-ref, README badge) via
-# bump-my-version, collects any changelog.d/ fragments into CHANGELOG.md via
+# bump-my-version (run with uvx — NOT the callowayproject action: since 1.5 it is a
+# composite action with unpinned nested actions, which the repo's SHA-pinning
+# policy rejects, and it force-pushes to the branch), collects any changelog.d/ fragments into CHANGELOG.md via
 # scriv, then opens a chore(release) PR. Tagging + the GitHub Release are handled
 # by tag-release.yaml when this PR merges to main (so the tag lands on the merge
 # commit, not a throwaway bump-branch commit).
@@ -55,16 +57,25 @@ jobs:
 
       - name: Bump version files (no commit/tag)
         id: bump
-        uses: callowayproject/bump-my-version@5e661b49ec79fce49eaad1c0698116c8505b0573 # 1.5.2
-        with:
-          args: ${{ inputs.bump_type }}
+        env:
+          BUMP_TYPE: ${{ inputs.bump_type }}
+          # Pinned; runs in an isolated uvx env so it never touches uv.lock.
+          BMV: bump-my-version@1.5.1
+        run: |
+          set -euo pipefail
+          prev="$(uvx "$BMV" show current_version)"
+          uvx "$BMV" bump "$BUMP_TYPE"
+          curr="$(uvx "$BMV" show current_version)"
+          {
+            echo "previous-version=$prev"
+            echo "current-version=$curr"
+            if [ "$prev" != "$curr" ]; then echo "bumped=true"; else echo "bumped=false"; fi
+          } >> "$GITHUB_OUTPUT"
 
       - name: Collect changelog fragments into CHANGELOG.md
         if: steps.bump.outputs.bumped == 'true'
         run: |
           if ls changelog.d/*.md >/dev/null 2>&1; then
-            # NOT --no-sync: the bump-my-version Docker action above wipes .venv, so
-            # scriv must be re-installed here or `uv run` spawns it from an empty env.
             uv run scriv collect --version "${{ steps.bump.outputs.current-version }}"
           else
             echo "no changelog fragments to collect"
@@ -84,10 +95,8 @@ jobs:
           # commits made through the API (web-flow key), so main's signed-commits
           # ruleset accepts them — no GPG secret, no extra allow-listed action, no
           # manual re-sign. The mutation applies fileChanges on top of an existing
-          # branch ref, so create the branch at the pre-bump base commit first.
+          # branch ref, created at the pre-bump base commit below.
           BASE_OID="$(git rev-parse HEAD)"
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-            -f ref="refs/heads/${BRANCH}" -f sha="${BASE_OID}"
 
           # Enumerate what bump-my-version + scriv changed, relative to base:
           # ACMR = files to add/update (need base64 contents), D = fragments scriv
@@ -96,32 +105,42 @@ jobs:
           mapfile -t ADDED < <(git diff --cached --name-only --diff-filter=ACMR "${BASE_OID}")
           mapfile -t DELETED < <(git diff --cached --name-only --diff-filter=D "${BASE_OID}")
 
-          additions='[]'
+          # Build fileChanges through files, never argv: base64 of uv.lock alone
+          # exceeds Linux's 128 KiB per-argument limit (jq "Argument list too long").
+          work="$(mktemp -d)"
+          : > "$work/additions.jsonl"
+          : > "$work/deletions.jsonl"
           for f in "${ADDED[@]:-}"; do
             [ -n "$f" ] || continue
-            additions="$(jq -c --arg p "$f" --arg c "$(base64 -w0 "$f")" \
-              '. + [{path: $p, contents: $c}]' <<<"$additions")"
+            base64 -w0 "$f" > "$work/b64"
+            jq -cn --arg p "$f" --rawfile c "$work/b64" '{path: $p, contents: $c}' \
+              >> "$work/additions.jsonl"
           done
-          deletions='[]'
           for f in "${DELETED[@]:-}"; do
             [ -n "$f" ] || continue
-            deletions="$(jq -c --arg p "$f" '. + [{path: $p}]' <<<"$deletions")"
+            jq -cn --arg p "$f" '{path: $p}' >> "$work/deletions.jsonl"
           done
 
+          # Build the payload before creating the branch, so a failure above
+          # leaves no orphan bump branch behind.
           jq -n \
             --arg repo "$GITHUB_REPOSITORY" \
             --arg branch "$BRANCH" \
             --arg oid "$BASE_OID" \
             --arg headline "chore(release): bump $PREV_VERSION -> $VERSION" \
-            --argjson additions "$additions" \
-            --argjson deletions "$deletions" \
+            --slurpfile additions "$work/additions.jsonl" \
+            --slurpfile deletions "$work/deletions.jsonl" \
             '{query: "mutation($i: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $i) { commit { oid } } }",
               variables: {i: {
                 branch: {repositoryNameWithOwner: $repo, branchName: $branch},
                 message: {headline: $headline},
                 expectedHeadOid: $oid,
                 fileChanges: {additions: $additions, deletions: $deletions}}}}' \
-            | gh api graphql --input -
+            > "$work/payload.json"
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/heads/${BRANCH}" -f sha="${BASE_OID}"
+          gh api graphql --input "$work/payload.json"
 
           gh pr create \
             --base "$BASE" \
