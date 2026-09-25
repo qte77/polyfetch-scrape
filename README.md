@@ -84,6 +84,8 @@ polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright   # force the 
 polyfetch fetch https://example.com --max-tier curl_cffi   # cap escalation — never launch a browser
 polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright --screenshot viewport --screenshot-out shot.png   # render + screenshot
 polyfetch fetch https://example.com --tier patchright --device "iPhone 13" --video-out ./videos --json   # emulate a device + record a .webm
+polyfetch fetch https://example.com --tier patchright --device-json '{"viewport": {"width": 412, "height": 915}, "is_mobile": true}'   # a custom device bundle
+polyfetch devices   # list the device presets --device accepts
 polyfetch bulk urls.txt --workers 4 --delay 0.5   # 4 workers, ≥0.5s between same-host requests
 polyfetch discover https://example.com --json   # structured entrypoints: sitemaps/feeds/llms.txt/JSON-LD
 polyfetch doctor --fix   # verify (and install) the browser-tier Chromium
