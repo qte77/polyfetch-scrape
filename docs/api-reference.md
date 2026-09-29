@@ -151,7 +151,7 @@ CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(Discov
 
 ## CLI-only commands
 
-`polyfetch doctor [--fix]` — checks whether the browser-tier (patchright) Chromium binary is installed; exits non-zero when it's missing. `--fix` installs it. No Python equivalent — CLI-only. Handy when borrowing this repo's venv via `uv run --directory` (see [USING.md](../USING.md)), where the Chromium cache can get wiped between runs.
+`polyfetch doctor [--fix]` — checks whether the browser-tier (patchright) Chromium binary is installed; exits non-zero when it's missing. `--fix` installs it. No Python equivalent — CLI-only. Handy when borrowing this repo's venv via `uv run --directory` (see [USING.md](../USING.md)), where the Chromium cache can get wiped between runs. **On musl (Alpine)** — patchright publishes no `musllinux` wheel, so the browser tier cannot run there at all; `doctor` detects this and exits non-zero with a message naming the workaround (`--max-tier curl_cffi` / `max_tier="curl_cffi"`) before probing or trying to install anything (#197). The httpx and curl_cffi tiers are unaffected.
 
 `polyfetch devices` — lists the Patchright device preset names usable with `fetch --device` (or `RenderOptions(device=...)`), one per line. Starts the Patchright driver but launches no browser. No public Python equivalent — the enumeration lives in the private backend. For a device the registry doesn't carry, pass a custom bundle instead: `fetch --device-json '{...}'` / `RenderOptions(device={...})`.
 

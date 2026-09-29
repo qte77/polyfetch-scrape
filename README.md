@@ -27,6 +27,8 @@ uv run patchright install chromium                     # one-off; required only 
 
 Or **borrow it without installing at all** — see [`USING.md`](USING.md).
 
+**Alpine/musl**: patchright has no `musllinux` wheel, so the browser tier doesn't run there; `polyfetch doctor` reports this with the workaround (httpx/curl_cffi tiers are unaffected) — see [`docs/api-reference.md`](docs/api-reference.md#cli-only-commands).
+
 ### Library
 
 ```python
