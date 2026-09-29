@@ -10,6 +10,19 @@ AAAA) must be external before the caller connects. That closes the hole where
 ``localhost``, a name pinned to ``169.254.169.254``, or a name answering with one
 public and one RFC1918 address sailed through the old literal-IP-only check.
 
+"Internal" is an **allowlist**, not a list of named ranges: an address is
+internal unless :attr:`ipaddress.IPv4Address.is_global` /
+:attr:`~ipaddress.IPv6Address.is_global` says it is globally routable, or it is
+multicast (``is_global`` is ``True`` for some multicast ranges, so that check
+stays explicit alongside the allowlist). Checking named flags individually
+(``is_private``, ``is_loopback``, ``is_link_local``, ``is_unspecified``,
+``is_reserved``) missed **shared/CGNAT address space** (RFC 6598,
+``100.64.0.0/10``) — none of those flags cover it, only ``is_global`` does —
+and that range hosts real cloud instance-metadata endpoints (e.g. Alibaba
+Cloud's ``100.100.100.200``), the same class of target ``169.254.169.254``
+is. The allowlist form also subsumes RFC 5737 documentation ranges and RFC
+2544 benchmarking space (``198.18.0.0/15``) for free.
+
 Redirect targets go through the same check via :func:`check_redirect`: the URL a
 response actually landed on, and an unfollowed 301/308 ``Location``, are both
 re-checked so a public host cannot bounce a guarded fetch onto an internal one.
@@ -112,15 +125,9 @@ def _unmap(addr: _IPAddress) -> _IPAddress:
 
 
 def _is_internal(addr: _IPAddress) -> bool:
+    """Allowlist, not a list of named ranges — see the module docstring."""
     addr = _unmap(addr)
-    return (
-        addr.is_private
-        or addr.is_loopback
-        or addr.is_link_local
-        or addr.is_unspecified
-        or addr.is_reserved
-        or addr.is_multicast
-    )
+    return not addr.is_global or addr.is_multicast
 
 
 def _resolve(host: str) -> list[str]:
