@@ -20,3 +20,6 @@ MEMORY.md
 # scripts under .scratch/ (CI logs, validate output, payload tests, ...).
 *.log
 .scratch/
+
+# Git worktrees created for parallel subagents (Agent tool `isolation: "worktree"`)
+.claude/worktrees/
