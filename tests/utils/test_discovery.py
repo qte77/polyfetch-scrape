@@ -9,6 +9,7 @@ from polyfetch_scrape.response import Response
 from polyfetch_scrape.utils.discovery import discover
 
 _HTML_SHELL = b"<!doctype html><html><head></head><body>app</body></html>"
+_RESOLVER = "polyfetch_scrape.utils._ssrf._resolve"
 
 
 @pytest.fixture(autouse=True)
@@ -142,6 +143,38 @@ def test_ssrf_blocks_internal_origin(monkeypatch: pytest.MonkeyPatch, host: str)
 
     with pytest.raises(ValueError, match="SSRF"):
         discover(f"http://{host}")
+
+
+@pytest.mark.parametrize(
+    ("host", "address"),
+    [
+        ("localhost", "127.0.0.1"),  # loopback via a DNS alias
+        ("metadata.google.internal", "169.254.169.254"),  # cloud IMDS via a DNS name
+    ],
+)
+def test_ssrf_blocks_origin_whose_host_resolves_internal(
+    monkeypatch: pytest.MonkeyPatch, host: str, address: str
+) -> None:
+    monkeypatch.setattr(_RESOLVER, lambda _h: [address])
+    _patch(monkeypatch, {})
+
+    with pytest.raises(ValueError, match="SSRF"):
+        discover(f"http://{host}")
+
+
+def test_ssrf_blocks_probe_redirected_onto_internal_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The probed origin is public, but the tier followed a 30x onto an RFC1918
+    # host — discover() must refuse the landed response rather than parse it.
+    monkeypatch.setattr(
+        _RESOLVER, lambda h: ["10.0.0.5"] if h == "intranet.test" else ["93.184.216.34"]
+    )
+    landed = _resp("Sitemap: https://ex.com/sitemap.xml", url="http://intranet.test/robots.txt")
+    _patch(monkeypatch, {"https://ex.com/robots.txt": landed})
+
+    with pytest.raises(ValueError, match="SSRF"):
+        discover("https://ex.com")
 
 
 @respx.mock

@@ -10,6 +10,7 @@ from polyfetch_scrape.response import Response
 from polyfetch_scrape.utils.sitemap import fetch_sitemap_urls
 
 _NS = 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'
+_RESOLVER = "polyfetch_scrape.utils._ssrf._resolve"
 
 
 @pytest.fixture(autouse=True)
@@ -129,6 +130,56 @@ def test_ssrf_blocks_internal_initial_domain(monkeypatch: pytest.MonkeyPatch, ho
 def test_ssrf_blocks_internal_child_sitemap(monkeypatch: pytest.MonkeyPatch) -> None:
     mapping = {"https://ex.com/sitemap.xml": _resp(_index("http://169.254.169.254/child.xml"))}
     monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+
+    with pytest.raises(ValueError, match="SSRF"):
+        fetch_sitemap_urls("https://ex.com")
+
+
+@pytest.mark.parametrize(
+    ("host", "address"),
+    [
+        ("localhost", "127.0.0.1"),  # loopback via a DNS alias
+        ("metadata.google.internal", "169.254.169.254"),  # cloud IMDS via a DNS name
+    ],
+)
+def test_ssrf_blocks_domain_whose_host_resolves_internal(
+    monkeypatch: pytest.MonkeyPatch, host: str, address: str
+) -> None:
+    monkeypatch.setattr(_RESOLVER, lambda _h: [address])
+    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch({}))
+
+    with pytest.raises(ValueError, match="SSRF"):
+        fetch_sitemap_urls(f"http://{host}")
+
+
+def test_ssrf_blocks_child_sitemap_whose_host_resolves_internal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The index is attacker-controlled: a child <loc> can name an innocuous host
+    # that answers with the IMDS address.
+    monkeypatch.setattr(
+        _RESOLVER, lambda h: ["169.254.169.254"] if h == "imds.test" else ["93.184.216.34"]
+    )
+    mapping = {"https://ex.com/sitemap.xml": _resp(_index("https://imds.test/child.xml"))}
+    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+
+    with pytest.raises(ValueError, match="SSRF"):
+        fetch_sitemap_urls("https://ex.com")
+
+
+def test_ssrf_blocks_sitemap_redirected_onto_internal_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The requested sitemap URL is public, but the serving tier followed a 30x
+    # onto the IMDS address — the landed body must not be parsed.
+    monkeypatch.setattr(
+        _RESOLVER, lambda h: ["169.254.169.254"] if h == "imds.test" else ["93.184.216.34"]
+    )
+    landed = _resp(_urlset("https://ex.com/a"), url="http://imds.test/latest/meta-data/")
+    monkeypatch.setattr(
+        "polyfetch_scrape.utils.sitemap.fetch",
+        _mapping_fetch({"https://ex.com/sitemap.xml": landed}),
+    )
 
     with pytest.raises(ValueError, match="SSRF"):
         fetch_sitemap_urls("https://ex.com")
