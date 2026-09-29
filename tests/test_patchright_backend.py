@@ -99,6 +99,26 @@ def test_patchright_backend_returns_response_on_200(monkeypatch: pytest.MonkeyPa
     assert resp.content_type == "text/html"
 
 
+def test_patchright_backend_fails_loudly_on_musl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No musllinux patchright wheel → name the limitation instead of launching (#197)."""
+    page, _ = _make_pw_chain(monkeypatch)
+    monkeypatch.setattr("polyfetch_scrape._platform.is_musl", lambda: True)
+
+    with pytest.raises(FetchError) as excinfo:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    message = str(excinfo.value)
+    assert "musllinux" in message  # names the limitation
+    assert "--max-tier curl_cffi" in message  # names the workaround
+    page.goto.assert_not_called()  # the gate runs before any browser work
+
+
 def test_patchright_backend_raises_fingerprintblock_on_403(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

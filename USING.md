@@ -132,6 +132,8 @@ with render_session(url) as s:
 uv run --directory <polyfetch> patchright install chromium   # ~300 MB; tiers 1–2 don't need it
 ```
 
+Not on Alpine/musl, though — patchright has no `musllinux` wheel there. `polyfetch doctor` detects this and exits non-zero with the workaround instead of a cryptic launch failure; see [`docs/api-reference.md`](docs/api-reference.md#cli-only-commands). Tiers 1–2 (httpx, curl_cffi) are unaffected.
+
 ## Gotchas
 
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.

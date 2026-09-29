@@ -37,7 +37,7 @@
 | `make setup_uv` | Bootstrap uv + sync frozen deps | Only target that uses `pip` (one-line bootstrap) |
 | `make setup_dev` | Sync dev deps via uv | |
 | `make setup_browsers` | Install Patchright Chromium | Required only for patchright tier; ~300 MB |
-| `make doctor` | Check the browser-tier Chromium is installed; install if missing | Wraps `polyfetch doctor --fix`; idempotent; for borrowed-venv consumers |
+| `make doctor` | Check the browser-tier Chromium is installed; install if missing | Wraps `polyfetch doctor --fix`; idempotent; for borrowed-venv consumers. On musl (Alpine) exits non-zero with the workaround instead — see [`docs/api-reference.md`](docs/api-reference.md#cli-only-commands) |
 | `make lint_src` | Format + lint `src/` with ruff | |
 | `make lint_tests` | Format + lint `tests/` with ruff | |
 | `make type_check` | Static type check with pyright (strict) | |

@@ -161,7 +161,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 199 | `render_session` reads `video_path` before the driver stops (port #202) | L2 / A | agent | 4 | S | Unit test asserts the path is read before `pw.stop()`; e2e `render_session(record_video_dir=…)` yields an existing `.webm` |
 | 216 | `render_session` default timeouts + viewport shape documented | L2 / A | agent | 3 | S | Unit test: `set_default_timeout` / `set_default_navigation_timeout` called with the session timeout; api-reference documents `(w, h)` |
 | 229 | Opt-in HAR recording + summary recipe | L2 / A (after 199) | agent | 4 | M | e2e writes a valid HAR 1.2 with the document entry; `har_path` on Response and in `--json`; `--har-out`; secrets warning in docs |
-| 197 | Detect musl, fail loudly in `doctor` / browser tier (port #206) | L3 / A | agent | 4 | S | Unit tests for the musl / glibc / non-Linux branches; `doctor` exits non-zero with a clear message on musl |
+| ~~197~~ | ~~Detect musl, fail loudly in `doctor` / browser tier (port #206)~~ ✅ #234 | L3 / A | agent | 4 | S | Shipped. Known limit: patchright is a hard dependency, so `uv sync` on musl still fails at resolution (making it an optional extra is a separate decision) |
 | 214 | CLI request body `--json-body` / `--data` | L4 / A | agent | 4 | S | CLI tests: the body reaches `fetch(json=…)` / `content=`; both at once → exit 2; patchright tier → clear error |
 | 198 | Surface the httpx-tier UA (`request_user_agent`) | L4 / A (after 214) | agent | 3 | S | Response + `--json` carry the sent UA; USING documents the default |
 | 209 | `FingerprintBlock` carries bounded headers / body excerpt | L5 / A | agent | 3 | S–M | Tests at all three raise sites; excerpt ≤ 2 KB; no cookies |
