@@ -85,6 +85,11 @@ class RenderSession:
         self._browser = self._pw.chromium.launch(headless=True)
         self._context = self._browser.new_context(**context_kwargs(self._pw, self._opts))
         self.page = self._context.new_page()
+        # Raw `s.page` calls (e.g. `.locator(...).click()`) otherwise fall back to Playwright's
+        # own 30000ms default regardless of this session's `timeout=` (#216) — align both page-
+        # level defaults so `.page` and the RenderSession convenience methods agree.
+        self.page.set_default_timeout(self._timeout_ms)
+        self.page.set_default_navigation_timeout(self._timeout_ms)
         self.console_errors, self.network_failures = attach_capture(self.page, self._opts)
         self._video = self.page.video if self._opts.record_video_dir is not None else None
         try:
@@ -166,10 +171,17 @@ def render_session(
     """Open a managed headless Patchright session for an interactive multi-step flow.
 
     ``device``/``viewport``/``color_scheme``/``user_agent``/``locale`` set emulation at
-    ``new_context()`` time (mirrors ``RenderOptions``). ``record_video_dir`` (+ optional
-    ``record_video_size``) records a VP8 ``.webm``; the finished path lands on
-    ``RenderSession.video_path`` once the ``with`` block exits (Patchright finalizes the
-    file on context close, not before).
+    ``new_context()`` time (mirrors ``RenderOptions``). ``viewport`` is a plain
+    ``(width, height)`` pixel tuple, e.g. ``(1280, 720)`` — not a ``RenderOptions``/dict.
+    ``record_video_dir`` (+ optional ``record_video_size``, also a ``(width, height)`` tuple)
+    records a VP8 ``.webm``; the finished path lands on ``RenderSession.video_path`` once the
+    ``with`` block exits (Patchright finalizes the file on context close, not before).
+
+    ``timeout`` (seconds) is applied both to the ``RenderSession`` convenience methods
+    (``click``, ``fill``, ``wait_for_selector``, ...) and, via ``page.set_default_timeout`` /
+    ``set_default_navigation_timeout``, to raw calls on ``s.page`` — so a direct
+    ``s.page.locator(...).click()`` honors the same budget instead of Playwright's own
+    30000ms default.
 
     Use as a context manager::
 

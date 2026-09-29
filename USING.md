@@ -24,6 +24,8 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 
 Beyond the CLI, polyfetch is a **substrate you script against**: `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page`, with the **full Chromium DevTools / CDP surface** — for flows the CLI doesn't cover.
 
+`render_session(url, *, wait_until=..., timeout=30.0, device=None, viewport=None, color_scheme=None, user_agent=None, locale=None, record_video_dir=None, record_video_size=None) -> RenderSession` — `viewport`/`record_video_size` are plain `(width, height)` pixel tuples, **not** a `RenderOptions`/dict. Full signature + semantics: [`docs/api-reference.md` § Render session](docs/api-reference.md#render-session-interactive-patchright-tier).
+
 ### DevTools capture (console, network, JS errors)
 
 Attach any `page.on(...)` listener and react to the browser's DevTools events as the page runs — the same signals you'd read in the Chrome DevTools console/network panels:

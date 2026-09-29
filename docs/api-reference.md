@@ -99,7 +99,9 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
 # a navigation timeout raises FetchError.
 ```
 
-`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video semantics. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
+`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
+
+`timeout` (seconds, default `30.0`) applies to both the `RenderSession` convenience methods above **and** raw calls on `s.page` (`page.set_default_timeout` / `set_default_navigation_timeout` are set right after the page is created) — so e.g. `s.page.locator(sel).click()` honors the same budget instead of Playwright's own 30000ms default.
 
 ## `Response` and `RetryPolicy`
 

@@ -99,6 +99,20 @@ def test_methods_map_to_page_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     page.wait_for_timeout.assert_called_once_with(250)
 
 
+def test_page_default_timeouts_set_from_session_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#216: raw `s.page` calls (e.g. `s.page.locator(...).click()`) fell back to Playwright's
+    own 30000ms default regardless of the session's `timeout=`, silently burning multiples of
+    the intended budget. Set both page-level defaults from the session timeout so `.page` and
+    the RenderSession convenience methods agree."""
+    page, *_ = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com", timeout=5.0):
+        pass
+
+    page.set_default_timeout.assert_called_once_with(5000)
+    page.set_default_navigation_timeout.assert_called_once_with(5000)
+
+
 def test_shot_stores_named_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
     page, *_ = _make_session_chain(monkeypatch, screenshot=b"PNGDATA")
 
