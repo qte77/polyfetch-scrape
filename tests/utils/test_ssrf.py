@@ -54,6 +54,13 @@ def _resp(url: str, *, permanent_redirect_to: str | None = None) -> Response:
         ("v6.internal", ["::1"]),  # IPv6 loopback
         ("linklocal.internal", ["fe80::1"]),  # IPv6 link-local
         ("mapped.internal", ["::ffff:127.0.0.1"]),  # IPv4-mapped IPv6 loopback
+        # Shared/CGNAT address space (RFC 6598, 100.64.0.0/10) — not private, not
+        # loopback, not link-local, not unspecified, not reserved: none of the old
+        # per-flag checks caught it, only the is_global allowlist does.
+        ("cgnat.internal", ["100.64.0.1"]),
+        # Alibaba Cloud's instance-metadata endpoint lives in that same CGNAT
+        # range — the concrete cloud-metadata SSRF target the old check missed.
+        ("alibaba-imds.internal", ["100.100.100.200"]),
     ],
 )
 def test_blocks_hostname_resolving_to_internal(
@@ -154,6 +161,42 @@ def test_literal_ipv4_mapped_public_allowed_without_any_resolution(
     monkeypatch.setattr(_RESOLVER, _never)
 
     check_ssrf("http://[::ffff:93.184.216.34]/")  # must not raise
+
+
+@pytest.mark.parametrize(
+    "addr",
+    [
+        "100.64.0.1",  # shared/CGNAT address space (RFC 6598) — not is_global
+        "100.100.100.200",  # Alibaba Cloud's instance-metadata endpoint, same range
+    ],
+)
+def test_literal_shared_address_space_blocked_without_any_resolution(
+    addr: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not private/loopback/link-local/unspecified/reserved by the old per-flag
+    # checks — only the is_global allowlist catches this range.
+    def _never(_host: str) -> list[str]:
+        raise AssertionError("a literal IP must not be sent to the resolver")
+
+    monkeypatch.setattr(_RESOLVER, _never)
+
+    with pytest.raises(ValueError, match="SSRF"):
+        check_ssrf(f"http://{addr}/")
+
+
+def test_literal_multicast_still_blocked_under_the_is_global_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 224.0.0.1 reports is_global == True (multicast is globally scoped in the
+    # IANA registry sense), so the allowlist alone would let it through; the
+    # guard must keep an explicit multicast check alongside it.
+    def _never(_host: str) -> list[str]:
+        raise AssertionError("a literal IP must not be sent to the resolver")
+
+    monkeypatch.setattr(_RESOLVER, _never)
+
+    with pytest.raises(ValueError, match="SSRF"):
+        check_ssrf("http://224.0.0.1/")
 
 
 def test_credentials_in_url_do_not_hide_an_internal_name(
