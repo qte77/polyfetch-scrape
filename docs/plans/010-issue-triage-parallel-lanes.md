@@ -1,6 +1,6 @@
 # 010 — Issue triage → parallel worktree lanes (post-v0.8.0)
 
-**Status (2026-09-29):** plan written, nothing executed yet. Base: `origin/main` @ `f689c3c` (v0.8.0).
+**Status (2026-09-29):** Phase A started. Lanes **L1 (#181), L2 (#199, #216) and L3 (#197)** launched in parallel worktrees from `main` @ `01cef56`. The source-map line numbers are from `f689c3c` (v0.8.0); the plan merge `01cef56` didn't touch `src/`, so they still hold. An independent (Fable) review changed the protocol: lanes never edit this plan, and the orchestrator strikes rows. Its findings are folded in below.
 
 ## Start here (handoff)
 
@@ -10,12 +10,13 @@ You are the **orchestrator**. You read this plan, launch **lane subagents in par
 2. **Pre-flight (every time, before spawning):**
    - `df -h /workspaces`: needs **≥ 400 MB free** for up to 3 worktrees. Each worktree `.venv` goes on `/tmp` (see [Worktree protocol](#worktree-protocol)). Never let a lane create `.venv` inside the worktree: `/workspaces` sat at 98% (812 MB free) on 2026-09-29, and one `.venv` is 291 MB.
    - The main checkout may be on the parked WIP branch `feat/009-wave2-render-input-surface`. **Worktrees must not inherit it.** Every lane's first command resets its branch onto `origin/main`.
-3. **Spawn ≤ 3 lanes in parallel** (one message, several `Agent` calls, each with `isolation: "worktree"`). Use the [lane prompt template](#lane-prompt-template). Start with **L1 (security)**, **L2 (render lifecycle)** and **L3 (platform)**; they touch disjoint files. Queue L4–L6 as lanes free up.
+3. **Spawn ≤ 3 lanes in parallel** (one message, several `Agent` calls, each with `isolation: "worktree"` and `name: "lane-Lx"`, so you can `SendMessage` them later). Use the [lane prompt template](#lane-prompt-template). The first batch was **L1, L2 and L3**. As slots free up, the order is **L6 (#212)** next (a lockfile bump; everything else rebases onto it once), then **L5**, then **L4**. L4's #198 waits until #229 has merged, because both add a field to `response.py` and to the `--json` output.
 4. **Merge loop (orchestrator only, serial):**
    - When a lane reports "PR #N green", check that `gh pr checks N` passes (ci, Analyze/CodeQL, lint/markdown, lint/links, CodeFactor).
+   - **Strike the row yourself.** Check out the PR branch, commit a signed `docs(plans): strike #N` edit to the [remaining-work table](#remaining-work), push, and wait for the checks again. That keeps the rule "strike in the same PR" without lanes ever conflicting on adjacent rows. **Lanes never edit this file.**
    - `gh pr merge N --admin --squash --delete-branch`. The owner authorized `--admin` on 2026-09-24. **Never modify rulesets.**
-   - Tell every still-open lane to `git fetch origin && git rebase origin/main`, re-run `make validate`, then `git push --force-with-lease`.
-5. **Per merged PR:** check that the PR struck its own table row. Close its issue if `Closes #N` didn't. Delete the remote and local branch. Run `git worktree prune`. Update memory.
+   - Message every still-open lane (`SendMessage` to `lane-Lx`) to `git fetch origin && git rebase origin/main`, re-run `make validate`, then `git push --force-with-lease`.
+5. **Per merged PR:** close its issue if `Closes #N` didn't. Delete the remote and local branch. Clean up the worktree (`git worktree unlock <path>`, then `git worktree remove <path>`, `git worktree prune`; harness worktrees are **locked**). Run `rm -rf /tmp/pf-venv-<lane>`. Update memory. After **#181** merges: cut **v0.8.1** (security fix) and open the DNS-rebinding follow-up issue from the draft in the PR body.
 6. **Stop and ask the owner** only at 🔒 gates (Phase B). Everything else has a recommended default: apply it.
 
 **Owner-gated (Phase B), do not start without an answer:** see [Decisions](#phase-b--owner-decisions-with-defaults).
@@ -32,10 +33,12 @@ uv sync --frozen
 make validate                                  # baseline must pass before any edit
 ```
 
-- `UV_PROJECT_ENVIRONMENT` must be set in **every** Bash call that runs `uv` / `make` (shell state doesn't persist). Prefix it: `UV_PROJECT_ENVIRONMENT=/tmp/pf-venv-<lane> make validate`.
+- `UV_PROJECT_ENVIRONMENT` must be set in **every** Bash call that runs `uv` / `make` (shell state doesn't persist). Prefix it: `UV_PROJECT_ENVIRONMENT=/tmp/pf-venv-<lane> make validate`. Check `echo $UV_CACHE_DIR` shows `/tmp/uv-cache` (the profile sets it). If it's empty, also prefix `UV_CACHE_DIR=/tmp/uv-cache`, because `$HOME` (`~/.cache`) is on a ~97%-full volume too.
+- **GitHub API calls:** `api.github.com` TLS timeouts happened repeatedly on 2026-09-29. Wrap every call as `timeout 90 env -u GH_TOKEN -u GITHUB_TOKEN gh …`, retry up to 3× with a pause, and poll `gh pr checks N` (~60 s) instead of `--watch`. Confirm pushes with `git ls-remote origin <branch>`.
+- **CPU:** parallel `make validate` runs plus Patchright e2e contend for CPU. Rerun a timed-out e2e once on its own before calling it a failure.
 - The Patchright Chromium lives in the shared `~/.cache/ms-playwright`, so no per-worktree browser install is needed. Run `make doctor` if an e2e says Chromium is missing.
 - Temp files go in `<worktree>/.scratch/` (gitignored), never the repo root.
-- On finish, the orchestrator removes the worktree (`git worktree remove <path>`, then `git worktree prune`) and `rm -rf /tmp/pf-venv-<lane>`.
+- On finish, the orchestrator removes the worktree (`git worktree unlock <path>`, then `git worktree remove <path>` and `git worktree prune`; harness worktrees are created **locked**) and runs `rm -rf /tmp/pf-venv-<lane>`.
 
 ## Lanes (parallel-safe split)
 
@@ -43,14 +46,17 @@ A lane is one subagent in one worktree. It works through its items in order, **o
 
 | Lane | Items (in order) | Owns these files (others must not edit) | Shared hotspots (rebase before merge) |
 |---|---|---|---|
-| **L1 security** | #181 → open follow-up issue | `utils/_ssrf.py`, new `tests/utils/test_ssrf.py`; callers only if the signature changes | none |
+| **L1 security** | #181 (the orchestrator opens the follow-up issue after merge) | `utils/_ssrf.py`, new `tests/utils/test_ssrf.py`, **new root `tests/conftest.py`** (an autouse `socket.getaddrinfo` stub; once `check_ssrf` resolves, existing discovery/sitemap/easter_hunt tests would otherwise hit real DNS), the "literal-IP only" docstrings (`utils/_ssrf.py:4-6`, `contrib/easter_hunt/orchestrator.py:6-8`, `utils/discovery.py:63`), and `docs/architecture.md:59,60,79` | `tests/conftest.py` becomes shared from then on |
 | **L2 render lifecycle** | #199 → #216 → #229 | `render_session.py`, `_backends/patchright_backend.py` (`context_kwargs`, `_finalize_video`), `render_options.py` | `response.py`, `cli.py` `--video-out`/`--har-out` block, `USING.md`, `docs/api-reference.md` |
 | **L3 platform** | #197 | new `src/polyfetch_scrape/_platform.py`, `cli.py` `doctor` block (`:477-535`) | `README.md` install note |
-| **L4 CLI + httpx** | #214 → #198 | `cli.py` `fetch_cmd` body flags (`:181-321`), `utils/http_ua.py`, `_backends/httpx_backend.py` | `response.py` (if #198 adds a field), `USING.md` |
+| **L4 CLI + httpx** | #214 → #198 (#198 only after #229 has merged) | `cli.py` `fetch_cmd` body flags (`:181-321`), `utils/http_ua.py`, `_backends/httpx_backend.py` | `response.py` (if #198 adds a field), `USING.md` |
 | **L5 errors** | #209 | `_backends/__init__.py` (`FingerprintBlock`), `errors.py`, the three `raise FingerprintBlock` sites | `docs/api-reference.md` Exceptions |
 | **L6 deps** | #212 (Dependabot, `ci` red) → #222 once it rebases | `uv.lock`, `.github/workflows/*` | none (merge L6 alone, then rebase the others) |
 
-Each lane must stay inside its owned files. If an item needs a file another lane owns, stop and report instead of editing it. Changelog fragments are per-PR files (`changelog.d/<ts>_<slug>.md`), so they never conflict.
+Each lane must stay inside its owned files. If an item needs a file another lane owns, stop and report instead of editing it. Changelog fragments are per-PR files (`changelog.d/<ts>_<slug>.md`), so they never conflict. **No lane edits this plan file**; the orchestrator strikes rows. Other known shared spots that rebases must preserve:
+- the `cli.py` import block (L2 #229, L3 #197, L4 #214 all add imports; never reorder or reformat it);
+- `tests/test_cli.py`;
+- `response.py`, `cli.py:346-349` and `USING.md:88-100` (L2 #229 `har_path` vs L4 #198 `request_user_agent`, hence the ordering above).
 
 ### Lane prompt template
 
@@ -61,12 +67,14 @@ UV_PROJECT_ENVIRONMENT=/tmp/pf-venv-<lx>; make validate baseline).
 Items, in order, one PR each: <items>. Read each issue (gh issue view N --comments) and the plan's source-map rows.
 Only edit files your lane owns (plan § Lanes). TDD: write the failing test first, then the fix.
 Per PR: make validate green; markdownlint-cli2 + lychee --config lychee.toml on changed md; changelog fragment
-(make changelog_new, NO relative links in fragments); strike the item's row in the plan's remaining-work table in
-the SAME PR; commits split by topic, Conventional Commits, signed (verify with /usr/bin/git log --format=%G?);
-push with env -u GH_TOKEN -u GITHUB_TOKEN (sandbox disabled); gh pr create with "Closes #N" and a "Verification"
-section. Then wait for gh pr checks N --watch. Report "PR #N green" or the failing check + log excerpt.
-Do NOT merge, do NOT edit rulesets, do NOT touch other lanes' files, do NOT close contributor PRs.
-Credit ported contributor code with a Co-authored-by trailer.
+(make changelog_new, NO relative links in fragments); do NOT edit docs/plans/010 (the orchestrator strikes rows);
+commits split by topic, Conventional Commits, signed (verify with /usr/bin/git log --format=%G?);
+push with env -u GH_TOKEN -u GITHUB_TOKEN (sandbox disabled), confirm with git ls-remote; every gh call wrapped as
+timeout 90 env -u GH_TOKEN -u GITHUB_TOKEN gh ... with up to 3 retries; gh pr create with "Closes #N" and a
+"Verification" section. Then poll gh pr checks N every ~60s (not --watch). Report "PR #N green" or the failing
+check + log excerpt. Do NOT merge, do NOT edit rulesets, do NOT touch other lanes' files, do NOT comment on or
+close contributor PRs or issues. Credit ported contributor code with a Co-authored-by trailer whose name/email is
+copied from the contributor's actual fork commit (gh api repos/<fork>/commits?sha=<branch>&per_page=1), never guessed.
 ```
 
 ## Source map
@@ -76,7 +84,15 @@ All paths are under `src/polyfetch_scrape/`, line numbers from `origin/main` `f6
 **#181 SSRF (L1).** `utils/_ssrf.py:13` `check_ssrf(url)`. `:19` parses a literal IP; non-IP hosts return at `:21` (the bypass). `:22-29` range checks, `:30` raises `ValueError`. Callers: `utils/discovery.py:67,88`, `utils/sitemap.py:56`, `contrib/easter_hunt/orchestrator.py:49`. Plain `fetch()` is **not** guarded. Tests are spread across `tests/utils/test_discovery.py:140`, `tests/utils/test_sitemap.py:122,129`, `tests/contrib/easter_hunt/test_hunt.py:172-247` and `tests/test_cli.py:696`; there's no dedicated `test_ssrf.py`.
 - **Port PR #201's diff:** `gh pr diff 201`, from the fork `dntywntme/polyfetch-scrape`. It resolves A+AAAA via `getaddrinfo`, rejects if any address is internal, adds `check_redirect()` for the final URL and `permanent_redirect_to`, and dedupes the easter_hunt copy. Its CI **never ran**: fork runs waited for approval and GitHub expired them after 30 days with 0 jobs.
 - **Severity: Moderate-High.** The attack path is attacker-controlled sitemap, feed or JSON-LD content fed to `discover()`/sitemap walking.
-- **Follow-up issue to open after merge:** DNS-rebinding TOCTOU (pin the resolved IP per tier: httpx transport, curl_cffi resolve, Patchright route), per-hop redirect checks, and browser subresources.
+- **#201 is stale in one respect:** its easter_hunt dedupe already exists on main (`contrib/easter_hunt/orchestrator.py:19` imports `utils._ssrf`). Port the semantics, not the diff.
+- **State two limits in the PR and changelog:**
+  - The redirect check is **post-hoc** for curl_cffi (`curl_backend.py:74` passes no `allow_redirects`; the default follows redirects, UNVERIFIED) and Patchright (`page.goto` always follows). The internal request has already been sent when `check_redirect` refuses it. httpx doesn't follow redirects, so it's unaffected.
+  - DNS rebinding is out of scope.
+- **Keep plain `fetch()` unguarded.** Consumers legitimately fetch localhost (e.g. `perf-cwv-pass` drives a local serve), and `docs/architecture.md:79` puts validation at the entry point. Add an opt-in `ssrf_guard=` only when a second caller needs it (AHA).
+- **Follow-up issue to open after merge:** DNS-rebinding TOCTOU and per-hop redirect checks, plus browser subresources. It needs the resolved IP pinned per tier. Candidate mechanisms, all UNVERIFIED (check vendor docs before the issue quotes them):
+  - httpx: connect to the IP, with the `Host` header and the `sni_hostname` extension;
+  - curl_cffi: `CURLOPT_RESOLVE`;
+  - Patchright: `--host-resolver-rules`, plus a `context.route` guard.
 
 **#199 video path (L2).** `render_session.py:132` `_teardown` closes context → browser → `pw.stop()` (`:133`), then reads `self._video.path()` at **`:141`, after the driver stopped**, which is the bug. Move the read to right after `context.close()`. The fetch path is already correct: `_backends/patchright_backend.py` `_attempt_once` `:150` context.close, then `_finalize_video` `:209` (`video.path()` `:218`). Session lifecycle: `__enter__` `:80` (`:81` start, `:82` launch, `:83` new_context, `:84` new_page, `:86` `_video`), `__exit__` `:94`. Tests: `tests/test_render_session.py:183,193`. Port PR #202's diff and test (`gh pr diff 202`).
 
@@ -132,7 +148,8 @@ Defaults apply unattended except where marked 🔒 (the agent must wait).
 | D6 | 🔒 #218: edit or hide the two #190 comments | Owner edits their own; hide the external one |
 | D7 | 🔒 Close #205, #207 (superseded by #219/#221), #127 (decided recipe), #211 (not a build request) | Close with a comment |
 | D8 | 🔒 #230: engine `capture_performance` or trace recipe | Trace recipe + a real-browser spike first |
-| D9 | 🔒 Remove the unused `callowayproject/bump-my-version@*` from the Actions allow-list | Remove |
+| D9 | 🔒 Remove the unused `callowayproject/bump-my-version@*` from the Actions allow-list | Remove. That also makes any stale re-add (e.g. an old Dependabot #222) fail when the workflow is parsed |
+| D10 | 🔒 Community: before each port lands, post a one-line heads-up on #201/#202/#206 ("landing as #N with you as co-author")? Invite `dntywntme` as a collaborator, which removes the fork-run approval/expiry problem at the root? | Heads-up: yes (the orchestrator posts it once you approve). Invite: your call |
 
 ## Remaining work
 
@@ -140,7 +157,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 
 | # | Item | Lane / phase | Gate | ROI | Effort | Done when |
 |---|---|---|---|---|---|---|
-| 181 | SSRF: resolve DNS names, check all addresses + redirects (port #201) | L1 / A | agent | 5 | S | Unit tests: a name resolving to 127.0.0.1 / 169.254.169.254 / ::1 is rejected, and a public name passes (mock `getaddrinfo`). Callers unchanged; follow-up rebinding issue opened |
+| 181 | SSRF: resolve DNS names, check all addresses + redirects (port #201) | L1 / A | agent | 5 | S | Unit tests: a name resolving to 127.0.0.1 / 169.254.169.254 / ::1 / 10.x (or mixed) is rejected, and a public name passes. `make test` stays offline (root `conftest.py` stubs `getaddrinfo`). The literal-IP docstrings and architecture lines are updated. The post-hoc-redirect and rebinding limits are stated in the PR and changelog. `fetch()` is left unguarded |
 | 199 | `render_session` reads `video_path` before the driver stops (port #202) | L2 / A | agent | 4 | S | Unit test asserts the path is read before `pw.stop()`; e2e `render_session(record_video_dir=…)` yields an existing `.webm` |
 | 216 | `render_session` default timeouts + viewport shape documented | L2 / A | agent | 3 | S | Unit test: `set_default_timeout` / `set_default_navigation_timeout` called with the session timeout; api-reference documents `(w, h)` |
 | 229 | Opt-in HAR recording + summary recipe | L2 / A (after 199) | agent | 4 | M | e2e writes a valid HAR 1.2 with the document entry; `har_path` on Response and in `--json`; `--har-out`; secrets warning in docs |
@@ -164,6 +181,11 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 218 | Third-party mentions on #190 | B | owner (D6) | 2 | S | Comments edited or hidden |
 | 205, 207, 127, 211 | Close as superseded / decided / not planned | B | owner (D7) | — | S | Closed with a comment |
 | — | Actions allow-list cleanup | B | owner (D9) | 1 | S | Pattern removed |
+| — | Release **v0.8.1** (security) right after #181 merges | A | agent | 4 | S | Bump workflow `patch`; close and reopen the bump PR so CI runs; admin-squash; the Tag and Release run succeeds and the release is marked Latest |
+| — | DNS-rebinding / per-hop / subresource follow-up issue | A (after 181) | agent | — | S | Issue opened from the #181 PR-body draft, with the vendor mechanisms verified or marked UNVERIFIED |
+| — | `SECURITY.md` (reporting path + SSRF-guard scope) | A | agent | 3 | S | File exists, linked from README; states what `check_ssrf` guards and what it doesn't |
+| — | Heads-up comments on contributor PRs; close them after porting | B | owner (D1, D10) | 2 | S | Comment posted before each port merges; PRs closed after merge per D1 |
+| — | Release **v0.9.0** at the end of Phase A (#229 is a feature) | A (end) | agent | 3 | S | All Phase A rows struck; bump `minor`; released as above |
 
 ## Watch-outs
 
