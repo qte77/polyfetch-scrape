@@ -190,6 +190,29 @@ def test_video_path_set_after_teardown_when_recording(monkeypatch: pytest.Monkey
     page.video.path.assert_called_once_with()
 
 
+def test_video_path_read_before_browser_close_and_pw_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression (#199): video.path() must be read after context.close() but before
+    browser.close()/pw.stop() -- Patchright only finalizes the video once its context has
+    closed, and video.path() needs a live driver connection to resolve it.
+    """
+    page, context, browser, pw = _make_session_chain(
+        monkeypatch, video_path="captured-videos/session.webm"
+    )
+    order: list[str] = []
+    context.close.side_effect = lambda: order.append("context.close")
+    browser.close.side_effect = lambda: order.append("browser.close")
+    pw.stop.side_effect = lambda: order.append("pw.stop")
+    page.video.path.side_effect = lambda: (
+        order.append("video.path") or "captured-videos/session.webm"
+    )
+
+    with render_session("https://example.com", record_video_dir="captured-videos") as s:
+        pass
+
+    assert order == ["context.close", "video.path", "browser.close", "pw.stop"]
+    assert s.video_path == Path("captured-videos/session.webm")
+
+
 def test_video_path_none_when_not_recording(monkeypatch: pytest.MonkeyPatch) -> None:
     page, *_ = _make_session_chain(monkeypatch)
 

@@ -133,15 +133,21 @@ class RenderSession:
             self.screenshots[name] = capture_screenshot(self.page, "viewport") or b""
 
     def _teardown(self) -> None:
-        for obj, method in ((self._context, "close"), (self._browser, "close"), (self._pw, "stop")):
-            if obj is not None:
-                with contextlib.suppress(Exception):
-                    getattr(obj, method)()
-        # The video file is only finalized once its context has closed (above), so read
-        # the path last — after the loop, regardless of browser/pw teardown outcome.
+        if self._context is not None:
+            with contextlib.suppress(Exception):
+                self._context.close()
+        # Patchright only finalizes the video once its context has closed (above), and
+        # video.path() needs a live driver connection to resolve it — so read it here,
+        # before the browser and driver are torn down (mirrors `_finalize_video` in
+        # `_backends/patchright_backend.py`). Reading it after `pw.stop()` (the bug in #199)
+        # made the call raise against the dead driver, silently swallowed by suppress below.
         if self._video is not None:
             with contextlib.suppress(Exception):
                 self.video_path = Path(self._video.path())
+        for obj, method in ((self._browser, "close"), (self._pw, "stop")):
+            if obj is not None:
+                with contextlib.suppress(Exception):
+                    getattr(obj, method)()
 
 
 def render_session(

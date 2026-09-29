@@ -194,6 +194,20 @@ def test_patchright_emulation_and_video_record_real_webm(tmp_path) -> None:
     assert resp.video_path.stat().st_size > 0
 
 
+def test_render_session_video_record_real_webm(tmp_path) -> None:
+    """render_session video recording (#199) produces a real, finalized .webm.
+
+    Guards the video-path-read-ordering fix end-to-end against a real browser: the path
+    must resolve after the with-block exits, once the driver has torn down.
+    """
+    with render_session("https://example.com", record_video_dir=str(tmp_path)) as s:
+        pass
+    assert s.video_path is not None
+    assert s.video_path.suffix == ".webm"
+    assert s.video_path.exists()
+    assert s.video_path.stat().st_size > 0
+
+
 def test_fetch_sitemap_urls_against_real_sitemap() -> None:
     """fetch_sitemap_urls (#33) resolves a real /sitemap.xml."""
     urls = fetch_sitemap_urls("https://www.sitemaps.org", max_urls=5)
