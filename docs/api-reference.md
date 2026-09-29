@@ -144,7 +144,8 @@ discover(url: str) -> DiscoveredSources
       # feeds ← <link rel="alternate" type="application/rss+xml|atom+xml|text/calendar"> (resolved absolute)
       # llms_txt ← /llms.txt, /llms-full.txt (soft-404-guarded: a 200 HTML shell is not counted)
       # json_ld_types ← <script type="application/ld+json"> @type values (handles lists + @graph nesting)
-      # Never raises for an absent source; raises ValueError if url/a probe is a literal internal IP (SSRF guard).
+      # Never raises for an absent source; raises ValueError if url/a probe is, resolves to,
+      # or redirects to an internal address (SSRF guard — see architecture.md's utils/_ssrf.py row).
 ```
 
 CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(DiscoveredSources)`).

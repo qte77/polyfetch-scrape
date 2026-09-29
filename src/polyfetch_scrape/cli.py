@@ -459,7 +459,7 @@ def discover_cmd(
     """Discover structured entrypoints (sitemaps / feeds / llms.txt / JSON-LD types) for a URL."""
     try:
         found = discover(url)
-    except ValueError as exc:  # SSRF guard: literal internal IP
+    except ValueError as exc:  # SSRF guard: internal address (see utils/_ssrf.py)
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(asdict(found)) if json_output else _format_discovery(found))
 
@@ -589,7 +589,7 @@ try:
         paths = ("/", *WELL_KNOWN_PATHS) if include_wellknown else ("/",)
         try:
             findings = hunt(seeds, paths=paths)
-        except ValueError as exc:  # SSRF guard: literal internal IP
+        except ValueError as exc:  # SSRF guard: internal address (see utils/_ssrf.py)
             raise typer.BadParameter(str(exc)) from exc
 
         if json_output:

@@ -139,20 +139,20 @@ Not on Alpine/musl, though — patchright has no `musllinux` wheel there. `polyf
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
-- **SSRF guard is literal-IP-only, and only on the discovery paths.** `discover()` /
-  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the `easter-hunt` contrib follow
-  attacker-influenced URLs (sitemap entries, feed links, JSON-LD), so they refuse a host that is a
-  literal internal IP. Plain `fetch()` is **not** guarded. The scope is deliberate but asymmetric:
+- **SSRF guard resolves hostnames and redirect targets, only on the discovery paths.**
+  `discover()` / `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the
+  `easter-hunt` contrib follow attacker-influenced URLs (sitemap entries, feed links,
+  JSON-LD): each resolves the host and refuses it if any A/AAAA answer is internal, and
+  re-checks the address a response lands on / redirects to. Plain `fetch()` is **not**
+  guarded. Full guard description (scope, fail-open resolver behaviour, the
+  preventive-vs-post-hoc redirect check per tier): [architecture.md](docs/architecture.md)'s
+  `utils/_ssrf.py` row.
 
-  | URL passed to `discover()` | Result |
-  |---|---|
-  | `http://127.0.0.1:8080/` | blocked — `ValueError` (CLI: exit `2`) |
-  | `http://localhost:8080/` | **passes** — a DNS name, not a literal IP |
-
-  Same destination, opposite outcome. Any DNS name resolving to an internal address passes, so this
-  is not a defence against a hostile sitemap; treat it as a guard against the obvious mistake. The
-  `localhost` route is load-bearing for local E2E (driving a dev server) — use `localhost`, not
-  `127.0.0.1`, when pointing polyfetch at your own machine.
+  **Breaking for local E2E:** `http://localhost:8080/` used to pass this guard (a DNS
+  name, not a literal IP) — it now resolves to loopback and is **blocked**, same as
+  `http://127.0.0.1:8080/`. If you were pointing `discover()`/`fetch_sitemap_urls()` at
+  a local dev server via `localhost`, that call now raises `ValueError`; use a LAN
+  address, a tunnel hostname, or drive that request through plain `fetch()` instead.
 
 ## Stable surface (what you may depend on)
 
