@@ -134,6 +134,47 @@ def test_patchright_backend_raises_fingerprintblock_on_403(
         )
 
 
+def test_patchright_backend_fingerprintblock_carries_bounded_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_pw_chain(
+        monkeypatch,
+        response_status=403,
+        response_headers={"content-type": "text/html", "set-cookie": "sid=abc123"},
+        page_content="<html>blocked</html>",
+    )
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    exc = excinfo.value
+    assert exc.status == 403
+    assert exc.headers == {"content-type": "text/html"}  # set-cookie redacted
+    assert exc.body_excerpt == "<html>blocked</html>"
+
+
+def test_patchright_backend_body_excerpt_capped_at_2kb(monkeypatch: pytest.MonkeyPatch) -> None:
+    _make_pw_chain(monkeypatch, response_status=403, page_content="y" * 3000)
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert excinfo.value.body_excerpt is not None
+    assert len(excinfo.value.body_excerpt) == 2048
+
+
 @pytest.mark.parametrize(
     ("status", "exc_type"),
     [(401, AuthRequired), (404, GoneError), (451, LegalBlock)],

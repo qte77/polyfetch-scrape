@@ -12,6 +12,7 @@ from patchright.sync_api import sync_playwright
 
 from polyfetch_scrape._backends import (
     FingerprintBlock,
+    bounded_diagnostics,
     permanent_redirect_target,
     raise_for_terminal_status,
 )
@@ -30,6 +31,8 @@ class _Attempt:
     block_status: int | None
     error: Exception | None
     retry_after: float | None = None
+    headers: dict[str, str] | None = None
+    body_excerpt: str | None = None
 
 
 def attempt(
@@ -67,9 +70,14 @@ def attempt(
         f"status={last.block_status}" if last.block_status is not None else f"error={last.error!r}"
     )
     msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
+    diag: dict[str, Any] = {
+        "status": last.block_status,
+        "headers": last.headers,
+        "body_excerpt": last.body_excerpt,
+    }
     if last.block_status in _FINGERPRINT_STATUSES:
-        raise FingerprintBlock(msg) from last.error
-    raise FetchError(msg) from last.error
+        raise FingerprintBlock(msg, **diag) from last.error
+    raise FetchError(msg, **diag) from last.error
 
 
 def available_devices() -> list[str]:
@@ -182,7 +190,19 @@ def _run_page(
     status = int(response.status)
     if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
         headers_map = {str(k).lower(): str(v) for k, v in dict(response.all_headers()).items()}
-        return _Attempt(None, status, None, parse_retry_after(headers_map.get("retry-after")))
+        # The navigation already completed (a response object exists) — page.content() reads
+        # the currently loaded DOM, including a challenge/error page, safely for a blocked status.
+        resp_headers, body_excerpt = bounded_diagnostics(
+            headers_map, page.content().encode("utf-8")
+        )
+        return _Attempt(
+            None,
+            status,
+            None,
+            parse_retry_after(headers_map.get("retry-after")),
+            resp_headers,
+            body_excerpt,
+        )
 
     raise_for_terminal_status(status, url)
     _apply_actions(page, opts.actions, timeout_ms)
