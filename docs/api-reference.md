@@ -41,43 +41,55 @@ call already honor `Retry-After` / backoff. Per-process (not distributed).
 ## Render controls (patchright tier)
 
 ```python
-RenderOptions(wait_until="domcontentloaded"|"load"|"networkidle", wait_for_selector=None,
-              wait_for_function=None, screenshot=None, actions=(), screenshots=(),
-              capture_console=False, capture_network_failures=False,
-              viewport=None, device=None, color_scheme=None, user_agent=None, locale=None,
-              record_video_dir=None, record_video_size=None)
-      # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
-      # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
-      # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
-      # capture_console → Response.console_errors (console + uncaught-JS errors)
-      # capture_network_failures → Response.network_failures (failed requests + HTTP >= 400)
-      # --- emulation + video: set at browser new_context() time (both the fetch tier and
-      #     render_session apply these the same way) ---
-      # device="<preset name>" (e.g. "iPhone 13") → spreads Patchright's device dict
-      #     (user_agent/viewport/is_mobile/has_touch/device_scale_factor/default_browser_type/...);
-      #     explicit viewport/user_agent/locale/color_scheme below override the preset's values.
-      #     NOTE: on an is_mobile device the "full-page" screenshot clips rather than scrolling.
-      #     device={...} — a CUSTOM bundle for a device the registry does not carry; same
-      #     override precedence. An unknown preset NAME raises ValueError naming near-misses;
-      #     list the presets with `polyfetch devices`.
-      # viewport=(width, height) — also changeable post-hoc via page.set_viewport_size(...)
-      # color_scheme="light"|"dark"|"no-preference" — also changeable post-hoc via
-      #     page.emulate_media(color_scheme=...)
-      # user_agent=<str> / locale=<str> (BCP 47, e.g. "en-US") — context-time only
-      # record_video_dir=<path> (+ optional record_video_size=(width, height)) → records a
-      #     VP8 .webm of the session into that directory; Patchright only finalizes the file on
-      #     context.close(), so the path lands on Response.video_path once fetch() returns
+RenderOptions(
+    wait_until="domcontentloaded" | "load" | "networkidle",
+    wait_for_selector=None,
+    wait_for_function=None,
+    screenshot=None,
+    actions=(),
+    screenshots=(),
+    capture_console=False,
+    capture_network_failures=False,
+    viewport=None,
+    device=None,
+    color_scheme=None,
+    user_agent=None,
+    locale=None,
+    record_video_dir=None,
+    record_video_size=None,
+)
+# patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
+# actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
+# screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
+# capture_console → Response.console_errors (console + uncaught-JS errors)
+# capture_network_failures → Response.network_failures (failed requests + HTTP >= 400)
+# --- emulation + video: set at browser new_context() time (both the fetch tier and
+#     render_session apply these the same way) ---
+# device="<preset name>" (e.g. "iPhone 13") → spreads Patchright's device dict
+#     (user_agent/viewport/is_mobile/has_touch/device_scale_factor/default_browser_type/...);
+#     explicit viewport/user_agent/locale/color_scheme below override the preset's values.
+#     NOTE: on an is_mobile device the "full-page" screenshot clips rather than scrolling.
+#     device={...} — a CUSTOM bundle for a device the registry does not carry; same
+#     override precedence. An unknown preset NAME raises ValueError naming near-misses;
+#     list the presets with `polyfetch devices`.
+# viewport=(width, height) — also changeable post-hoc via page.set_viewport_size(...)
+# color_scheme="light"|"dark"|"no-preference" — also changeable post-hoc via
+#     page.emulate_media(color_scheme=...)
+# user_agent=<str> / locale=<str> (BCP 47, e.g. "en-US") — context-time only
+# record_video_dir=<path> (+ optional record_video_size=(width, height)) → records a
+#     VP8 .webm of the session into that directory; Patchright only finalizes the file on
+#     context.close(), so the path lands on Response.video_path once fetch() returns
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
-      # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
-      #     | "type"(selector,value,ms) | "wait_for_selector"(selector) | "wait_ms"(ms)
-      # "type" presses keys one at a time (ms = per-key delay). Prefer it over "fill" on
-      #     framework-controlled inputs (React/Vue/Svelte): fill() sets the DOM value without
-      #     firing the events onChange listens for, so the submit silently sends stale/empty data.
+# verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
+#     | "type"(selector,value,ms) | "wait_for_selector"(selector) | "wait_ms"(ms)
+# "type" presses keys one at a time (ms = per-key delay). Prefer it over "fill" on
+#     framework-controlled inputs (React/Vue/Svelte): fill() sets the DOM value without
+#     firing the events onChange listens for, so the submit silently sends stale/empty data.
 
 Screenshot(name, target="viewport")
-      # target: "viewport" | "full_page" | "<css-selector>" (element shot — must match ONE element)
-      # full_page → whole scrollable page (is_mobile devices clip to viewport, not scroll)
+# target: "viewport" | "full_page" | "<css-selector>" (element shot — must match ONE element)
+# full_page → whole scrollable page (is_mobile devices clip to viewport, not scroll)
 ```
 
 ## Render session (interactive, patchright tier)
@@ -104,22 +116,37 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
 ## `Response` and `RetryPolicy`
 
 ```python
-Response(url, status, headers, body, content_type, backend,
-         permanent_redirect_to=None, screenshot=None, video_path=None,
-         console_errors=[], network_failures=[], screenshots={})
-      # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
-      # screenshot: PNG bytes when requested on the patchright tier, else None
-      # video_path: Path to the recorded VP8 .webm when RenderOptions.record_video_dir was set
-      #   (patchright tier), else None
-      # screenshots: dict[name, PNG bytes] from RenderOptions.screenshots; {} otherwise
-      # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
-      # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)
-      #   opt-in via RenderOptions.capture_network_failures
-      # CAVEAT: console_errors / network_failures reflect only THIS process's network — a failure a
-      #   real user hits (CORS / extension / proxy) can read clean here; force a known failure to trust it
+Response(
+    url,
+    status,
+    headers,
+    body,
+    content_type,
+    backend,
+    permanent_redirect_to=None,
+    screenshot=None,
+    video_path=None,
+    console_errors=[],
+    network_failures=[],
+    screenshots={},
+)
+# permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
+# screenshot: PNG bytes when requested on the patchright tier, else None
+# video_path: Path to the recorded VP8 .webm when RenderOptions.record_video_dir was set
+#   (patchright tier), else None
+# screenshots: dict[name, PNG bytes] from RenderOptions.screenshots; {} otherwise
+# console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
+# network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)
+#   opt-in via RenderOptions.capture_network_failures
+# CAVEAT: console_errors / network_failures reflect only THIS process's network — a failure a
+#   real user hits (CORS / extension / proxy) can read clean here; force a known failure to trust it
 
-RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
-            retry_on_status=frozenset({429, 500, 502, 503, 504}))
+RetryPolicy(
+    max_attempts=3,
+    backoff_initial=0.2,
+    backoff_factor=2.0,
+    retry_on_status=frozenset({429, 500, 502, 503, 504}),
+)
 ```
 
 ## Exceptions
@@ -127,10 +154,10 @@ RetryPolicy(max_attempts=3, backoff_initial=0.2, backoff_factor=2.0,
 All subclass `FetchError`. Terminal statuses raise on the first attempt in every tier — no retry, no escalation:
 
 ```python
-FetchError       # base: retries exhausted on every tier
-AuthRequired     # 401 / 407
-GoneError        # 404 / 410
-LegalBlock       # 451 (RFC 7725) — never escalated to the fingerprint tiers
+FetchError  # base: retries exhausted on every tier
+AuthRequired  # 401 / 407
+GoneError  # 404 / 410
+LegalBlock  # 451 (RFC 7725) — never escalated to the fingerprint tiers
 ```
 
 ## Structured-source discovery (`utils.discovery`)

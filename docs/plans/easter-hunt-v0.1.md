@@ -69,17 +69,19 @@ polyfetch easter-hunt scan https://wakatime.com/ --include-wellknown
 # contrib/easter_hunt/finding.py
 @dataclass(frozen=True, slots=True)
 class Finding:
-    detector: str          # "html_comments" | "weird_headers" | "wellknown_present"
-    category: str          # "recruiting" | "policy" | "stack" | "novelty" | "exposure"
-    severity: str          # "info" | "notable" | "warn"
-    location: str          # "header:p3p" | "body:comment[3]" | "path:/.git/HEAD"
+    detector: str  # "html_comments" | "weird_headers" | "wellknown_present"
+    category: str  # "recruiting" | "policy" | "stack" | "novelty" | "exposure"
+    severity: str  # "info" | "notable" | "warn"
+    location: str  # "header:p3p" | "body:comment[3]" | "path:/.git/HEAD"
     snippet: str
-    confidence: float      # 0.0–1.0
-    url: str               # set inside detector from response.url
+    confidence: float  # 0.0–1.0
+    url: str  # set inside detector from response.url
+
 
 # contrib/easter_hunt/__init__.py
 Detector = Callable[[Response], list[Finding]]
 DETECTORS: tuple[Detector, ...] = (html_comments, weird_headers, wellknown_present)
+
 
 # contrib/easter_hunt/orchestrator.py
 def hunt(

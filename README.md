@@ -35,7 +35,9 @@ Or **borrow it without installing at all** — see [`USING.md`](USING.md).
 from polyfetch_scrape import fetch
 
 r = fetch("https://nowsecure.nl/")
-print(r.status, r.backend, len(r.body))     # 200 httpx 179447  (the tier that answers depends on the target's current anti-bot posture)
+print(
+    r.status, r.backend, len(r.body)
+)  # 200 httpx 179447  (the tier that answers depends on the target's current anti-bot posture)
 ```
 
 ## What

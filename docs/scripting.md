@@ -18,13 +18,13 @@ same signals the Chrome DevTools console/network panels show:
 from polyfetch_scrape import render_session
 
 with render_session(url) as s:
-    s.page.on("console", lambda m: print(m.type, m.text))          # console.log/warn/error
-    s.page.on("pageerror", lambda e: print("uncaught JS:", e))     # uncaught JS exceptions
+    s.page.on("console", lambda m: print(m.type, m.text))  # console.log/warn/error
+    s.page.on("pageerror", lambda e: print("uncaught JS:", e))  # uncaught JS exceptions
     s.page.on("requestfailed", lambda r: print(r.url, r.failure))  # failed network requests
     s.click_text("Load more")
 
-    print(s.console_errors)     # always-on: console + uncaught-JS errors, whole session
-    print(s.network_failures)   # always-on: failed / >=400 requests, whole session
+    print(s.console_errors)  # always-on: console + uncaught-JS errors, whole session
+    print(s.network_failures)  # always-on: failed / >=400 requests, whole session
 ```
 
 You don't have to wire listeners at all — `s.console_errors` and `s.network_failures`
@@ -73,9 +73,9 @@ old or empty value:
 
 ```python
 with render_session(url) as s:
-    s.fill("#email", user)       # DOM value set…
-    s.fill("#password", pw)      # …framework state never updated
-    s.submit()                   # server receives EMPTY credentials
+    s.fill("#email", user)  # DOM value set…
+    s.fill("#password", pw)  # …framework state never updated
+    s.submit()  # server receives EMPTY credentials
 ```
 
 Type character-by-character instead, which fires the real key events:
@@ -117,7 +117,7 @@ even though it exists and works in the page:
 
 ```python
 with render_session(url) as s:
-    s.page.evaluate("() => typeof window.Foo")   # "undefined" — even if Foo is defined and used
+    s.page.evaluate("() => typeof window.Foo")  # "undefined" — even if Foo is defined and used
 ```
 
 Don't assert page-script globals via `evaluate`. Use `s.shot(name)` (screenshots) as
