@@ -138,11 +138,14 @@ def test_nothing_found_returns_empty_but_keeps_url(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "169.254.169.254", "10.0.0.1"])
-def test_ssrf_blocks_internal_origin(monkeypatch: pytest.MonkeyPatch, host: str) -> None:
+def test_ssrf_allows_literal_internal_ip_seed(monkeypatch: pytest.MonkeyPatch, host: str) -> None:
+    # Escalation-only (#181, relaxed by owner decision 2026-09-30): the seed itself
+    # is never blocked — discover() may legitimately point at a local dev server.
     _patch(monkeypatch, {})
 
-    with pytest.raises(ValueError, match="SSRF"):
-        discover(f"http://{host}")
+    got = discover(f"http://{host}")
+
+    assert got.url == f"http://{host}"
 
 
 @pytest.mark.parametrize(
@@ -152,14 +155,29 @@ def test_ssrf_blocks_internal_origin(monkeypatch: pytest.MonkeyPatch, host: str)
         ("metadata.google.internal", "169.254.169.254"),  # cloud IMDS via a DNS name
     ],
 )
-def test_ssrf_blocks_origin_whose_host_resolves_internal(
+def test_ssrf_allows_seed_origin_whose_host_resolves_internal(
     monkeypatch: pytest.MonkeyPatch, host: str, address: str
 ) -> None:
     monkeypatch.setattr(_RESOLVER, lambda _h: [address])
     _patch(monkeypatch, {})
 
-    with pytest.raises(ValueError, match="SSRF"):
-        discover(f"http://{host}")
+    got = discover(f"http://{host}")
+
+    assert got.url == f"http://{host}"
+
+
+def test_ssrf_allows_derived_redirect_when_seed_is_internal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An internal seed trusts everything reachable from it: a probed path landing
+    # on another internal address (which would be blocked for an external seed —
+    # see test_ssrf_blocks_probe_redirected_onto_internal_address) must not raise.
+    landed = _resp("Sitemap: https://ex.com/sitemap.xml", url="http://169.254.169.254/robots.txt")
+    _patch(monkeypatch, {"http://127.0.0.1/robots.txt": landed})
+
+    got = discover("http://127.0.0.1")
+
+    assert got.sitemaps == ("https://ex.com/sitemap.xml",)
 
 
 def test_ssrf_blocks_probe_redirected_onto_internal_address(

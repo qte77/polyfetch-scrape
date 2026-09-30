@@ -5,11 +5,12 @@ through the public :func:`fetch`, follows a ``<sitemapindex>`` one level into it
 child sitemaps, transparently decompresses ``.xml.gz`` payloads, and parses the
 (untrusted) XML with :mod:`defusedxml`.
 
-Security: every fetched URL — the initial sitemap **and** each child sitemap URL
-parsed from an index (attacker-controlled) — is passed through the shared SSRF
-guard first, which resolves the hostname and rejects it if *any* answer is an
-internal address; the URL a response actually landed on (or redirects to) is
-re-checked before its body is parsed.
+Security: the shared SSRF guard is **escalation-only** (:mod:`polyfetch_scrape.utils._ssrf`).
+``domain`` itself — the seed the caller passed in — is never blocked, including a
+literal internal IP or ``localhost``. Only when that seed is external does a fetched
+URL — the initial sitemap **and** each child sitemap URL parsed from an index
+(attacker-controlled), plus the URL a response actually lands on or redirects to — get
+checked against internal addresses before its body is parsed.
 """
 
 import gzip
@@ -20,7 +21,7 @@ from defusedxml.ElementTree import ParseError, fromstring
 
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
-from polyfetch_scrape.utils._ssrf import check_redirect, check_ssrf
+from polyfetch_scrape.utils._ssrf import check_redirect, check_ssrf, is_seed_internal
 
 _GZIP_MAGIC = b"\x1f\x8b"
 
@@ -30,16 +31,18 @@ def fetch_sitemap_urls(domain: str, *, max_urls: int = 10_000) -> list[str]:
 
     Follows a ``<sitemapindex>`` one level into its child sitemaps. Returns ``[]``
     when the site has no sitemap (404 / fetch failure) or the payload is unparseable.
-    Raises ``ValueError`` if any fetched URL — the address its host resolves to, or a
-    redirect it lands on — is internal (SSRF guard).
+    ``domain`` (the seed) is never blocked. Raises ``ValueError`` if a fetched URL —
+    the address its host resolves to, or a redirect it lands on — is internal, AND
+    ``domain`` is external (SSRF guard — escalation-only, see ``utils/_ssrf.py``).
     """
     urls: list[str] = []
-    root = _fetch_and_parse(_sitemap_url(domain))
+    seed_internal = is_seed_internal(_sitemap_url(domain))
+    root = _fetch_and_parse(_sitemap_url(domain), seed_internal)
     if root is None:
         return urls
     if _localname(root.tag) == "sitemapindex":
         for child in _locs(root):
-            child_root = _fetch_and_parse(child)
+            child_root = _fetch_and_parse(child, seed_internal)
             if child_root is not None:
                 _collect(child_root, urls, max_urls)
             if len(urls) >= max_urls:
@@ -54,13 +57,13 @@ def _sitemap_url(domain: str) -> str:
     return f"{parts.scheme}://{parts.netloc}/sitemap.xml"
 
 
-def _fetch_and_parse(url: str) -> Element | None:
-    check_ssrf(url)
+def _fetch_and_parse(url: str, seed_internal: bool) -> Element | None:
+    check_ssrf(url, seed_is_internal=seed_internal)
     try:
         resp = fetch(url, max_tier="curl_cffi")  # sitemaps never need JS
     except FetchError:
         return None  # 404 / retries exhausted → treat as "no sitemap"
-    check_redirect(url, resp)  # a public host may have 30x-ed us onto an internal one
+    check_redirect(url, resp, seed_is_internal=seed_internal)  # a public seed may 30x internal
     body = gzip.decompress(resp.body) if resp.body[:2] == _GZIP_MAGIC else resp.body
     try:
         return fromstring(body)

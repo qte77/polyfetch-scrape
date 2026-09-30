@@ -120,11 +120,32 @@ def test_malformed_xml_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "169.254.169.254", "10.0.0.1"])
-def test_ssrf_blocks_internal_initial_domain(monkeypatch: pytest.MonkeyPatch, host: str) -> None:
+def test_ssrf_allows_literal_internal_ip_domain_seed(
+    monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    # Escalation-only (#181, relaxed by owner decision 2026-09-30): the domain
+    # seed itself is never blocked — fetch_sitemap_urls() may legitimately point
+    # at a local dev server.
     monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch({}))
 
-    with pytest.raises(ValueError, match="SSRF"):
-        fetch_sitemap_urls(f"http://{host}")
+    assert fetch_sitemap_urls(f"http://{host}") == []  # allowed through; no sitemap found
+
+
+def test_ssrf_allows_internal_child_sitemap_when_seed_is_internal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An internal seed trusts everything reachable from it: a child <loc> naming
+    # another internal address (which would be blocked for an external seed — see
+    # test_ssrf_blocks_internal_child_sitemap) must not raise.
+    mapping = {
+        "http://127.0.0.1/sitemap.xml": _resp(_index("http://169.254.169.254/child.xml")),
+        "http://169.254.169.254/child.xml": _resp(
+            _urlset("http://169.254.169.254/a"), url="http://169.254.169.254/child.xml"
+        ),
+    }
+    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+
+    assert fetch_sitemap_urls("http://127.0.0.1") == ["http://169.254.169.254/a"]
 
 
 def test_ssrf_blocks_internal_child_sitemap(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -142,14 +163,13 @@ def test_ssrf_blocks_internal_child_sitemap(monkeypatch: pytest.MonkeyPatch) -> 
         ("metadata.google.internal", "169.254.169.254"),  # cloud IMDS via a DNS name
     ],
 )
-def test_ssrf_blocks_domain_whose_host_resolves_internal(
+def test_ssrf_allows_domain_seed_whose_host_resolves_internal(
     monkeypatch: pytest.MonkeyPatch, host: str, address: str
 ) -> None:
     monkeypatch.setattr(_RESOLVER, lambda _h: [address])
     monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch({}))
 
-    with pytest.raises(ValueError, match="SSRF"):
-        fetch_sitemap_urls(f"http://{host}")
+    assert fetch_sitemap_urls(f"http://{host}") == []  # allowed through; no sitemap found
 
 
 def test_ssrf_blocks_child_sitemap_whose_host_resolves_internal(
