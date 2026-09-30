@@ -5,6 +5,7 @@ Run via `make test_e2e` or `uv run pytest -m e2e`.
 """
 
 import json
+from urllib.parse import urlparse
 
 import pytest
 
@@ -215,7 +216,10 @@ def test_patchright_har_record_produces_valid_har(tmp_path) -> None:
     har = json.loads(resp.har_path.read_text())
     assert har["log"]["version"] == "1.2"
     urls = [e["request"]["url"] for e in har["log"]["entries"]]
-    assert any(u.startswith("https://example.com") for u in urls)
+    # Exact host match, not a substring/prefix check (CodeQL: incomplete URL sanitization
+    # flags "https://example.com" as a prefix that "https://example.com.evil.com" would
+    # also satisfy) -- see AGENT_LEARNINGS.md "CodeQL url-substring gate".
+    assert any(urlparse(u).netloc == "example.com" for u in urls)
 
 
 def test_render_session_video_record_real_webm(tmp_path) -> None:
