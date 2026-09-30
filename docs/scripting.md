@@ -70,10 +70,10 @@ def summarize_har(path: str) -> None:
 
     document_host = urlparse(entries[0]["request"]["url"]).netloc if entries else None
     by_host = Counter(urlparse(e["request"]["url"]).netloc for e in entries)
-    by_type = Counter(
-        _resource_type(e["response"]["content"].get("mimeType", "")) for e in entries
-    )
-    failures = [e for e in entries if e["response"]["status"] == 0 or e["response"]["status"] >= 400]
+    by_type = Counter(_resource_type(e["response"]["content"].get("mimeType", "")) for e in entries)
+    failures = [
+        e for e in entries if e["response"]["status"] == 0 or e["response"]["status"] >= 400
+    ]
     total_bytes = sum(max(e["response"]["content"].get("size", 0), 0) for e in entries)
     slowest = sorted(entries, key=lambda e: e.get("time", 0), reverse=True)[:5]
     third_party = sorted(h for h in by_host if h and h != document_host)
