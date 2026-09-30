@@ -77,8 +77,10 @@ quick_validate:  ## Fast dev cycle (no tests)
 # MARK: CHANGELOG
 
 
-changelog_new:  ## Add + stage a scriv changelog fragment for this PR
-	uv run scriv create --add
+# Deliberately NOT `--add`: staging the empty template at creation made commits
+# capture the template instead of the edited entry (3 times in plan 010).
+changelog_new:  ## Create a scriv changelog fragment for this PR (edit it, then git add it)
+	uv run scriv create
 
 changelog_preview:  ## Preview the assembled release entry from changelog.d/
 	uv run scriv print
