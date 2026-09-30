@@ -165,6 +165,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 214 | CLI request body `--json-body` / `--data` | L4 / A | agent | 4 | S | CLI tests: the body reaches `fetch(json=…)` / `content=`; both at once → exit 2; patchright tier → clear error |
 | 198 | Surface the httpx-tier UA (`request_user_agent`) | L4 / A (after 214) | agent | 3 | S | Response + `--json` carry the sent UA; USING documents the default |
 | 209 | `FingerprintBlock` carries bounded headers / body excerpt | L5 / A | agent | 3 | S–M | Tests at all three raise sites; excerpt ≤ 2 KB; no cookies |
+| 237 | Empty 2xx HTML body is a silent soft block: escalate; on the last tier raise | L5 / A (after 209) | agent | 4 | S | Per-backend tests: empty-HTML GET 2xx escalates; `204` / `HEAD` / JSON / `304` don't; last tier raises (default). Escalation is at `client.py:132-141` |
 | 212 | Dependabot python-deps: fix the red `ci` | L6 / A | agent | 3 | S | `ci` passes; merged or closed with the reason |
 | 222 | Dependabot actions group (after rebase) | L6 / A | data | 2 | S | Rebased onto #226; no `callowayproject` action re-added; passes; merged |
 | 200 | Authenticated sessions (storage_state, headers); absorbs #178 core | C | owner (D2) | 4 | M | Save + resume round-trip e2e; persistent-profile sub-ask split into a new issue |
