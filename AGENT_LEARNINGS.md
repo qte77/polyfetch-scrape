@@ -57,3 +57,10 @@ description: Non-obvious patterns that prevent repeated mistakes across sprints
 - **Problem**: Anti-bot rules, site policies, and network conditions change fast; data accurate when captured is often stale by merge time. Observed: issue #36 proposed a six-site "default-UA vs. browser-UA" block table from an earlier session; on re-probe **5 of the 6 sites had flipped** (now `200` to a bare `curl`), and the one remaining blocker discriminated on the **TLS/client fingerprint, not the UA string** — inverting the issue's thesis. Merging verbatim would have shipped a wrong conclusion.
 - **Solution**: Before merging time-sensitive empirical data, **re-run the probe/measurement yourself** via the sanctioned ad-hoc path (`make probe`, or `curl`), use the fresh values, and note any deviation in the PR body. Stamp tables with a "probed YYYY-MM-DD" date and keep the doc's own "point-in-time — re-run before relying" caveat. Extends [Verify single-subagent claims before propagating] from *fabrication* to *decay*.
 - **References**: `docs/scraping-landscape.md` "Empirical findings — polyfetch-scrape probes"; issues #36 / #39. Workflow rule — stays in `AGENT_LEARNINGS.md`.
+
+### A pre-staged changelog template gets committed instead of the edited entry
+
+- **Context**: Adding a scriv fragment with `make changelog_new`, then committing only the source paths (`git commit -- src/...` or `git add <files>`).
+- **Problem**: The recipe used `scriv create --add`, which **staged the empty template at creation**. Later edits lived only in the working tree, so the commit carried the unedited template. It happened 3× in plan 010 (#233, #235, #242), each caught only by re-reading the committed blob.
+- **Solution**: Fixed at the root: the recipe now runs `scriv create` without `--add`, so the fragment stays unstaged until you `git add` it after editing. If you ever stage a fragment early, re-`git add` it after editing, and check with `git show HEAD:<fragment>` before pushing.
+- **References**: `Makefile` `changelog_new`; `CONTRIBUTING.md` "CHANGELOG requirements". It's the 3rd occurrence, but the tool fix replaces a `.claude/rules/` promotion.
