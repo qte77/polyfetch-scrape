@@ -49,7 +49,7 @@
 | `make validate` | Full pre-commit pipeline | lint + types + complexity + cov |
 | `make ci` | Check-only CI pipeline (no mutation) | Same gates as `validate`, non-mutating; run by `.github/workflows/test.yml` |
 | `make quick_validate` | Fast inner-loop validation | lint + types only |
-| `make changelog_new` | Add + stage a scriv changelog fragment for this PR | Edit the generated `changelog.d/*.md` |
+| `make changelog_new` | Create a scriv changelog fragment for this PR | Edit the generated `changelog.d/*.md`, then `git add` it |
 | `make changelog_preview` | Preview the assembled release entry | Reads `changelog.d/` fragments |
 | `make changelog_release VERSION=X.Y.Z` | Collect fragments into `CHANGELOG.md` | Run by the release pipeline; manual for a local cut |
 | `make probe URL=... [JSON=1] [BROWSER=chrome\|firefox] [MAX_ATTEMPTS=N]` | Probe a single URL via CLI | Wraps `polyfetch fetch` |
@@ -80,8 +80,9 @@ Consuming polyfetch from **another** project or an agent *without installing it*
 
 All non-trivial changes add a [scriv](https://scriv.readthedocs.io/) **fragment** under `changelog.d/` — **not** a manual `CHANGELOG.md` edit. Fragments are collected into a dated `## [X.Y.Z]` section by the release pipeline (see [Commit and PR conventions](#commit-and-pr-conventions)).
 
-1. `make changelog_new` — creates + stages `changelog.d/<timestamp>_<branch>.md`.
+1. `make changelog_new` — creates `changelog.d/<timestamp>_<branch>.md` (unstaged).
 2. Edit it: uncomment the relevant `### Added / Changed / Deprecated / Removed / Fixed / Security` heading (only those that apply) and write the entry in [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) style. `make changelog_preview` shows the assembled result.
+3. `git add` it **after** editing, so the commit carries your entry, not the empty template.
 
 **Requires a CHANGELOG entry:**
 
