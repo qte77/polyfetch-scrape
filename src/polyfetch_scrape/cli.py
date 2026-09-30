@@ -128,13 +128,26 @@ def _format_text(payload: dict[str, Any]) -> str:
 
 
 def _error_payload(url: str, exc: FetchError) -> dict[str, Any]:
-    """Structured error for ``--json``: shared by ``fetch`` and ``bulk`` (see USING.md)."""
-    return {
+    """Structured error for ``--json``: shared by ``fetch`` and ``bulk`` (see USING.md).
+
+    ``headers``/``body_excerpt`` are present only when the failing backend captured them
+    (bounded diagnostics on the final blocked/exhausted response — see #209); absent
+    otherwise, so every existing ``--json`` error consumer is unaffected. ``headers`` is
+    the blocked response's own headers with ``Set-Cookie`` already redacted (never a
+    request header) and is included as-is: it is inherently small (a single HTTP
+    response's header block), so no further truncation is applied here.
+    """
+    payload: dict[str, Any] = {
         "url": url,
         "error_type": type(exc).__name__,
         "status": exc.status,
         "message": str(exc),
     }
+    if exc.headers is not None:
+        payload["headers"] = exc.headers
+    if exc.body_excerpt is not None:
+        payload["body_excerpt"] = exc.body_excerpt
+    return payload
 
 
 def _resolve_device(device: str | None, device_json: str | None) -> str | dict[str, Any] | None:

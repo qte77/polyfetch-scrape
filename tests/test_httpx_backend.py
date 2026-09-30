@@ -31,6 +31,53 @@ def test_httpx_backend_raises_fingerprintblock_on_403() -> None:
 
 
 @respx.mock
+def test_httpx_backend_fingerprintblock_carries_bounded_diagnostics() -> None:
+    url = "https://example.com/blocked-diag"
+    respx.get(url).mock(
+        return_value=httpx.Response(
+            403,
+            headers={"content-type": "text/html", "set-cookie": "sid=abc123"},
+            content=b"<html>blocked</html>",
+        )
+    )
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        httpx_backend.attempt(
+            method="GET",
+            url=url,
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    exc = excinfo.value
+    assert exc.status == 403
+    assert exc.headers is not None
+    assert exc.headers.get("content-type") == "text/html"
+    assert "set-cookie" not in {k.lower() for k in exc.headers}
+    assert exc.body_excerpt == "<html>blocked</html>"
+
+
+@respx.mock
+def test_httpx_backend_tls_fingerprintblock_has_no_diagnostics() -> None:
+    """A transport-level TLS error has no HTTP response to diagnose from."""
+    url = "https://example.com/tls-diag"
+    respx.get(url).mock(side_effect=httpx.ConnectError("[SSL: TLSV1_ALERT_INTERNAL_ERROR]"))
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        httpx_backend.attempt(
+            method="GET",
+            url=url,
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert excinfo.value.headers is None
+    assert excinfo.value.body_excerpt is None
+
+
+@respx.mock
 @pytest.mark.parametrize(
     ("status", "exc_type"),
     [(401, AuthRequired), (404, GoneError), (451, LegalBlock)],

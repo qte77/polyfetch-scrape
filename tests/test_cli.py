@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from polyfetch_scrape.cli import app
+from polyfetch_scrape.cli import _error_payload, app
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.throttle import Throttle
@@ -623,6 +623,40 @@ def test_fetch_json_emits_structured_error(
     assert payload["error_type"] == error_type
     assert payload["status"] == status
     assert payload["message"] == str(exc)
+    assert "headers" not in payload
+    assert "body_excerpt" not in payload
+
+
+def test_fetch_json_error_omits_diagnostics_keys_when_absent() -> None:
+    # No headers/body_excerpt supplied → the keys are absent, not null (back-compat with
+    # every existing --json error consumer).
+    payload = _error_payload("https://x.test", FetchError("plain"))
+    assert "headers" not in payload
+    assert "body_excerpt" not in payload
+
+
+def test_fetch_json_error_includes_bounded_diagnostics_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exc = FetchError(
+        "patchright fetch failed after 3 attempts (status=403): https://x.test",
+        status=403,
+        headers={"content-type": "text/html"},
+        body_excerpt="<html>blocked</html>",
+    )
+
+    def boom(*_a: object, **_kw: object) -> Response:
+        raise exc
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", boom)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == 403
+    assert payload["headers"] == {"content-type": "text/html"}
+    assert payload["body_excerpt"] == "<html>blocked</html>"
 
 
 def test_bulk_emits_one_jsonline_per_url(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

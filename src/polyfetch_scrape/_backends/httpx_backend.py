@@ -7,6 +7,7 @@ import httpx
 
 from polyfetch_scrape._backends import (
     FingerprintBlock,
+    bounded_diagnostics,
     permanent_redirect_target,
     raise_for_terminal_status,
 )
@@ -29,6 +30,8 @@ class _Attempt:
     retry_status: int | None
     transport_error: Exception | None
     retry_after: float | None = None
+    headers: dict[str, str] | None = None
+    body_excerpt: str | None = None
 
 
 def attempt(
@@ -57,12 +60,17 @@ def attempt(
         else f"transport={last.transport_error!r}"
     )
     msg = f"httpx fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
+    diag: dict[str, Any] = {
+        "status": last.retry_status,
+        "headers": last.headers,
+        "body_excerpt": last.body_excerpt,
+    }
 
     if last.retry_status in _FINGERPRINT_STATUSES or (
         last.transport_error is not None and _is_tls_error(last.transport_error)
     ):
-        raise FingerprintBlock(msg) from last.transport_error
-    raise FetchError(msg) from last.transport_error
+        raise FingerprintBlock(msg, **diag) from last.transport_error
+    raise FetchError(msg, **diag) from last.transport_error
 
 
 def _attempt_once(
@@ -86,7 +94,8 @@ def _attempt_once(
         or http_resp.status_code in _FINGERPRINT_STATUSES
     ):
         retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
-        return _Attempt(None, http_resp.status_code, None, retry_after)
+        resp_headers, body_excerpt = bounded_diagnostics(dict(http_resp.headers), http_resp.content)
+        return _Attempt(None, http_resp.status_code, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(http_resp.status_code, url)
     return _Attempt(_to_response(http_resp), None, None)
