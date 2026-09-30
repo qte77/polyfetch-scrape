@@ -182,8 +182,9 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 218 | Third-party mentions on #190 | B | owner (D6) | 2 | S | Comments edited or hidden |
 | 205, 207, 127, 211 | Close as superseded / decided / not planned | B | owner (D7) | — | S | Closed with a comment |
 | — | Actions allow-list cleanup | B | owner (D9) | 1 | S | Pattern removed |
-| — | Release **v0.8.1** (security) right after #181 merges | A | agent | 4 | S | Bump workflow `patch`; close and reopen the bump PR so CI runs; admin-squash; the Tag and Release run succeeds and the release is marked Latest |
-| — | DNS-rebinding / per-hop / subresource follow-up issue | A (after 181) | agent | — | S | Issue opened from the #181 PR-body draft, with the vendor mechanisms verified or marked UNVERIFIED |
+| — | ~~Release **v0.8.1** (security) right after #181 merges~~ ✅ v0.8.1 (#239, 2026-09-30: #181 + #197) | A | agent | 4 | S | Released and marked Latest |
+| — | ~~DNS-rebinding / per-hop / subresource follow-up issue~~ ✅ #240 | A (after 181) | agent | — | S | Opened; vendor mechanisms marked UNVERIFIED |
+| 240 | SSRF follow-up: DNS-rebinding pinning, hop-by-hop redirects, Patchright subresource opt-in | C | agent | 3 | M–L | Per #240 "Done when"; escalation-only model kept (seeds never checked, `fetch()` unguarded) |
 | — | `SECURITY.md` (reporting path + SSRF-guard scope) | A | agent | 3 | S | File exists, linked from README; states what `check_ssrf` guards and what it doesn't |
 | — | Heads-up comments on contributor PRs; close them after porting | B | owner (D1, D10) | 2 | S | Comment posted before each port merges; PRs closed after merge per D1 |
 | — | Release **v0.9.0** at the end of Phase A (#229 is a feature) | A (end) | agent | 3 | S | All Phase A rows struck; bump `minor`; released as above |
