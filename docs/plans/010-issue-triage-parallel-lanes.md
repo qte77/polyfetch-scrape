@@ -151,6 +151,14 @@ Defaults apply unattended except where marked 🔒 (the agent must wait).
 | D9 | 🔒 Remove the unused `callowayproject/bump-my-version@*` from the Actions allow-list | Remove. That also makes any stale re-add (e.g. an old Dependabot #222) fail when the workflow is parsed |
 | D10 | 🔒 Community: before each port lands, post a one-line heads-up on #201/#202/#206 ("landing as #N with you as co-author")? Invite `dntywntme` as a collaborator, which removes the fork-run approval/expiry problem at the root? | Heads-up: yes (the orchestrator posts it once you approve). Invite: your call |
 
+**Owner decisions, 2026-09-30:** the defaults were accepted for D1–D9. Agents build on D2, D3, D4, D5 and D8 as written.
+- **Done:**
+  - D1: #201, #202, #205, #206 and #207 closed with remarks crediting @dntywntme. #203/#204 stay open until the #200/#182 ports.
+  - D6: the external #190 comment was hidden. #218 stays open until the owner edits their own #190 comments.
+  - D7: #127 and #211 closed (#205/#207 were covered by D1).
+- **Also done:** D9. The allow-list is now exactly `astral-sh/setup-uv@*`, `DavidAnson/markdownlint-cli2-action@*` and `lycheeverse/lychee-action@*` (GitHub-owned and `qte77`-owned actions are allowed implicitly; `sha_pinning_required` stays on). The owner set it in repo settings; the agent's `PUT …/actions/permissions/selected-actions` calls all returned HTTP 502.
+- **D10:** no heads-up comments and no collaborator invite. Closing remarks mention @dntywntme instead.
+
 ## Remaining work
 
 The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that ships it. Gate: `agent` (lane may run), `owner` (🔒 decision first), `data` (waits on an external signal). ROI 1–5; effort S (<½ day), M (1–2 days), L (>2 days).
@@ -166,7 +174,8 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 198 | Surface the httpx-tier UA (`request_user_agent`) | L4 / A (after 214) | agent | 3 | S | Response + `--json` carry the sent UA; USING documents the default |
 | 209 | `FingerprintBlock` carries bounded headers / body excerpt | L5 / A | agent | 3 | S–M | Tests at all three raise sites; excerpt ≤ 2 KB; no cookies |
 | 237 | Empty 2xx HTML body is a silent soft block: escalate; on the last tier raise | L5 / A (after 209) | agent | 4 | S | Per-backend tests: empty-HTML GET 2xx escalates; `204` / `HEAD` / JSON / `304` don't; last tier raises (default). Escalation is at `client.py:132-141` |
-| 212 | Dependabot python-deps: fix the red `ci` | L6 / A | agent | 3 | S | `ci` passes; merged or closed with the reason |
+| ~~212~~ | ~~Dependabot python-deps: fix the red `ci`~~ ✅ #236 (root cause: ruff 0.16 reformats Python fences in Markdown; 5 of 6 bumps; #212 closed as superseded) | L6 / A | agent | 3 | S | Shipped |
+| 241 | patchright 1.61.2 → 1.63.0 (new Chromium), held back from #236 | A (later) | data | 3 | S | ≥1 GB free disk; `make doctor` + `make test_e2e` pass; Chromium/DevTools note re-checked |
 | 222 | Dependabot actions group (after rebase) | L6 / A | data | 2 | S | Rebased onto #226; no `callowayproject` action re-added; passes; merged |
 | 200 | Authenticated sessions (storage_state, headers); absorbs #178 core | C | owner (D2) | 4 | M | Save + resume round-trip e2e; persistent-profile sub-ask split into a new issue |
 | 182 | Opt-in full network log (+SSE via CDP) | C (after 200) | owner (D2) | 3 | M | Per-request list on Response / RenderSession; e2e |

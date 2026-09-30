@@ -32,10 +32,10 @@ Attach any `page.on(...)` listener and react to the browser's DevTools events as
 
 ```python
 with render_session(url) as s:
-    s.page.on("console", lambda m: print(m.type, m.text))          # console.log / warn / error
-    s.page.on("pageerror", lambda e: print("uncaught JS:", e))     # uncaught JS exceptions
+    s.page.on("console", lambda m: print(m.type, m.text))  # console.log / warn / error
+    s.page.on("pageerror", lambda e: print("uncaught JS:", e))  # uncaught JS exceptions
     s.page.on("requestfailed", lambda r: print(r.url, r.failure))  # failed network requests
-    s.click_text("Load more")                                      # …then drive the page
+    s.click_text("Load more")  # …then drive the page
 ```
 
 You don't even have to wire listeners: capture is **always on out of the box** — `s.console_errors`
@@ -60,7 +60,7 @@ via `RenderOptions(capture_console=True, capture_network_failures=True)` → `Re
 
 ```python
 with render_session(url) as s:
-    snap = s.page.locator("body").aria_snapshot()   # accessibility tree of the page
+    snap = s.page.locator("body").aria_snapshot()  # accessibility tree of the page
 ```
 
 (`aria_snapshot()` is the current Patchright API; `page.accessibility.snapshot()` was removed upstream.) polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. See README's [Two layers](README.md#two-layers-engine--scripting-substrate) for the full engine/scripts split. For more worked recipes (multi-step walks, live emulation, what not to do), see the [scripting cookbook](docs/scripting.md).
