@@ -4,6 +4,8 @@ Skipped by default (see `addopts = "-m 'not e2e'"` in pyproject.toml).
 Run via `make test_e2e` or `uv run pytest -m e2e`.
 """
 
+import json
+
 import pytest
 
 from polyfetch_scrape import (
@@ -192,6 +194,28 @@ def test_patchright_emulation_and_video_record_real_webm(tmp_path) -> None:
     assert resp.video_path.suffix == ".webm"
     assert resp.video_path.exists()
     assert resp.video_path.stat().st_size > 0
+
+
+def test_patchright_har_record_produces_valid_har(tmp_path) -> None:
+    """HAR recording (#229) produces a valid HAR 1.2 file with the document request.
+
+    Guards the HAR context_kwargs wiring end-to-end against a real browser: Patchright
+    finalizes the file on context.close() -- same lifecycle timing as the video (#199).
+    """
+    har_path = tmp_path / "session.har"
+    resp = fetch(
+        "https://example.com",
+        tier="patchright",
+        render=RenderOptions(record_har_path=str(har_path)),
+    )
+    assert resp.status == 200
+    assert resp.har_path == har_path
+    assert resp.har_path.exists()
+
+    har = json.loads(resp.har_path.read_text())
+    assert har["log"]["version"] == "1.2"
+    urls = [e["request"]["url"] for e in har["log"]["entries"]]
+    assert any(u.startswith("https://example.com") for u in urls)
 
 
 def test_render_session_video_record_real_webm(tmp_path) -> None:
