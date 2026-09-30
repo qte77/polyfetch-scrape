@@ -717,13 +717,27 @@ def test_discover_text_output_lists_counts(monkeypatch: pytest.MonkeyPatch) -> N
     assert "json_ld_types (1): Event" in result.stdout
 
 
-def test_discover_ssrf_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_discover_literal_internal_seed_is_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # #181 relaxed to escalation-only (owner decision, 2026-09-30): the seed
+    # itself is never blocked, so a literal internal IP reaches discover() and
+    # succeeds instead of exiting 2.
+    monkeypatch.setattr("polyfetch_scrape.cli.discover", lambda _url: _sources())
+
+    result = runner.invoke(app, ["discover", "http://127.0.0.1"])
+
+    assert result.exit_code == 0
+
+
+def test_discover_ssrf_on_derived_url_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    # discover() still raises ValueError when an external seed escalates to an
+    # internal derived URL (a probed path or a redirect target); the CLI must
+    # surface that as a bad parameter (exit 2), not crash.
     def _raise(_url: str) -> "DiscoveredSources":
-        raise ValueError("SSRF guard: blocked internal address '127.0.0.1'")
+        raise ValueError("SSRF guard: blocked internal address '169.254.169.254'")
 
     monkeypatch.setattr("polyfetch_scrape.cli.discover", _raise)
 
-    result = runner.invoke(app, ["discover", "http://127.0.0.1"])
+    result = runner.invoke(app, ["discover", "https://ex.com"])
 
     assert result.exit_code == 2
     assert "SSRF" in result.output
