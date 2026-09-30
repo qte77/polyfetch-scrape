@@ -127,6 +127,10 @@ def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
                 "width": opts.record_video_size[0],
                 "height": opts.record_video_size[1],
             }
+    if opts.record_har_path is not None:
+        kwargs["record_har_path"] = str(opts.record_har_path)
+        kwargs["record_har_mode"] = opts.record_har_mode
+        kwargs["record_har_content"] = opts.record_har_content
     return kwargs
 
 
@@ -154,11 +158,12 @@ def _attempt_once(
             context.close()
     except Exception:
         # A terminal status (raise_for_terminal_status) or any other error escaped _run_page.
-        # The context is already closed, so Patchright has finalized the video on disk — no
-        # success Response will reference it, so delete the orphan before propagating.
+        # The context is already closed, so Patchright has finalized the video/HAR on disk —
+        # no success Response will reference them, so delete the orphans before propagating.
         _discard_video(video)
+        _discard_har(opts.record_har_path)
         raise
-    return _finalize_video(result, video)
+    return _finalize_har(_finalize_video(result, video), opts.record_har_path)
 
 
 def _run_page(
@@ -230,6 +235,30 @@ def _discard_video(video: Any) -> None:
     if video is not None:
         with contextlib.suppress(Exception):
             video.delete()
+
+
+def _finalize_har(result: _Attempt, har_path: str | Path | None) -> _Attempt:
+    """Attach the finished HAR path to a success response, or delete it on failure.
+
+    Patchright only writes the HAR file on ``context.close()`` — the same lifecycle trap as
+    the video path (#199) — so this must run AFTER close (``_attempt_once`` calls it once the
+    context is closed). Unlike the video, ``record_har_path`` is the exact destination the
+    caller chose, so there's no live-driver lookup to make; this just decides whether to keep
+    or discard the file Patchright already wrote there.
+    """
+    if har_path is None:
+        return result
+    if result.response is not None:
+        return replace(result, response=replace(result.response, har_path=Path(har_path)))
+    _discard_har(har_path)
+    return result
+
+
+def _discard_har(har_path: str | Path | None) -> None:
+    """Delete a recorded HAR that no successful ``Response`` will reference (best-effort)."""
+    if har_path is not None:
+        with contextlib.suppress(Exception):
+            Path(har_path).unlink(missing_ok=True)
 
 
 def _record_console(msg: Any, sink: list[str]) -> None:

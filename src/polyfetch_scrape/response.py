@@ -19,6 +19,10 @@ class Response:
     screenshot: bytes | None = None
     # Path to the recorded .webm when record_video_dir was set (browser tier); else None.
     video_path: Path | None = None
+    # Path to the recorded HAR 1.2 file when record_har_path was set (browser tier); else None.
+    # SECURITY: a HAR records every request/response header, including Cookie/Authorization —
+    # treat it as a credentials-bearing artifact once an authenticated session is in play.
+    har_path: Path | None = None
     # Browser-tier diagnostics — opt-in via RenderOptions.capture_*; empty on the httpx/curl tiers.
     # NOTE: reflects only THIS process's network — a failure a real user hits (CORS / extension /
     # proxy) can read clean here. Force a known failure to trust it (AGENT_LEARNINGS #3).
