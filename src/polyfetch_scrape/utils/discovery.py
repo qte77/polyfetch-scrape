@@ -9,10 +9,14 @@ Scope: this **stays at the transport-layer boundary** — it returns entrypoint
 URLs/types only and never parses or extracts the content behind them (that remains a
 downstream concern, per the README/architecture invariants).
 
-Security: every fetched URL passes through the shared literal-IP SSRF guard first
-(:func:`polyfetch_scrape.utils._ssrf.check_ssrf`). Soft-404s are rejected — a site that
-returns a ``200`` HTML shell for every path (SPA) must not read as "``/llms.txt``
-present", so probes sniff the content-type/body before counting an entrypoint.
+Security: the shared SSRF guard is **escalation-only** (:mod:`polyfetch_scrape.utils._ssrf`).
+``url`` itself — the seed the caller passed in — is never blocked, including a literal
+internal IP or ``localhost``. Only a URL this module *derives* from that seed (a probed
+path, a redirect target) is checked, and only when the seed is external: an internal
+seed means the caller trusts everything reachable from it. Soft-404s are rejected — a
+site that returns a ``200`` HTML shell for every path (SPA) must not read as
+"``/llms.txt`` present", so probes sniff the content-type/body before counting an
+entrypoint.
 """
 
 import json
@@ -23,7 +27,7 @@ from urllib.parse import urljoin, urlsplit
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
-from polyfetch_scrape.utils._ssrf import check_ssrf
+from polyfetch_scrape.utils._ssrf import check_redirect, check_ssrf, is_seed_internal
 
 # Arbitrary parsed JSON (``json.loads`` output). A recursive alias lets pyright-strict
 # narrow ``isinstance`` branches within the union — no ``Any`` and no casts needed.
@@ -59,21 +63,25 @@ class DiscoveredSources:
 def discover(url: str) -> DiscoveredSources:
     """Report the structured entrypoints ``url``'s site advertises (never raises for absence).
 
-    Returns empty tuples for sources the site does not expose. Raises ``ValueError`` if
-    ``url`` (or a probed path) resolves to a literal internal IP (SSRF guard).
+    Returns empty tuples for sources the site does not expose. ``url`` itself (the
+    seed) is never blocked — a literal internal IP or ``localhost`` is allowed, for
+    pointing this at a local dev server. Raises ``ValueError`` if a URL this function
+    *derives* from an external seed (a probed path, a redirect target) is, resolves
+    to, or redirects to an internal address (SSRF guard — escalation-only, see
+    ``utils/_ssrf.py``).
     """
     target = url if "://" in url else f"https://{url}"
     origin = _origin(target)
-    check_ssrf(origin)
+    seed_internal = is_seed_internal(target)
 
-    sitemaps, event_sitemaps = _discover_sitemaps(origin)
-    html = _page_html(target)
+    sitemaps, event_sitemaps = _discover_sitemaps(origin, seed_internal)
+    html = _page_html(target, seed_internal)
     return DiscoveredSources(
         url=url,
         sitemaps=tuple(sitemaps),
         event_sitemaps=tuple(event_sitemaps),
         feeds=tuple(_feeds(target, html)),
-        llms_txt=tuple(_llms_txt(origin)),
+        llms_txt=tuple(_llms_txt(origin, seed_internal)),
         json_ld_types=tuple(_json_ld_types(html)),
     )
 
@@ -83,13 +91,15 @@ def _origin(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
-def _fetch(url: str) -> Response | None:
+def _fetch(url: str, seed_internal: bool) -> Response | None:
     """Fetch ``url`` (structured sources never need JS); None on 404 / fetch failure."""
-    check_ssrf(url)
+    check_ssrf(url, seed_is_internal=seed_internal)
     try:
-        return fetch(url, max_tier="curl_cffi")
+        resp = fetch(url, max_tier="curl_cffi")
     except FetchError:
         return None  # absent source — same swallow-to-None convention as utils.sitemap
+    check_redirect(url, resp, seed_is_internal=seed_internal)  # a public seed may 30x internal
+    return resp
 
 
 def _head(body: bytes, size: int = 512) -> str:
@@ -108,19 +118,19 @@ def _looks_like_html(resp: Response) -> bool:
     return _head(resp.body).startswith(_HTML_MARKERS)
 
 
-def _discover_sitemaps(origin: str) -> tuple[list[str], list[str]]:
+def _discover_sitemaps(origin: str, seed_internal: bool) -> tuple[list[str], list[str]]:
     """Sitemap entrypoints from robots.txt ``Sitemap:`` lines + confirmed common paths."""
-    found = list(_robots_sitemaps(origin))
+    found = list(_robots_sitemaps(origin, seed_internal))
     for path in _SITEMAP_PATHS:
         url = f"{origin}{path}"
-        resp = _fetch(url)
+        resp = _fetch(url, seed_internal)
         if resp is not None and _looks_like_xml(resp):
             found.append(url)
     return _split_events(found)
 
 
-def _robots_sitemaps(origin: str) -> list[str]:
-    resp = _fetch(f"{origin}/robots.txt")
+def _robots_sitemaps(origin: str, seed_internal: bool) -> list[str]:
+    resp = _fetch(f"{origin}/robots.txt", seed_internal)
     if resp is None or _looks_like_html(resp):  # HTML soft-404 → no robots.txt
         return []
     return _SITEMAP_LINE_RE.findall(resp.body.decode("utf-8", "replace"))
@@ -138,8 +148,8 @@ def _split_events(urls: list[str]) -> tuple[list[str], list[str]]:
     return plain, event
 
 
-def _page_html(url: str) -> str:
-    resp = _fetch(url)
+def _page_html(url: str, seed_internal: bool) -> str:
+    resp = _fetch(url, seed_internal)
     return (
         resp.body.decode("utf-8", "replace") if resp is not None and _looks_like_html(resp) else ""
     )
@@ -162,11 +172,11 @@ def _feeds(base_url: str, html: str) -> list[str]:
     return feeds
 
 
-def _llms_txt(origin: str) -> list[str]:
+def _llms_txt(origin: str, seed_internal: bool) -> list[str]:
     found: list[str] = []
     for path in _LLMS_PATHS:
         url = f"{origin}{path}"
-        resp = _fetch(url)
+        resp = _fetch(url, seed_internal)
         if resp is not None and not _looks_like_html(resp):  # reject 200 HTML SPA shell
             found.append(url)
     return found

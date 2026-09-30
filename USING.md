@@ -139,20 +139,22 @@ Not on Alpine/musl, though — patchright has no `musllinux` wheel there. `polyf
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
-- **SSRF guard is literal-IP-only, and only on the discovery paths.** `discover()` /
-  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the `easter-hunt` contrib follow
-  attacker-influenced URLs (sitemap entries, feed links, JSON-LD), so they refuse a host that is a
-  literal internal IP. Plain `fetch()` is **not** guarded. The scope is deliberate but asymmetric:
+- **SSRF guard is escalation-only, and only on the discovery paths.** `discover()` /
+  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the `easter-hunt`
+  contrib follow attacker-influenced URLs (sitemap entries, feed links, JSON-LD). The
+  **seed** you pass in — the `url`/`domain`/seed argument — is **never blocked**, even
+  a literal internal IP or `localhost`: pointing these at a local dev server is
+  intentional and supported. Only a URL the tool *derives* from that seed (a probed
+  path, a redirect target) is checked, and only when the seed itself is external — an
+  internal seed means you already trust everything reachable from it. Plain `fetch()`
+  is **not** guarded at all. Full guard description (the allowlist classification,
+  fail-open resolver behaviour, the preventive-vs-post-hoc redirect check per tier):
+  [architecture.md](docs/architecture.md)'s `utils/_ssrf.py` row.
 
-  | URL passed to `discover()` | Result |
-  |---|---|
-  | `http://127.0.0.1:8080/` | blocked — `ValueError` (CLI: exit `2`) |
-  | `http://localhost:8080/` | **passes** — a DNS name, not a literal IP |
-
-  Same destination, opposite outcome. Any DNS name resolving to an internal address passes, so this
-  is not a defence against a hostile sitemap; treat it as a guard against the obvious mistake. The
-  `localhost` route is load-bearing for local E2E (driving a dev server) — use `localhost`, not
-  `127.0.0.1`, when pointing polyfetch at your own machine.
+  **Relaxed from an earlier version of this guard:** a literal internal-IP or
+  `localhost` seed used to be rejected outright; it is now always allowed (owner
+  decision, 2026-09-30) — `discover("http://localhost:8080")` and
+  `discover("http://127.0.0.1:8080")` both work.
 
 ## Stable surface (what you may depend on)
 

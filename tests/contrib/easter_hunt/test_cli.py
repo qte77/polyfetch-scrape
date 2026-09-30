@@ -1,6 +1,7 @@
 """CLI tests for `polyfetch easter-hunt scan`. hunt() is monkeypatched at the
-name bound in cli.py (`polyfetch_scrape.cli.hunt`); the SSRF-rejection tests use
-the real hunt() because the guard raises before any network call."""
+name bound in cli.py (`polyfetch_scrape.cli.hunt`) throughout — including the
+SSRF-related tests, since a real internal-IP seed no longer raises (#181's
+escalation-only guard trusts every seed) and must not attempt a real fetch."""
 
 import json
 from pathlib import Path
@@ -173,10 +174,29 @@ def test_scan_include_wellknown_extends_paths(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.parametrize("url", ["http://127.0.0.1/", "http://169.254.169.254/"])
-def test_scan_literal_internal_ip_exits_2(url: str) -> None:
-    # Real hunt(): the SSRF guard raises ValueError before any fetch; scan() must
-    # surface it as a bad parameter (exit 2), not crash (exit 1).
+def test_scan_literal_internal_seed_is_allowed(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # #181 relaxed to escalation-only (owner decision, 2026-09-30): a literal
+    # internal-IP seed is never blocked, so scan() reaches hunt() and succeeds
+    # instead of exiting 2. hunt() is mocked here (not real) so the test doesn't
+    # attempt a real connection to the seed.
+    monkeypatch.setattr(_HUNT, lambda *a, **kw: [])
+
     result = runner.invoke(app, ["easter-hunt", "scan", url])
+
+    assert result.exit_code == 0
+
+
+def test_scan_ssrf_on_derived_url_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    # hunt() still raises ValueError when an external seed escalates to an
+    # internal derived URL (a path or redirect); scan() must surface that as a
+    # bad parameter (exit 2), not crash (exit 1).
+    def _raise(*_a: object, **_kw: object) -> list[Finding]:
+        raise ValueError("SSRF guard: blocked internal address '169.254.169.254'")
+
+    monkeypatch.setattr(_HUNT, _raise)
+
+    result = runner.invoke(app, ["easter-hunt", "scan", "https://x.test"])
+
     assert result.exit_code == 2
 
 

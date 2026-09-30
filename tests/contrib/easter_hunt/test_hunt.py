@@ -16,6 +16,7 @@ from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 
 _FETCH = "polyfetch_scrape.contrib.easter_hunt.orchestrator.fetch"
+_RESOLVER = "polyfetch_scrape.utils._ssrf._resolve"
 
 
 def _resp(url: str, *, body: bytes = b"", headers: dict[str, str] | None = None) -> Response:
@@ -36,7 +37,7 @@ def _resp(url: str, *, body: bytes = b"", headers: dict[str, str] | None = None)
 
 def test_safe_fetch_returns_response_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_FETCH, lambda url, **_kw: _resp(url))
-    result = _safe_fetch("https://a.test/", timeout=10.0)
+    result = _safe_fetch("https://a.test/", timeout=10.0, seed_is_internal=False)
     assert result is not None
     assert result.url == "https://a.test/"
 
@@ -46,7 +47,7 @@ def test_safe_fetch_swallows_fetcherror_returns_none(monkeypatch: pytest.MonkeyP
         raise FetchError("exhausted")
 
     monkeypatch.setattr(_FETCH, boom)
-    assert _safe_fetch("https://a.test/", timeout=10.0) is None
+    assert _safe_fetch("https://a.test/", timeout=10.0, seed_is_internal=False) is None
 
 
 def test_safe_fetch_swallows_fingerprintblock_subclass(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -55,7 +56,7 @@ def test_safe_fetch_swallows_fingerprintblock_subclass(monkeypatch: pytest.Monke
         raise FingerprintBlock("blocked")
 
     monkeypatch.setattr(_FETCH, boom)
-    assert _safe_fetch("https://a.test/", timeout=10.0) is None
+    assert _safe_fetch("https://a.test/", timeout=10.0, seed_is_internal=False) is None
 
 
 def test_safe_fetch_passes_timeout_through(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,7 +67,7 @@ def test_safe_fetch_passes_timeout_through(monkeypatch: pytest.MonkeyPatch) -> N
         return _resp(url)
 
     monkeypatch.setattr(_FETCH, spy)
-    _safe_fetch("https://a.test/", timeout=3.5)
+    _safe_fetch("https://a.test/", timeout=3.5, seed_is_internal=False)
     assert captured["timeout"] == 3.5
 
 
@@ -169,7 +170,8 @@ def test_hunt_reuses_generator_detectors_across_seeds(monkeypatch: pytest.Monkey
 
 
 # --------------------------------------------------------------------------- #
-# SSRF guard — literal internal IPs raise ValueError BEFORE any fetch
+# SSRF guard — escalation-only (#181, relaxed by owner decision 2026-09-30):
+# a seed is NEVER blocked, including a literal internal IP
 # --------------------------------------------------------------------------- #
 
 
@@ -188,27 +190,28 @@ def test_hunt_reuses_generator_detectors_across_seeds(monkeypatch: pytest.Monkey
         "http://[::ffff:127.0.0.1]/",  # IPv4-mapped IPv6 loopback
     ],
 )
-def test_hunt_ssrf_blocks_literal_internal_ip(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hunt_allows_literal_internal_ip_seed(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The seed itself is never blocked (local/dev use) — a caller may legitimately
+    # point hunt() at 127.0.0.1 or a LAN address.
     calls: list[str] = []
-    monkeypatch.setattr(_FETCH, lambda u, **_kw: calls.append(u))
+    monkeypatch.setattr(_FETCH, lambda u, **_kw: calls.append(u) or _resp(u))
 
-    with pytest.raises(ValueError):  # noqa: PT011 - guard raises plain ValueError
-        hunt([url])
+    hunt([url], detectors=())
 
-    assert calls == []  # the guard fires BEFORE any network call
+    assert calls == [url]  # fetch was reached, not blocked
 
 
-def test_hunt_ssrf_blocks_ip_with_embedded_credentials(
+def test_hunt_allows_ip_seed_with_embedded_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # urlsplit strips userinfo; hostname is still 127.0.0.1 -> blocked.
+    # urlsplit strips userinfo; hostname is still 127.0.0.1, but the seed is
+    # never checked regardless.
     calls: list[str] = []
-    monkeypatch.setattr(_FETCH, lambda u, **_kw: calls.append(u))
+    monkeypatch.setattr(_FETCH, lambda u, **_kw: calls.append(u) or _resp(u))
 
-    with pytest.raises(ValueError):  # noqa: PT011
-        hunt(["http://user:pass@127.0.0.1/"])
+    hunt(["http://user:pass@127.0.0.1/"], detectors=())
 
-    assert calls == []
+    assert calls == ["http://user:pass@127.0.0.1/"]
 
 
 def test_hunt_ssrf_passes_through_hostless_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,11 +231,16 @@ def test_hunt_ssrf_passes_through_hostless_url(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_hunt_ssrf_raises_valueerror_not_fetcherror(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Must be ValueError, not FetchError — otherwise _safe_fetch would swallow it
-    # and the scan would silently skip a blocked target.
-    monkeypatch.setattr(_FETCH, lambda u, **_kw: _resp(u))
+    # An external seed escalating via a redirect to an internal address must
+    # raise ValueError, not FetchError — otherwise _safe_fetch would swallow it
+    # and the scan would silently skip a blocked target. (A literal-internal-IP
+    # *seed* no longer raises at all — see test_hunt_allows_literal_internal_ip_seed.)
+    monkeypatch.setattr(
+        _RESOLVER, lambda h: ["169.254.169.254"] if h == "imds.test" else ["93.184.216.34"]
+    )
+    monkeypatch.setattr(_FETCH, lambda u, **_kw: _resp("http://imds.test/latest/meta-data/"))
     with pytest.raises(ValueError) as exc_info:  # noqa: PT011
-        hunt(["http://127.0.0.1/"])
+        hunt(["https://public.test/"])
     assert not isinstance(exc_info.value, FetchError)
 
 
@@ -241,7 +249,11 @@ def test_hunt_ssrf_raises_valueerror_not_fetcherror(monkeypatch: pytest.MonkeyPa
     [
         "http://93.184.216.34/",  # public literal IP
         "http://example.com/",  # public DNS name (ip_address raises -> passes guard)
-        "http://localhost/",  # DNS alias: literal-IP-only guard does NOT resolve it
+        # A seed is never blocked regardless of what it resolves to (escalation-only,
+        # #181) — "localhost" passes for that reason now, not because it happens to
+        # resolve public under the suite's stub. See test_hunt_allows_literal_internal_ip_seed
+        # for the equally-allowed literal-internal-IP case.
+        "http://localhost/",
     ],
 )
 def test_hunt_ssrf_allows_public_and_dns_hosts(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -256,6 +268,52 @@ def test_hunt_ssrf_allows_public_and_dns_hosts(url: str, monkeypatch: pytest.Mon
     hunt([url], detectors=())
 
     assert len(captured) == 1  # guard passed through; fetch was reached
+
+
+# --------------------------------------------------------------------------- #
+# SSRF guard — DNS-resolved hosts and redirect targets (#181)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("host", "address"),
+    [
+        ("localhost.internal", "127.0.0.1"),  # loopback via a DNS name
+        ("metadata.google.internal", "169.254.169.254"),  # cloud IMDS
+    ],
+)
+def test_hunt_allows_seed_hostname_resolving_to_internal(
+    host: str, address: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A seed's own hostname resolving internal (a local-network DNS alias) is
+    # never blocked — same escalation-only rule as a literal internal-IP seed.
+    monkeypatch.setattr(_RESOLVER, lambda h: [address] if h == host else ["93.184.216.34"])
+    calls: list[str] = []
+    monkeypatch.setattr(_FETCH, lambda u, **_kw: calls.append(u) or _resp(u))
+
+    hunt([f"http://{host}/"], detectors=())
+
+    assert calls == [f"http://{host}/"]
+
+
+def test_hunt_ssrf_blocks_redirect_onto_internal_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The seed itself is public; the serving tier followed a 30x onto the IMDS
+    # address. The response body must never reach the detectors.
+    monkeypatch.setattr(
+        _RESOLVER, lambda h: ["169.254.169.254"] if h == "imds.test" else ["93.184.216.34"]
+    )
+    monkeypatch.setattr(_FETCH, lambda u, **_kw: _resp("http://imds.test/latest/meta-data/"))
+
+    seen: list[Response] = []
+
+    def spy_detector(response: Response) -> list[object]:
+        seen.append(response)
+        return []
+
+    with pytest.raises(ValueError, match="SSRF"):
+        hunt(["https://public.test/"], detectors=(spy_detector,))
+
+    assert seen == []  # blocked before any detector saw the body
 
 
 # --------------------------------------------------------------------------- #
