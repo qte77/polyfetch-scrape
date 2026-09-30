@@ -156,7 +156,7 @@ Defaults apply unattended except where marked 🔒 (the agent must wait).
   - D1: #201, #202, #205, #206 and #207 closed with remarks crediting @dntywntme. #203/#204 stay open until the #200/#182 ports.
   - D6: the external #190 comment was hidden. #218 stays open until the owner edits their own #190 comments.
   - D7: #127 and #211 closed (#205/#207 were covered by D1).
-- **Blocked:** D9. The Actions permissions API returned HTTP 502 on every attempt. The target list is exactly `astral-sh/setup-uv@*`, `DavidAnson/markdownlint-cli2-action@*` and `lycheeverse/lychee-action@*` (GitHub-owned and `qte77`-owned actions are allowed implicitly). Retry, or edit it under Settings → Actions → General.
+- **Also done:** D9. The allow-list is now exactly `astral-sh/setup-uv@*`, `DavidAnson/markdownlint-cli2-action@*` and `lycheeverse/lychee-action@*` (GitHub-owned and `qte77`-owned actions are allowed implicitly; `sha_pinning_required` stays on). The owner set it in repo settings; the agent's `PUT …/actions/permissions/selected-actions` calls all returned HTTP 502.
 - **D10:** no heads-up comments and no collaborator invite. Closing remarks mention @dntywntme instead.
 
 ## Remaining work
