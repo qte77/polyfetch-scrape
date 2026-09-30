@@ -139,20 +139,22 @@ Not on Alpine/musl, though — patchright has no `musllinux` wheel there. `polyf
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
-- **SSRF guard resolves hostnames and redirect targets, only on the discovery paths.**
-  `discover()` / `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the
-  `easter-hunt` contrib follow attacker-influenced URLs (sitemap entries, feed links,
-  JSON-LD): each resolves the host and refuses it if any A/AAAA answer is internal, and
-  re-checks the address a response lands on / redirects to. Plain `fetch()` is **not**
-  guarded. Full guard description (scope, fail-open resolver behaviour, the
-  preventive-vs-post-hoc redirect check per tier): [architecture.md](docs/architecture.md)'s
-  `utils/_ssrf.py` row.
+- **SSRF guard is escalation-only, and only on the discovery paths.** `discover()` /
+  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the `easter-hunt`
+  contrib follow attacker-influenced URLs (sitemap entries, feed links, JSON-LD). The
+  **seed** you pass in — the `url`/`domain`/seed argument — is **never blocked**, even
+  a literal internal IP or `localhost`: pointing these at a local dev server is
+  intentional and supported. Only a URL the tool *derives* from that seed (a probed
+  path, a redirect target) is checked, and only when the seed itself is external — an
+  internal seed means you already trust everything reachable from it. Plain `fetch()`
+  is **not** guarded at all. Full guard description (the allowlist classification,
+  fail-open resolver behaviour, the preventive-vs-post-hoc redirect check per tier):
+  [architecture.md](docs/architecture.md)'s `utils/_ssrf.py` row.
 
-  **Breaking for local E2E:** `http://localhost:8080/` used to pass this guard (a DNS
-  name, not a literal IP) — it now resolves to loopback and is **blocked**, same as
-  `http://127.0.0.1:8080/`. If you were pointing `discover()`/`fetch_sitemap_urls()` at
-  a local dev server via `localhost`, that call now raises `ValueError`; use a LAN
-  address, a tunnel hostname, or drive that request through plain `fetch()` instead.
+  **Relaxed from an earlier version of this guard:** a literal internal-IP or
+  `localhost` seed used to be rejected outright; it is now always allowed (owner
+  decision, 2026-09-30) — `discover("http://localhost:8080")` and
+  `discover("http://127.0.0.1:8080")` both work.
 
 ## Stable surface (what you may depend on)
 
