@@ -235,3 +235,49 @@ def test_video_path_none_when_not_recording(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert s.video_path is None
     page.video.path.assert_not_called()
+
+
+def test_har_path_set_after_teardown_when_recording(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _make_session_chain(monkeypatch)
+    har = tmp_path / "session.har"
+
+    with render_session("https://example.com", record_har_path=str(har)) as s:
+        assert s.har_path is None  # not set until the context closes
+
+    assert s.har_path == har
+
+
+def test_har_path_set_before_browser_close_and_pw_stop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#229: mirrors the #199 ordering lesson. Patchright writes the HAR on context.close(),
+    so har_path must be set right after that -- not deferred until browser.close()/pw.stop()."""
+    _page, context, browser, pw = _make_session_chain(monkeypatch)
+    har = tmp_path / "session.har"
+    order: list[str] = []
+    holder: dict[str, Any] = {}
+
+    context.close.side_effect = lambda: order.append("context.close")
+
+    def _browser_close() -> None:
+        order.append("browser.close")
+        assert holder["session"].har_path == har  # already set before browser closes
+
+    browser.close.side_effect = _browser_close
+    pw.stop.side_effect = lambda: order.append("pw.stop")
+
+    with render_session("https://example.com", record_har_path=str(har)) as s:
+        holder["session"] = s
+
+    assert order == ["context.close", "browser.close", "pw.stop"]
+
+
+def test_har_path_none_when_not_recording(monkeypatch: pytest.MonkeyPatch) -> None:
+    _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com") as s:
+        pass
+
+    assert s.har_path is None

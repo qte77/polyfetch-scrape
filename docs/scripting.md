@@ -6,8 +6,8 @@ owns the browser install, launch/teardown, console/network capture, and the SSRF
 guard; you own the app-specific steps once you have a live `Page` on `s.page`. Every
 snippet below uses only the public `RenderSession` surface: `click` / `click_text` /
 `fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot`,
-plus `.page`, `s.console_errors`, `s.network_failures`, `s.screenshots`, and
-`s.video_path`.
+plus `.page`, `s.console_errors`, `s.network_failures`, `s.screenshots`, `s.video_path`,
+and `s.har_path`.
 
 ## DevTools capture
 
@@ -33,6 +33,75 @@ fill for the whole session (initial page load included) with no setup.
 > **Caveat:** a headless capture reflects only *this* runner's network. A cross-origin
 > failure a real user hits (CORS, a browser extension, a proxy) can succeed here and
 > read clean — treat an empty capture as "no error on this network", not "no error".
+
+## HAR summary recipe
+
+`record_har_path` (on `render_session(...)` or `RenderOptions`) writes a standard HAR 1.2 file
+of every request the session makes — openable in Chrome DevTools or any HAR viewer. This is a
+**recipe, not an engine helper** (AHA): summarizing a HAR is app-specific (which breakdown you
+care about varies), so it stays a snippet here rather than a `utils.har` module or `polyfetch har`
+command, until a second consumer needs the same summary.
+
+```python
+import json
+from collections import Counter
+from urllib.parse import urlparse
+
+from polyfetch_scrape import render_session
+
+
+def _resource_type(mime_type: str) -> str:
+    if "html" in mime_type:
+        return "document"
+    if "javascript" in mime_type:
+        return "script"
+    if "css" in mime_type:
+        return "stylesheet"
+    if mime_type.startswith("image/"):
+        return "image"
+    if "json" in mime_type:
+        return "xhr/fetch"
+    return "other"
+
+
+def summarize_har(path: str) -> None:
+    with open(path) as f:
+        entries = json.load(f)["log"]["entries"]
+
+    document_host = urlparse(entries[0]["request"]["url"]).netloc if entries else None
+    by_host = Counter(urlparse(e["request"]["url"]).netloc for e in entries)
+    by_type = Counter(_resource_type(e["response"]["content"].get("mimeType", "")) for e in entries)
+    failures = [
+        e for e in entries if e["response"]["status"] == 0 or e["response"]["status"] >= 400
+    ]
+    total_bytes = sum(max(e["response"]["content"].get("size", 0), 0) for e in entries)
+    slowest = sorted(entries, key=lambda e: e.get("time", 0), reverse=True)[:5]
+    third_party = sorted(h for h in by_host if h and h != document_host)
+
+    print("Requests by host:", dict(by_host))
+    print("Requests by type:", dict(by_type))
+    print(f"Failures ({len(failures)}):", [e["request"]["url"] for e in failures])
+    print(f"Total bytes: {total_bytes}")
+    print("Slowest requests:")
+    for e in slowest:
+        print(f"  {e.get('time', 0):.0f}ms  {e['request']['url']}")
+    print("Third-party hosts:", third_party)
+
+
+with render_session(url, record_har_path="session.har") as s:
+    s.wait_for_selector(".content")
+
+summarize_har(s.har_path)
+```
+
+`response.content.mimeType` and `entry.time` are standard HAR 1.2 fields (not Patchright-specific),
+so this works on a HAR from any tool. `stdlib json` only — no new dependency.
+
+> **Security:** a HAR records every request/response header, including `Cookie` and
+> `Authorization`. It's safe while polyfetch has no authenticated-session support, but once one
+> lands (#200/#178) a HAR taken during a logged-in session **will** contain live credentials.
+> Never commit or share a HAR file uninspected — treat it like a secret. `record_har_content`
+> defaults to `"omit"` (no response bodies); headers are not redacted.
 
 ## Accessibility snapshot
 

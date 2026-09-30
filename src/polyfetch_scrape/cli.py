@@ -164,6 +164,7 @@ def _build_render_options(
     user_agent: str | None,
     locale: str | None,
     video_out: Path | None,
+    har_out: Path | None,
 ) -> RenderOptions:
     return RenderOptions(
         wait_until=wait_until,  # type: ignore[arg-type]
@@ -176,6 +177,7 @@ def _build_render_options(
         user_agent=user_agent,
         locale=locale,
         record_video_dir=video_out,
+        record_har_path=har_out,
     )
 
 
@@ -254,6 +256,15 @@ def fetch_cmd(
             help="Browser tier: record a VP8 .webm of the session into this directory.",
         ),
     ] = None,
+    har_out: Annotated[
+        Path | None,
+        typer.Option(
+            "--har-out",
+            help="Browser tier: record a HAR 1.2 file of the session to this path. "
+            "Contains every request/response header, including cookies — treat it as "
+            "a credentials-bearing artifact once an authenticated session is in play.",
+        ),
+    ] = None,
     tier: Annotated[
         _TierChoice | None,
         typer.Option(
@@ -305,6 +316,7 @@ def fetch_cmd(
         user_agent=user_agent,
         locale=locale,
         video_out=video_out,
+        har_out=har_out,
     )
     try:
         resp = fetch(
@@ -348,6 +360,10 @@ def fetch_cmd(
         # Surface the recorded .webm's exact path so --video-out consumers learn the
         # auto-generated filename (Patchright names it). Absent when not recording.
         payload["video_path"] = str(resp.video_path)
+    if json_output and resp.har_path is not None:
+        # Surface the recorded HAR's path (--har-out is the exact destination, so this is
+        # mostly a convenience echo). Absent when not recording.
+        payload["har_path"] = str(resp.har_path)
     typer.echo(json.dumps(payload) if json_output else _format_text(payload))
 
 

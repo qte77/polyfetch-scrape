@@ -163,6 +163,22 @@ def test_fetch_emulation_and_video_flags_build_render_options(
     assert render.record_video_dir == Path("captured-videos")  # type: ignore[attr-defined]
 
 
+def test_fetch_har_flag_builds_render_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--har-out", "captured.har"])
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.record_har_path == Path("captured.har")  # type: ignore[attr-defined]
+
+
 def test_fetch_rejects_malformed_viewport(monkeypatch: pytest.MonkeyPatch) -> None:
     called = False
 
@@ -365,6 +381,7 @@ def test_fetch_json_omits_screenshot_b64_when_absent(monkeypatch: pytest.MonkeyP
     payload = json.loads(result.stdout)
     assert "screenshot_b64" not in payload
     assert "video_path" not in payload
+    assert "har_path" not in payload
     assert "permanent_redirect_to" not in payload
 
 
@@ -389,6 +406,30 @@ def test_fetch_json_includes_video_path(monkeypatch: pytest.MonkeyPatch) -> None
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["video_path"] == "vids/rec.webm"
+
+
+def test_fetch_json_includes_har_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake(url: str, **_kw: object) -> Response:
+        return Response(
+            url=url,
+            status=200,
+            headers={"content-type": "text/html"},
+            body=b"x",
+            content_type="text/html",
+            backend="patchright",
+            har_path=Path("captured.har"),
+        )
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app,
+        ["fetch", "https://x.test", "--json", "--tier", "patchright", "--har-out", "captured.har"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["har_path"] == "captured.har"
 
 
 def test_fetch_json_includes_permanent_redirect_to(monkeypatch: pytest.MonkeyPatch) -> None:

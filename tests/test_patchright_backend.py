@@ -689,6 +689,30 @@ def test_context_kwargs_video_dir_without_size_omits_size_key() -> None:
     assert kwargs == {"record_video_dir": "captured-vids"}
 
 
+def test_context_kwargs_har_path_mode_and_content() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(
+        pw, RenderOptions(record_har_path="captured.har", record_har_mode="full")
+    )
+
+    assert kwargs["record_har_path"] == "captured.har"
+    assert kwargs["record_har_mode"] == "full"
+    assert kwargs["record_har_content"] == "omit"  # default: bodies omitted
+
+
+def test_context_kwargs_har_omitted_when_not_recording() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(pw, RenderOptions())
+
+    assert "record_har_path" not in kwargs
+    assert "record_har_mode" not in kwargs
+    assert "record_har_content" not in kwargs
+
+
 def test_context_kwargs_empty_opts_is_empty_dict() -> None:
     pw = MagicMock()
     pw.devices = {}
@@ -855,3 +879,57 @@ def test_patchright_backend_no_video_path_when_not_recording(
     assert resp.video_path is None
     page.video.path.assert_not_called()
     page.video.delete.assert_not_called()
+
+
+def test_patchright_backend_har_success_sets_har_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _make_pw_chain(monkeypatch)
+    har_path = tmp_path / "session.har"
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(record_har_path=str(har_path)),
+    )
+
+    assert resp.har_path == har_path
+
+
+def test_patchright_backend_har_deleted_on_persistent_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _make_pw_chain(monkeypatch, goto_side_effect=pw_sync.TimeoutError("nav timeout"))
+    har_path = tmp_path / "session.har"
+    har_path.write_text("{}")  # simulate Patchright having flushed a partial HAR on close
+
+    with pytest.raises(FetchError):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            render=RenderOptions(record_har_path=str(har_path)),
+        )
+
+    assert not har_path.exists()
+
+
+def test_patchright_backend_no_har_path_when_not_recording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.har_path is None
