@@ -123,6 +123,12 @@ with render_session(url) as s:
 ```
 
 - `error_type` = the exception class (below); `status` = terminal HTTP code, or `null` when not status-bound (e.g. retries exhausted).
+- `headers` / `body_excerpt` (optional) = the **final tier's** blocked/exhausted response, when captured: `headers` is that response's headers (`Set-Cookie` always redacted — never a request header/cookie), `body_excerpt` is its body truncated to 2 KB and decoded lossily. Both keys are **absent** (not `null`) when not captured, so existing `--json` consumers are unaffected. Lets you tell a pure TLS/fingerprint block from a session/behavioral one without dropping to `render_session` (see #209):
+
+```json
+{"url": "https://…", "error_type": "FingerprintBlock", "status": 403, "message": "…", "headers": {"content-type": "text/html"}, "body_excerpt": "<html>…</html>"}
+```
+
 - Without `--json`, `fetch` prints `<ErrorType>: <message>` to **stderr**.
 - Terminal statuses — no retry, no escalation. Exception names (all subclass `FetchError`): `AuthRequired` (401/407), `GoneError` (404/410), `LegalBlock` (451).
 
