@@ -19,7 +19,7 @@ How `fetch()` maps HTTP status codes to behaviour and exception types (RFC 9110 
 | Status | Meaning | polyfetch-scrape behaviour | Type |
 |---|---|---|---|
 | 200 | OK | returned | `Response` |
-| 301 / 308 | Permanent redirect | followed by the HTTP client; surfacing the final URL on `Response` is planned | — (see [#31](https://github.com/qte77/polyfetch-scrape/issues/31)) |
+| 301 / 308 | Permanent redirect | the target is surfaced so callers can update stored URLs ([#31](https://github.com/qte77/polyfetch-scrape/issues/31)); also emitted by `fetch` / `bulk --json` ([#188](https://github.com/qte77/polyfetch-scrape/issues/188)) | `Response.permanent_redirect_to` |
 | 304 | Not Modified | returned unchanged (conditional GET via `etag` / `last_modified`) | `Response(status=304)` |
 | 401 / 407 | Unauthorized / Proxy Auth Required | terminal — raises, not retried/escalated | `AuthRequired` |
 | 403 | Forbidden | fingerprint signal — escalates to the next tier | `FingerprintBlock` (internal) |
@@ -51,6 +51,17 @@ The `nowsecure.nl/` and `tls.peet.ws/api/all` httpx-tier results above decayed b
 | polyfetch `curl_cffi` tier (`impersonate="chrome"` — browser UA + Chrome TLS/JA3) | **200** |
 
 > Point-in-time observations. Anti-bot rules and site policies change; re-run before relying on these results. This table is descriptive, not prescriptive — see [RFC 9110 §15.5.4](https://datatracker.ietf.org/doc/html/rfc9110#section-15.5.4) for the formal semantics of 403.
+
+**Session re-probe — X / x.com (2026-09-30):** a logged-out login wall that no tier gets past. One attempt per tier via `polyfetch fetch <url> --tier <tier> --max-attempts 1 --json`:
+
+| Request | httpx | curl_cffi | Patchright |
+|---|---|---|---|
+| `x.com/XDevelopers` (public profile page) | 403 | 403 | 403 |
+| `publish.x.com/oembed?url=https://x.com/XDevelopers` (oEmbed, profile URL) | 200 (438-byte JSON) | n/a | n/a |
+
+Reported by another session the same day and **not re-probed here** (no post URL at hand): for a single *post* URL, the default chain returned `200` with a **0-byte body** (reported as success; see the empty-2xx gap in [#237](https://github.com/qte77/polyfetch-scrape/issues/237)), the Patchright tier raised a 403 after 3 attempts, and oEmbed for that post returned **402 Payment Required**. Treat post-level oEmbed as paid until re-probed.
+
+Takeaway: this is an authentication wall plus datacenter/automation blocking, not a fingerprint problem that a stronger tier fixes. polyfetch deliberately does not work around it (see README "What it does not do"). The sanctioned automated route is X's paid API.
 
 Both 403 rows carry a *browser* User-Agent, so the block does not key on the UA string alone: a hand-rolled `curl` is refused while polyfetch's browser-shaped `httpx` and `curl_cffi` clients pass the same URL. The discriminating factor is the broader client profile (header set and/or TLS/HTTP-2 signature); the exact factor was not isolated here.
 
