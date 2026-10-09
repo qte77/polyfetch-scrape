@@ -24,7 +24,7 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 
 Beyond the CLI, polyfetch is a **substrate you script against**: `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page`, with the **full Chromium DevTools / CDP surface** — for flows the CLI doesn't cover.
 
-`render_session(url, *, wait_until=..., timeout=30.0, device=None, viewport=None, color_scheme=None, user_agent=None, locale=None, record_video_dir=None, record_video_size=None) -> RenderSession` — `viewport`/`record_video_size` are plain `(width, height)` pixel tuples, **not** a `RenderOptions`/dict. Full signature + semantics: [`docs/api-reference.md` § Render session](docs/api-reference.md#render-session-interactive-patchright-tier).
+`render_session(url, *, wait_until=..., timeout=30.0, device=None, viewport=None, color_scheme=None, user_agent=None, locale=None, record_video_dir=None, record_video_size=None, record_har_path=None, record_har_mode="minimal", record_har_content="omit") -> RenderSession` — `viewport`/`record_video_size` are plain `(width, height)` pixel tuples, **not** a `RenderOptions`/dict. `record_har_path` records a HAR 1.2 file of every request — **contains every request/response header, including cookies**; see the security note below. Full signature + semantics: [`docs/api-reference.md` § Render session](docs/api-reference.md#render-session-interactive-patchright-tier).
 
 ### DevTools capture (console, network, JS errors)
 
@@ -83,6 +83,15 @@ with render_session(url) as s:
 
 `fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"` — list them with `polyfetch devices`; an unknown name exits `2` and suggests near-misses), `--device-json '<json object>'` (a custom device bundle for a device the registry doesn't carry, e.g. `'{"user_agent": "…", "viewport": {"width": 411, "height": 914}, "is_mobile": true}'` — mutually exclusive with `--device`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path` and, with `--json`, is surfaced as `video_path` — the exact auto-generated filename).
 
+`fetch` **patchright-tier HAR flag:** `--har-out FILE` (records a HAR 1.2 file of every request the session makes, to that exact path; the path lands on `Response.har_path` and, with `--json`, is surfaced as `har_path`). Defaults to `"minimal"` mode and omitted response bodies.
+
+> **Security — HAR files contain credentials.** A HAR records every request/response header,
+> including `Cookie` and `Authorization`. It is safe today because polyfetch has no
+> authenticated-session support yet, but once one lands (#200/#178) a HAR taken during a
+> logged-in session **will** contain live credentials. Never commit, upload, or share a `--har-out`
+> file uninspected — treat it like a secret. Bodies are omitted by default; headers are not
+> redacted (tracked as a follow-up).
+
 `bulk` flags: `--workers N` (concurrency), `--delay S` (per-host polite spacing — min seconds between same-host requests, shared across workers), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 
 (The optional `contrib` scanner `polyfetch easter-hunt scan` is unsupported and out of this contract — see [`CONTRIBUTING.md`](CONTRIBUTING.md).)
@@ -101,6 +110,9 @@ with render_session(url) as s:
   `jq -r .screenshot_b64 | base64 -d`.
 - `video_path` (fetch `--json` only) = filesystem path to the recorded `.webm`, present **only** when
   `--video-out DIR` recorded one on the patchright tier; absent otherwise.
+- `har_path` (fetch `--json` only) = filesystem path to the recorded HAR 1.2 file, present **only**
+  when `--har-out FILE` recorded one on the patchright tier; absent otherwise. See the security
+  note above before sharing this file.
 - `permanent_redirect_to` (fetch **and** every `bulk` line) = the `Location` target of a **permanent**
   redirect (301/308), present **only** when the response was one; absent otherwise. polyfetch does not
   auto-follow redirects (SSRF-safe, transparent), so on a 301 you get `status:301, bytes:0` — read this

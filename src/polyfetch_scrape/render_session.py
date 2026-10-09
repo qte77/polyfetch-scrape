@@ -28,7 +28,13 @@ from polyfetch_scrape._backends.patchright_backend import (
 )
 from polyfetch_scrape._platform import ensure_browser_tier_supported
 from polyfetch_scrape.errors import FetchError
-from polyfetch_scrape.render_options import ColorScheme, RenderOptions, WaitUntil
+from polyfetch_scrape.render_options import (
+    ColorScheme,
+    HarContent,
+    HarMode,
+    RenderOptions,
+    WaitUntil,
+)
 
 
 class RenderSession:
@@ -53,6 +59,9 @@ class RenderSession:
         locale: str | None = None,
         record_video_dir: str | Path | None = None,
         record_video_size: tuple[int, int] | None = None,
+        record_har_path: str | Path | None = None,
+        record_har_mode: HarMode = "minimal",
+        record_har_content: HarContent = "omit",
     ) -> None:
         self._url = url
         self._wait_until = wait_until
@@ -67,6 +76,9 @@ class RenderSession:
             locale=locale,
             record_video_dir=record_video_dir,
             record_video_size=record_video_size,
+            record_har_path=record_har_path,
+            record_har_mode=record_har_mode,
+            record_har_content=record_har_content,
         )
         self._pw: Any = None
         self._browser: Any = None
@@ -74,6 +86,7 @@ class RenderSession:
         self._video: Any = None
         self.page: Any = None
         self.video_path: Path | None = None
+        self.har_path: Path | None = None
         self.screenshots: dict[str, bytes] = {}
         self.console_errors: list[str] = []
         self.network_failures: list[dict[str, object]] = []
@@ -141,14 +154,18 @@ class RenderSession:
         if self._context is not None:
             with contextlib.suppress(Exception):
                 self._context.close()
-        # Patchright only finalizes the video once its context has closed (above), and
-        # video.path() needs a live driver connection to resolve it — so read it here,
-        # before the browser and driver are torn down (mirrors `_finalize_video` in
-        # `_backends/patchright_backend.py`). Reading it after `pw.stop()` (the bug in #199)
-        # made the call raise against the dead driver, silently swallowed by suppress below.
+        # Patchright only finalizes the video/HAR once its context has closed (above). The
+        # video path needs a live driver connection to resolve (video.path()), while the HAR
+        # path is already known (record_har_path is the exact destination) but the file itself
+        # isn't flushed to disk until context.close() completes — so read/set both here, before
+        # the browser and driver are torn down (mirrors `_finalize_video` / `_finalize_har` in
+        # `_backends/patchright_backend.py`). Reading the video path after `pw.stop()` (the bug
+        # in #199) made the call raise against the dead driver, silently swallowed by suppress.
         if self._video is not None:
             with contextlib.suppress(Exception):
                 self.video_path = Path(self._video.path())
+        if self._opts.record_har_path is not None:
+            self.har_path = Path(self._opts.record_har_path)
         for obj, method in ((self._browser, "close"), (self._pw, "stop")):
             if obj is not None:
                 with contextlib.suppress(Exception):
@@ -167,6 +184,9 @@ def render_session(
     locale: str | None = None,
     record_video_dir: str | Path | None = None,
     record_video_size: tuple[int, int] | None = None,
+    record_har_path: str | Path | None = None,
+    record_har_mode: HarMode = "minimal",
+    record_har_content: HarContent = "omit",
 ) -> RenderSession:
     """Open a managed headless Patchright session for an interactive multi-step flow.
 
@@ -176,6 +196,14 @@ def render_session(
     ``record_video_dir`` (+ optional ``record_video_size``, also a ``(width, height)`` tuple)
     records a VP8 ``.webm``; the finished path lands on ``RenderSession.video_path`` once the
     ``with`` block exits (Patchright finalizes the file on context close, not before).
+
+    ``record_har_path`` (+ optional ``record_har_mode``, ``record_har_content``) records a
+    HAR 1.2 file of every request the session makes, at that exact path; it lands on
+    ``RenderSession.har_path`` once the ``with`` block exits (same context-close timing as the
+    video). Defaults to ``"minimal"`` mode and ``"omit"`` content (no response bodies).
+    **Security:** a HAR records every request/response header, including ``Cookie`` and
+    ``Authorization`` — treat it as a credentials-bearing artifact once an authenticated
+    session is in play.
 
     ``timeout`` (seconds) is applied both to the ``RenderSession`` convenience methods
     (``click``, ``fill``, ``wait_for_selector``, ...) and, via ``page.set_default_timeout`` /
@@ -191,7 +219,7 @@ def render_session(
             s.fill("input", "hello"); s.submit()
             s.shot("after")
         # auto: console/network capture on s.console_errors / s.network_failures,
-        #       screenshot-on-exception, teardown, s.video_path if recording.
+        #       screenshot-on-exception, teardown, s.video_path / s.har_path if recording.
     """
     return RenderSession(
         url,
@@ -204,4 +232,7 @@ def render_session(
         locale=locale,
         record_video_dir=record_video_dir,
         record_video_size=record_video_size,
+        record_har_path=record_har_path,
+        record_har_mode=record_har_mode,
+        record_har_content=record_har_content,
     )

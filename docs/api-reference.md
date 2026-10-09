@@ -23,7 +23,7 @@ A single call runs the three-tier fallback chain (or the pinned `tier`) and retu
 
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
-CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR]` — the patchright-tier emulation/video flags; `--json` additionally surfaces `screenshot_b64` (PNG) and `video_path` (recording) when requested. Full flag list: [USING.md](../USING.md).
+CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE]` — the patchright-tier emulation/video/HAR flags; `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested. Full flag list: [USING.md](../USING.md).
 
 ## Throttle (optional per-host rate limit)
 
@@ -57,6 +57,9 @@ RenderOptions(
     locale=None,
     record_video_dir=None,
     record_video_size=None,
+    record_har_path=None,
+    record_har_mode="minimal",
+    record_har_content="omit",
 )
 # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
 # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
@@ -79,6 +82,14 @@ RenderOptions(
 # record_video_dir=<path> (+ optional record_video_size=(width, height)) → records a
 #     VP8 .webm of the session into that directory; Patchright only finalizes the file on
 #     context.close(), so the path lands on Response.video_path once fetch() returns
+# record_har_path=<path> (+ optional record_har_mode="full"|"minimal",
+#     record_har_content="omit"|"embed"|"attach") → records a HAR 1.2 file of every
+#     request the session makes, at that exact path; lands on Response.har_path once
+#     fetch() returns (same context.close()-finalization timing as the video).
+#     Defaults: "minimal" mode, "omit" content (no response bodies).
+#     SECURITY: a HAR records every request/response header, including Cookie and
+#     Authorization — treat it as a credentials-bearing artifact once an authenticated
+#     session is in play (#200/#178), and never commit or share one uninspected.
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
 # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -99,19 +110,22 @@ A managed, **headless** Patchright `Page` for multi-step interactive flows (act 
 ```python
 with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
                      device=None, viewport=None, color_scheme=None, user_agent=None,
-                     locale=None, record_video_dir=None, record_video_size=None) as s:
+                     locale=None, record_video_dir=None, record_video_size=None,
+                     record_har_path=None, record_har_mode="minimal",
+                     record_har_content="omit") as s:
     s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
     s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
     s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
     s.page           # the managed Patchright Page (escape hatch for structural reads)
     s.video_path     # Path to the recorded .webm once set (only after the `with` block exits)
+    s.har_path       # Path to the recorded HAR once set (only after the `with` block exits)
 # auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
 #   on an exception inside the block → an "exception" screenshot is captured first;
-#   s.video_path is set once the context closes, when record_video_dir was given.
+#   s.video_path / s.har_path are set once the context closes, when requested.
 # a navigation timeout raises FetchError.
 ```
 
-`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below.
+`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video/HAR semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play.
 
 `timeout` (seconds, default `30.0`) applies to both the `RenderSession` convenience methods above **and** raw calls on `s.page` (`page.set_default_timeout` / `set_default_navigation_timeout` are set right after the page is created) — so e.g. `s.page.locator(sel).click()` honors the same budget instead of Playwright's own 30000ms default.
 
@@ -128,6 +142,7 @@ Response(
     permanent_redirect_to=None,
     screenshot=None,
     video_path=None,
+    har_path=None,
     console_errors=[],
     network_failures=[],
     screenshots={},
@@ -136,6 +151,10 @@ Response(
 # screenshot: PNG bytes when requested on the patchright tier, else None
 # video_path: Path to the recorded VP8 .webm when RenderOptions.record_video_dir was set
 #   (patchright tier), else None
+# har_path: Path to the recorded HAR 1.2 file when RenderOptions.record_har_path was set
+#   (patchright tier), else None. SECURITY: a HAR records every request/response header,
+#   including Cookie/Authorization — treat it as a credentials-bearing artifact once an
+#   authenticated session is in play
 # screenshots: dict[name, PNG bytes] from RenderOptions.screenshots; {} otherwise
 # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
 # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)

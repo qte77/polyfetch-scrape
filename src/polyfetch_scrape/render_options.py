@@ -8,6 +8,8 @@ from typing import Any, Literal
 WaitUntil = Literal["domcontentloaded", "load", "networkidle"]
 ActionVerb = Literal["click", "click_text", "fill", "type", "wait_for_selector", "wait_ms"]
 ColorScheme = Literal["light", "dark", "no-preference"]
+HarMode = Literal["full", "minimal"]
+HarContent = Literal["omit", "embed", "attach"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +80,14 @@ class RenderOptions:
       this directory; the finished file's path lands on ``Response.video_path``. Patchright only
       finalizes the file on ``context.close()``, so the path is unavailable until the attempt
       completes.
+    - ``record_har_path`` (+ ``record_har_mode``, ``record_har_content``): record a HAR 1.2 file
+      of every request the session makes to this exact file path; the path lands on
+      ``Response.har_path`` once the attempt completes (same context-close finalization timing
+      as the video). Defaults to the smaller, safer capture: ``"minimal"`` mode (skips resources
+      not needed to replay the page) and ``"omit"`` content (no response bodies).
+      **Security:** a HAR records every request/response header, including ``Cookie`` and
+      ``Authorization`` — treat a HAR as a credentials-bearing artifact once an authenticated
+      session is in play, and never commit or share one uninspected.
     """
 
     wait_until: WaitUntil = "domcontentloaded"
@@ -95,3 +105,6 @@ class RenderOptions:
     locale: str | None = None
     record_video_dir: str | Path | None = None
     record_video_size: tuple[int, int] | None = None
+    record_har_path: str | Path | None = None
+    record_har_mode: HarMode = "minimal"
+    record_har_content: HarContent = "omit"
