@@ -13,6 +13,7 @@ from patchright.sync_api import sync_playwright
 from polyfetch_scrape._backends import (
     FingerprintBlock,
     bounded_diagnostics,
+    is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
 )
@@ -33,6 +34,7 @@ class _Attempt:
     retry_after: float | None = None
     headers: dict[str, str] | None = None
     body_excerpt: str | None = None
+    soft_block: bool = False
 
 
 def attempt(
@@ -61,20 +63,26 @@ def attempt(
                 last = _attempt_once(browser, url, headers, timeout_ms, opts, ctx_kwargs, policy)
                 if last.response is not None:
                     return last.response
+                if last.soft_block:
+                    break  # deterministic, not transient — retrying won't un-empty the body
                 if attempt_idx + 1 < policy.max_attempts:
                     time.sleep(next_delay(last.retry_after, policy, attempt_idx))
         finally:
             browser.close()
 
-    detail = (
-        f"status={last.block_status}" if last.block_status is not None else f"error={last.error!r}"
-    )
-    msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     diag: dict[str, Any] = {
         "status": last.block_status,
         "headers": last.headers,
         "body_excerpt": last.body_excerpt,
     }
+    if last.soft_block:
+        msg = f"patchright fetch: empty 2xx body — suspected soft block: {url}"
+        raise FingerprintBlock(msg, **diag)
+
+    detail = (
+        f"status={last.block_status}" if last.block_status is not None else f"error={last.error!r}"
+    )
+    msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     if last.block_status in _FINGERPRINT_STATUSES:
         raise FingerprintBlock(msg, **diag) from last.error
     raise FetchError(msg, **diag) from last.error
@@ -215,6 +223,10 @@ def _run_page(
 
     body = page.content().encode("utf-8")
     all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
+    content_type = all_headers.get("content-type")
+    if is_suspected_soft_block("GET", status, body, content_type):
+        resp_headers, _ = bounded_diagnostics(all_headers, body)
+        return _Attempt(None, status, None, None, resp_headers, None, soft_block=True)
     screenshots = {s.name: capture_screenshot(page, s.target) or b"" for s in opts.screenshots}
     return _Attempt(
         Response(

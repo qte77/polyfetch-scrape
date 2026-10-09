@@ -102,7 +102,7 @@ def test_curl_backend_retries_on_503_then_succeeds(monkeypatch: pytest.MonkeyPat
 
 
 def test_curl_backend_passes_firefox_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _fake_response(status=200)
+    fake = _fake_response(status=200, body=b"ok")  # non-empty: not the #237 soft-block case
     session_cls = _install_session(monkeypatch, return_value=fake)
 
     curl_backend.attempt(
@@ -269,6 +269,72 @@ def test_curl_backend_body_excerpt_capped_at_2kb(monkeypatch: pytest.MonkeyPatch
 
     assert excinfo.value.body_excerpt is not None
     assert len(excinfo.value.body_excerpt) == 2048
+
+
+def test_curl_backend_empty_2xx_html_body_raises_fingerprintblock_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=200, body=b"", headers={"content-type": "text/html"})
+    session_cls = _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=3),
+        )
+
+    assert excinfo.value.status == 200
+    # Deterministic soft block — no point retrying within the tier.
+    assert session_cls.return_value.request.call_count == 1
+
+
+def test_curl_backend_empty_2xx_missing_content_type_raises_fingerprintblock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=200, body=b"")
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock):
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+
+@pytest.mark.parametrize(
+    ("method", "status", "body", "headers"),
+    [
+        ("GET", 204, b"", {}),
+        ("HEAD", 200, b"", {}),
+        ("GET", 200, b"", {"content-type": "application/json"}),
+        ("GET", 200, b"non-empty", {"content-type": "text/html"}),
+    ],
+)
+def test_curl_backend_does_not_soft_block_exempt_cases(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    status: int,
+    body: bytes,
+    headers: dict[str, str],
+) -> None:
+    fake = _fake_response(status=status, body=body, headers=headers)
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method=method,
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == status
 
 
 def test_curl_backend_forwards_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
