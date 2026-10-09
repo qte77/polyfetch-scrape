@@ -1,6 +1,14 @@
 # 010 — Issue triage → parallel worktree lanes (post-v0.8.0)
 
-**Status (2026-09-29):** Phase A started. Lanes **L1 (#181), L2 (#199, #216) and L3 (#197)** launched in parallel worktrees from `main` @ `01cef56`. The source-map line numbers are from `f689c3c` (v0.8.0); the plan merge `01cef56` didn't touch `src/`, so they still hold. An independent (Fable) review changed the protocol: lanes never edit this plan, and the orchestrator strikes rows. Its findings are folded in below.
+**Status (2026-10-09): Phase A and Phase B are DONE. v0.8.1 (2026-09-30) and v0.9.0 (2026-10-09) are released.**
+- **Shipped:** #181, #197, #199, #216, #229, #209, #237, #214, #198, #241 (patchright 1.63 = Chromium 153), the dependency bumps (#236, #246, #222) and the tooling fix #243.
+- **Next: Phase C.** All gates are now settled (see the owner decisions under the D table), so Phase C items are **agent-runnable** except #218 (the owner edits their own comments) and #228 (deferred).
+- **Start order:**
+  - **#190** launch options (headed/xvfb/mobile), then #59.
+  - **#200** auth sessions on WIP `c61557f` + #203's fixes, then #182.
+  - **#179**, **#147**, **#240** (SSRF follow-up), **#230** (spike first) and **#183** in parallel lanes as file ownership allows.
+- **Source-map line numbers are stale.** They come from v0.8.0 (`f689c3c`), and `src/` has changed a lot since, so lanes must re-grep.
+- **Disk:** the shared `/workspaces` volume ran out (2026-10-09). Lanes put venvs AND browsers on `/tmp`: `UV_PROJECT_ENVIRONMENT=/tmp/pf-venv-<lane>` + `PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright`.
 
 ## Start here (handoff)
 
@@ -29,6 +37,7 @@ The Agent tool's `isolation: "worktree"` creates `.claude/worktrees/agent-<id>/`
 git fetch origin
 git switch -C <lane-branch> origin/main      # NEVER build on the checkout's HEAD (may be the WIP branch)
 export UV_PROJECT_ENVIRONMENT=/tmp/pf-venv-<lane>   # venv off the full /workspaces volume
+export PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright  # Chromium off it too (make doctor / test_e2e)
 uv sync --frozen
 make validate                                  # baseline must pass before any edit
 ```
@@ -177,26 +186,26 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | ~~212~~ | ~~Dependabot python-deps: fix the red `ci`~~ ✅ #236 (root cause: ruff 0.16 reformats Python fences in Markdown; 5 of 6 bumps; #212 closed as superseded) | L6 / A | agent | 3 | S | Shipped |
 | ~~241~~ | ~~patchright 1.61.2 → 1.63.0 (new Chromium), held back from #236~~ ✅ #250 (Chromium 153.0.8010.12; supersedes Dependabot #245). Browser downloaded via `PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright` (the shared volume was full). All Patchright e2e passed. 4 non-browser e2e (httpbin ×2, arxiv, sitemaps.org) fail identically on main with 1.61.2: a network ConnectTimeout in this environment, not the upgrade | A (later) | data | 3 | S | Shipped |
 | ~~222~~ | ~~Dependabot actions group (after rebase)~~ ✅ #222 merged (setup-uv 10.2.0 + codeql-action pins; no `callowayproject` re-added) | L6 / A | data | 2 | S | Shipped |
-| 200 | Authenticated sessions (storage_state, headers); absorbs #178 core | C | owner (D2) | 4 | M | Save + resume round-trip e2e; persistent-profile sub-ask split into a new issue |
-| 182 | Opt-in full network log (+SSE via CDP) | C (after 200) | owner (D2) | 3 | M | Per-request list on Response / RenderSession; e2e |
+| 200 | Authenticated sessions (storage_state, headers); absorbs #178 core | C | agent (D2: build on WIP `c61557f` + cherry-pick #203's header-clobber fix and `extra_http_headers`, crediting @dntywntme) | 4 | M | Save + resume round-trip e2e; persistent-profile sub-ask split into a new issue; then close #203 with a closing remark |
+| 182 | Opt-in full network log (+SSE via CDP) | C (after 200) | agent (D2; port the useful parts of #204 with credit) | 3 | M | Per-request list on Response / RenderSession; e2e; then close #204 with a closing remark |
 | 190 | Launch option: headed-under-xvfb / mobile mode | C | agent | 4 | M | Option threads through all three headless sites; e2e on a benign page |
 | 179 | Automation-fingerprint diagnostic report | C | agent | 3 | M | Read-only report; no spoofing |
 | 147 | Opt-in robots.txt helper (reuse `_robots_sitemaps`) | C | agent | 3 | M | Allow/deny per UA, unit-tested; #153 checklist updated |
-| 59 | Headed manual-takeover handoff | C (after 190) | owner (D4) | 3 | L | Per the D4 outcome |
-| 230 | Performance capture | C | owner (D8) | 3 | M | Spike findings recorded; then the recipe or opt-in lands |
-| 183 | Chromium crash under load | C | owner (D5) | 3 | L | Crash surfaces as a typed error; repro notes |
-| 228 | Proxy passthrough | C | owner (D3) | 2 | S | Per D3 |
+| 59 | Headed manual-takeover handoff | C (after 190) | agent (D4: engine) | 3 | L | Engine option built on #190's launch plumbing; e2e on a benign page |
+| 230 | Performance capture | C | agent (D8: `browser.start_tracing()` recipe + a real-browser spike first; Chromium 153 now ships DevTools 152) | 3 | M | Spike findings recorded on #230; the recipe lands in `docs/scripting.md` |
+| 183 | Chromium crash under load | C | agent (D5: no auto-relaunch) | 3 | L | A page crash surfaces as a typed error; repro notes |
+| 228 | Proxy passthrough | deferred (D3) | owner | 2 | S | Revisit only when a 2nd consumer needs it; README excludes proxy *rotation* |
 | 144 | Shared ui-check helper | later | data | 3 | L | ≥2 consumers agree on a stable API (AHA) |
 | 153 | Tracking: structured-first | tracker | — | — | — | Closes when #147 ships |
 | 218 | Third-party mentions on #190 | B | owner (D6) | 2 | S | Comments edited or hidden |
-| 205, 207, 127, 211 | Close as superseded / decided / not planned | B | owner (D7) | — | S | Closed with a comment |
-| — | Actions allow-list cleanup | B | owner (D9) | 1 | S | Pattern removed |
+| ~~205, 207, 127, 211~~ | ~~Close as superseded / decided / not planned~~ ✅ closed 2026-09-30 with remarks | B | owner (D7) | — | S | Done |
+| — | ~~Actions allow-list cleanup~~ ✅ the owner set it (D9) | B | owner (D9) | 1 | S | Done |
 | — | ~~Release **v0.8.1** (security) right after #181 merges~~ ✅ v0.8.1 (#239, 2026-09-30: #181 + #197) | A | agent | 4 | S | Released and marked Latest |
 | — | ~~DNS-rebinding / per-hop / subresource follow-up issue~~ ✅ #240 | A (after 181) | agent | — | S | Opened; vendor mechanisms marked UNVERIFIED |
 | 240 | SSRF follow-up: DNS-rebinding pinning, hop-by-hop redirects, Patchright subresource opt-in | C | agent | 3 | M–L | Per #240 "Done when"; escalation-only model kept (seeds never checked, `fetch()` unguarded) |
 | — | ~~`SECURITY.md` (reporting path + SSRF-guard scope)~~ ✅ covered by the estate default `qte77/.github/SECURITY.md` (GitHub applies it to repos without their own; private vulnerability reporting is enabled). No repo copy, to avoid duplication; SSRF-guard scope lives in `docs/architecture.md` | A | agent | 3 | S | Resolved without a file |
-| — | Heads-up comments on contributor PRs; close them after porting | B | owner (D1, D10) | 2 | S | Comment posted before each port merges; PRs closed after merge per D1 |
-| — | Release **v0.9.0** at the end of Phase A (#229 is a feature) | A (end) | agent | 3 | S | All Phase A rows struck; bump `minor`; released as above |
+| — | ~~Heads-up comments on contributor PRs; close them after porting~~ ✅ D10: no heads-ups; #201/#202/#205/#206/#207 closed with remarks crediting @dntywntme (#203/#204 close when #200/#182 port them) | B | owner (D1, D10) | 2 | S | Done |
+| — | ~~Release **v0.9.0** at the end of Phase A~~ ✅ v0.9.0 (#251, 2026-10-09) | A (end) | agent | 3 | S | Released and marked Latest |
 
 ## Watch-outs
 
