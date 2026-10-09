@@ -23,6 +23,11 @@ class Response:
     # SECURITY: a HAR records every request/response header, including Cookie/Authorization —
     # treat it as a credentials-bearing artifact once an authenticated session is in play.
     har_path: Path | None = None
+    # The User-Agent actually sent, when the backend can determine it cheaply: the merged
+    # outgoing headers on httpx/curl_cffi, the context's user_agent on patchright. None when
+    # not knowable without extra cost (e.g. curl_cffi's native impersonation profile picks
+    # one internally and doesn't expose it in Python) — see #198 / USING.md.
+    request_user_agent: str | None = None
     # Browser-tier diagnostics — opt-in via RenderOptions.capture_*; empty on the httpx/curl tiers.
     # NOTE: reflects only THIS process's network — a failure a real user hits (CORS / extension /
     # proxy) can read clean here. Force a known failure to trust it (AGENT_LEARNINGS #3).

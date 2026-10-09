@@ -28,6 +28,21 @@ def test_response_holds_fields() -> None:
     assert resp.backend == "httpx"
     assert resp.permanent_redirect_to is None
     assert resp.screenshot is None
+    assert resp.request_user_agent is None
+
+
+def test_response_surfaces_request_user_agent() -> None:
+    resp = Response(
+        url="https://example.com",
+        status=200,
+        headers={},
+        body=b"<html/>",
+        content_type="text/html",
+        backend="httpx",
+        request_user_agent="Mozilla/5.0 Example",
+    )
+
+    assert resp.request_user_agent == "Mozilla/5.0 Example"
 
 
 def test_response_surfaces_permanent_redirect() -> None:
