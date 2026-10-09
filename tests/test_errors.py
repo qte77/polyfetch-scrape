@@ -1,6 +1,10 @@
 import pytest
 
-from polyfetch_scrape._backends import bounded_diagnostics, raise_for_terminal_status
+from polyfetch_scrape._backends import (
+    bounded_diagnostics,
+    is_suspected_soft_block,
+    raise_for_terminal_status,
+)
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 
 
@@ -86,3 +90,39 @@ def test_bounded_diagnostics_none_headers_and_empty_body_stay_none() -> None:
 def test_bounded_diagnostics_preserves_empty_headers_dict() -> None:
     headers, _ = bounded_diagnostics({}, None)
     assert headers == {}
+
+
+@pytest.mark.parametrize(
+    ("method", "status", "body", "content_type"),
+    [
+        ("GET", 200, b"", None),
+        ("GET", 200, b"", "text/html"),
+        ("GET", 200, b"", "text/html; charset=utf-8"),
+        ("GET", 200, b"", "TEXT/HTML"),
+        ("get", 200, b"", None),  # method matched case-insensitively
+        ("GET", 299, b"", None),  # top of the 2xx range
+    ],
+)
+def test_is_suspected_soft_block_matches(
+    method: str, status: int, body: bytes, content_type: str | None
+) -> None:
+    assert is_suspected_soft_block(method, status, body, content_type) is True
+
+
+@pytest.mark.parametrize(
+    ("method", "status", "body", "content_type"),
+    [
+        ("HEAD", 200, b"", None),  # not GET
+        ("POST", 200, b"", None),  # not GET
+        ("GET", 204, b"", None),  # legitimately empty — exempt
+        ("GET", 304, b"", None),  # not 2xx
+        ("GET", 301, b"", "text/html"),  # not 2xx
+        ("GET", 200, b"non-empty", None),  # body present
+        ("GET", 200, b"", "application/json"),  # non-HTML content type
+        ("GET", 200, b"", "text/plain"),  # non-HTML content type
+    ],
+)
+def test_is_suspected_soft_block_does_not_match(
+    method: str, status: int, body: bytes, content_type: str | None
+) -> None:
+    assert is_suspected_soft_block(method, status, body, content_type) is False

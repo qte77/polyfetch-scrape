@@ -2,9 +2,11 @@
 
 Each backend exposes an ``attempt(...)`` callable that returns a Response on
 success, raises FingerprintBlock when it suspects TLS / anti-bot is the cause
-of failure (so the next backend should be tried), raises a typed terminal error
-(AuthRequired / GoneError / LegalBlock) on a non-retryable terminal status, or
-raises FetchError for any other terminal failure after exhausting retries.
+of failure — a 403, a TLS error, or a suspected empty-2xx soft block (#237,
+see ``is_suspected_soft_block``) — so the next backend should be tried, raises
+a typed terminal error (AuthRequired / GoneError / LegalBlock) on a
+non-retryable terminal status, or raises FetchError for any other terminal
+failure after exhausting retries.
 """
 
 from collections.abc import Mapping
@@ -75,3 +77,26 @@ def bounded_diagnostics(
     )
     excerpt = None if not body else body[:_MAX_BODY_EXCERPT_BYTES].decode("utf-8", errors="replace")
     return safe_headers, excerpt
+
+
+# A GET + 2xx + 0-byte body + HTML-or-missing Content-Type is a suspected soft block (#237):
+# some anti-bot layers return an empty "success" instead of an explicit 403. Deliberately
+# narrow (YAGNI): 204 (legitimately empty), HEAD/other methods, non-2xx, a non-empty body,
+# and a non-HTML content type (application/json, text/plain, ...) never match.
+_HTML_MEDIA_TYPE = "text/html"
+
+
+def is_suspected_soft_block(
+    method: str, status: int, body: bytes, content_type: str | None
+) -> bool:
+    """True for a GET + 2xx (not 204) + empty body + HTML-or-absent Content-Type."""
+    if method.upper() != "GET":
+        return False
+    if status == 204 or not (200 <= status < 300):
+        return False
+    if body:
+        return False
+    if content_type is None:
+        return True
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return media_type == _HTML_MEDIA_TYPE
