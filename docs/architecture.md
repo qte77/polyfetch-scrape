@@ -14,7 +14,7 @@ How a single `fetch(url)` call flows through the three-tier fallback chain to a 
                          ▼   (_run_chain walks the slice; _dispatch calls each tier)
                httpx_backend.attempt ──2xx──► Response
                          │
-                FingerprintBlock (403 / TLS error)
+                FingerprintBlock (403 / TLS error / empty-2xx soft block)
                          ▼
                curl_backend.attempt  ──2xx──► Response
                 (chrome TLS impersonation)
@@ -69,9 +69,11 @@ For how the estate consumes this substrate across repos — and the promotion ru
   records which tier served the request.
 - **Terminal statuses raise in every tier** (401/407 → `AuthRequired`, 404/410 → `GoneError`, 451 →
   `LegalBlock`) — no retry, no escalation; 451 never reaches the fingerprint tiers (RFC 7725).
-- **Escalation is fingerprint-only.** Only `FingerprintBlock` (403 / TLS error) escalates along the
+- **Escalation is fingerprint-only.** Only `FingerprintBlock` — a 403, a TLS error, or a suspected soft
+  block (`GET` + 2xx, not 204, empty body, HTML-or-missing `Content-Type` — #237) — escalates along the
   active tier range (default httpx → curl_cffi → patchright; bounded by `min_tier`/`max_tier`); every
-  other outcome returns or raises immediately.
+  other outcome returns or raises immediately. The soft-block check never retries within a tier first
+  (an empty body is deterministic, not transient) and fires the same way on a pinned `--tier`.
 - **Browser-tier controls stay on the browser tier.** `RenderOptions` (wait strategies, screenshots) is
   a no-op on the httpx / curl_cffi tiers; screenshots require the patchright tier.
 - **Core is horizontal.** Domain API wrappers and content extraction live in downstream packages that
