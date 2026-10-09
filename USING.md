@@ -107,6 +107,13 @@ with render_session(url) as s:
 ```
 
 - `backend` = which tier answered (`httpx` → `curl_cffi` → `patchright`).
+- `request_user_agent` (fetch **and** every `bulk` line) = the `User-Agent` actually sent, when the
+  backend can tell cheaply; present on httpx/curl_cffi (the merged outgoing headers) when it's known,
+  absent when it isn't (curl_cffi's `impersonate=` profile injects its own browser-matching UA
+  natively and doesn't expose it in Python unless you override it yourself); on patchright, present
+  when `--user-agent`/`--device` set it, absent otherwise (the browser's own default isn't probed).
+  See the security note below this schema for why a `200` here is not proof a site is open to every
+  client.
 - `screenshot_b64` (fetch `--json` only) = base64-encoded PNG, present **only** when a screenshot was
   captured (`--screenshot` on the patchright tier); the key is absent otherwise. Decode with
   `jq -r .screenshot_b64 | base64 -d`.
@@ -120,6 +127,16 @@ with render_session(url) as s:
   auto-follow redirects (SSRF-safe, transparent), so on a 301 you get `status:301, bytes:0` — read this
   key and re-fetch the target yourself. Temporary redirects (302/303/307) never set it.
 - Need the page content, not metadata? use `--show-body`.
+
+> **UA substitution — a `200` is not proof a site is open to every client.** The httpx tier
+> defaults to a real desktop-browser `User-Agent` from `utils/http_ua.STABLE_USER_AGENT`
+> (rotated quarterly; see that module's docstring) instead of httpx's own `python-httpx/…`
+> string — a deliberate anti-fingerprint choice (#198). That means `fetch(url)` with no
+> explicit UA answers "is this reachable **pretending to be Chrome**", not "is this reachable
+> at all": a site that 403s a bare `curl`/`python-urllib` request can still return `200` here,
+> and the delta is the UA, not the transport. If you're *characterizing* a target's bot policy
+> rather than scraping it, pass your own `headers={"User-Agent": "..."}` (or an empty one) and
+> read `request_user_agent` back to confirm what was actually sent.
 
 `discover --json` emits the structured entrypoints a site advertises (empty arrays when none):
 

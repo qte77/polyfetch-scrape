@@ -78,6 +78,41 @@ def test_curl_backend_returns_response_on_200(monkeypatch: pytest.MonkeyPatch) -
     session_cls.assert_called_once_with(impersonate="chrome")
 
 
+def test_curl_backend_response_user_agent_is_none_without_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """curl_cffi's impersonation profile picks a UA natively; we can't read it back (#198)."""
+    fake = _fake_response(status=200, body=b"ok")
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.request_user_agent is None
+
+
+def test_curl_backend_response_carries_caller_supplied_user_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=200, body=b"ok")
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers={"User-Agent": "MyCustom/1.0"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.request_user_agent == "MyCustom/1.0"
+
+
 def test_curl_backend_retries_on_503_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     fakes = [

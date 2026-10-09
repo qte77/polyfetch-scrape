@@ -150,6 +150,17 @@ def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
     return kwargs
 
 
+def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
+    """Case-insensitive lookup — ``headers`` may preserve the caller's own key casing."""
+    if headers is None:
+        return None
+    lname = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lname:
+            return v
+    return None
+
+
 def _attempt_once(
     browser: Any,
     url: str,
@@ -165,10 +176,24 @@ def _attempt_once(
     page = context.new_page()
     console_errors, network_failures = attach_capture(page, opts)
     video = page.video if opts.record_video_dir is not None else None
+    # A caller-supplied header override (set_extra_http_headers, above) wins on the wire;
+    # otherwise the context's own user_agent (explicit --user-agent or a device preset) is
+    # the cheap, already-known value — reading navigator.userAgent back would need a JS
+    # round-trip for no gain. Neither set → the browser's own default; not surfaced (#198).
+    request_user_agent = _header_value(headers, "user-agent") or cast(
+        "str | None", context_kwargs.get("user_agent")
+    )
     try:
         try:
             result = _run_page(
-                page, url, timeout_ms, opts, policy, console_errors, network_failures
+                page,
+                url,
+                timeout_ms,
+                opts,
+                policy,
+                console_errors,
+                network_failures,
+                request_user_agent,
             )
         finally:
             context.close()
@@ -190,6 +215,7 @@ def _run_page(
     policy: RetryPolicy,
     console_errors: list[str],
     network_failures: list[dict[str, object]],
+    request_user_agent: str | None,
 ) -> _Attempt:
     """Navigate, check status/retry conditions, run actions/waits, and build the ``_Attempt``."""
     try:
@@ -241,6 +267,7 @@ def _run_page(
             console_errors=console_errors,
             network_failures=network_failures,
             screenshots=screenshots,
+            request_user_agent=request_user_agent,
         ),
         None,
         None,

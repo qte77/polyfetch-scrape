@@ -109,6 +109,11 @@ def _summarize(resp: Response) -> dict[str, Any]:
         "bytes": len(resp.body),
         "content_type": resp.content_type,
     }
+    if resp.request_user_agent is not None:
+        # The UA actually sent, when the backend can determine it cheaply (httpx/curl_cffi:
+        # the outgoing headers; patchright: the context's user_agent); absent when not
+        # knowable (#198). Lives here (not just fetch) so bulk --json carries it too.
+        payload["request_user_agent"] = resp.request_user_agent
     if resp.permanent_redirect_to is not None:
         # Present only on a permanent redirect (301/308), mirroring the conditional
         # screenshot_b64 / video_path keys. Lives here rather than at the fetch call site

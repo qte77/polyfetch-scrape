@@ -23,7 +23,7 @@ A single call runs the three-tier fallback chain (or the pinned `tier`) and retu
 
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
-CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE]` — the patchright-tier emulation/video/HAR flags; `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested. `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. Full flag list: [USING.md](../USING.md).
+CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE]` — the patchright-tier emulation/video/HAR flags; `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested, and `request_user_agent` (the UA actually sent, when cheaply knowable — on `fetch` and every `bulk` line; #198). `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. Full flag list: [USING.md](../USING.md).
 
 ## Throttle (optional per-host rate limit)
 
@@ -143,6 +143,7 @@ Response(
     screenshot=None,
     video_path=None,
     har_path=None,
+    request_user_agent=None,
     console_errors=[],
     network_failures=[],
     screenshots={},
@@ -155,6 +156,11 @@ Response(
 #   (patchright tier), else None. SECURITY: a HAR records every request/response header,
 #   including Cookie/Authorization — treat it as a credentials-bearing artifact once an
 #   authenticated session is in play
+# request_user_agent: the User-Agent actually sent, when cheaply knowable — httpx/curl_cffi:
+#   from the merged outgoing headers (curl_cffi's impersonate= profile picks one natively and
+#   isn't readable unless you override it yourself); patchright: the context's user_agent when
+#   --user-agent/--device set it. None otherwise (#198; see USING.md for the UA-substitution
+#   caveat — a 200 with a substituted UA is not proof a site is open to every client)
 # screenshots: dict[name, PNG bytes] from RenderOptions.screenshots; {} otherwise
 # console_errors: console + uncaught-JS error strings (opt-in via RenderOptions.capture_console)
 # network_failures: [{url, error}] (failed request) + [{url, status}] (HTTP >= 400)

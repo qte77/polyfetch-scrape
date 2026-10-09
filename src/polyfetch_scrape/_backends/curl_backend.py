@@ -107,14 +107,31 @@ def _attempt_once(
         return _Attempt(None, status, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(status, url)
-    resp = _to_response(http_resp, url)
+    resp = _to_response(http_resp, url, _header_value(headers, "user-agent"))
     if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
         resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
         return _Attempt(None, status, None, None, resp_headers, None, soft_block=True)
     return _Attempt(resp, None, None)
 
 
-def _to_response(http_resp: Any, fallback_url: str) -> Response:
+def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
+    """Case-insensitive lookup over the headers *we* sent.
+
+    curl_cffi's ``impersonate=`` profile injects its own browser-matching User-Agent
+    natively (inside libcurl-impersonate) when the caller doesn't supply one — that value
+    is never reflected back into Python, so this only ever resolves a caller-supplied
+    override (see #198 / USING.md for the documented limitation).
+    """
+    if headers is None:
+        return None
+    lname = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lname:
+            return v
+    return None
+
+
+def _to_response(http_resp: Any, fallback_url: str, request_user_agent: str | None) -> Response:
     return Response(
         url=str(getattr(http_resp, "url", fallback_url)),
         status=int(http_resp.status_code),
@@ -125,4 +142,5 @@ def _to_response(http_resp: Any, fallback_url: str) -> Response:
         permanent_redirect_to=permanent_redirect_target(
             int(http_resp.status_code), dict(http_resp.headers)
         ),
+        request_user_agent=request_user_agent,
     )

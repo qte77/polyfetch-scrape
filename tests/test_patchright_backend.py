@@ -97,6 +97,59 @@ def test_patchright_backend_returns_response_on_200(monkeypatch: pytest.MonkeyPa
     assert resp.backend == "patchright"
     assert b"ok" in resp.body
     assert resp.content_type == "text/html"
+    assert resp.request_user_agent is None
+
+
+def test_patchright_backend_response_user_agent_from_explicit_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(user_agent="UA-explicit"),
+    )
+
+    assert resp.request_user_agent == "UA-explicit"
+
+
+def test_patchright_backend_response_user_agent_from_device_preset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(device="iPhone 13"),
+    )
+
+    assert resp.request_user_agent == "UA-iphone"
+
+
+def test_patchright_backend_response_user_agent_header_override_wins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller-supplied header reaches the wire via set_extra_http_headers and wins."""
+    _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers={"User-Agent": "UA-header-override"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(device="iPhone 13"),
+    )
+
+    assert resp.request_user_agent == "UA-header-override"
 
 
 def test_patchright_backend_fails_loudly_on_musl(monkeypatch: pytest.MonkeyPatch) -> None:

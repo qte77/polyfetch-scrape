@@ -382,6 +382,7 @@ def test_fetch_json_omits_screenshot_b64_when_absent(monkeypatch: pytest.MonkeyP
     assert "screenshot_b64" not in payload
     assert "video_path" not in payload
     assert "har_path" not in payload
+    assert "request_user_agent" not in payload
     assert "permanent_redirect_to" not in payload
 
 
@@ -430,6 +431,52 @@ def test_fetch_json_includes_har_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["har_path"] == "captured.har"
+
+
+def test_fetch_json_includes_request_user_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "polyfetch_scrape.cli.fetch",
+        lambda url, **_kw: Response(
+            url=url,
+            status=200,
+            headers={"content-type": "text/html"},
+            body=b"x",
+            content_type="text/html",
+            backend="httpx",
+            request_user_agent="Mozilla/5.0 Example",
+        ),
+    )
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["request_user_agent"] == "Mozilla/5.0 Example"
+
+
+def test_bulk_json_includes_request_user_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    listfile = tmp_path / "urls.txt"
+    listfile.write_text("https://example.com\n")
+    monkeypatch.setattr(
+        "polyfetch_scrape.cli.fetch",
+        lambda url, **_kw: Response(
+            url=url,
+            status=200,
+            headers={"content-type": "text/html"},
+            body=b"<html/>",
+            content_type="text/html",
+            backend="httpx",
+            request_user_agent="Mozilla/5.0 Example",
+        ),
+    )
+
+    result = runner.invoke(app, ["bulk", str(listfile)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout.strip())
+    assert payload["request_user_agent"] == "Mozilla/5.0 Example"
 
 
 def test_fetch_json_includes_permanent_redirect_to(monkeypatch: pytest.MonkeyPatch) -> None:
