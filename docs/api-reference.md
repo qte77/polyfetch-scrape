@@ -181,6 +181,16 @@ GoneError  # 404 / 410
 LegalBlock  # 451 (RFC 7725) — never escalated to the fingerprint tiers
 ```
 
+Every `FetchError` (and subclass, including the internal `FingerprintBlock` — see architecture.md) carries three diagnostic attributes, all `None` when not captured:
+
+```python
+exc.status  # int | None — the terminal/final HTTP status, when known
+exc.headers  # dict[str, str] | None — the final tier's blocked/exhausted response headers
+exc.body_excerpt  # str | None — that response's body, truncated to 2 KB and decoded lossily
+```
+
+`headers`/`body_excerpt` are populated only for the **final tier's** raise (the one that actually surfaces to the caller — see architecture.md's escalation loop): the response headers with `Set-Cookie` always redacted (never a request header/cookie), and the body excerpt bounded at 2 KB so a large challenge page never balloons an exception. They let a caller tell a pure TLS/fingerprint block from a session/behavioral one (see #209) without dropping to `render_session` and hand-rolling event listeners. `fetch --json`'s error payload mirrors these as optional `headers`/`body_excerpt` keys (see [USING.md](../USING.md) "Errors & exit codes").
+
 ## Structured-source discovery (`utils.discovery`)
 
 Semi-public helper (import by module path — `from polyfetch_scrape.utils.discovery import discover`; not re-exported from the package root). Reports the cheaper-than-HTML entrypoints a site advertises, purely at the fetch layer — it returns URLs/types only and never extracts content.

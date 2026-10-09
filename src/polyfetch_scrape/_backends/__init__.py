@@ -47,3 +47,31 @@ def raise_for_terminal_status(status: int, url: str) -> None:
     exc_type = _TERMINAL.get(status)
     if exc_type is not None:
         raise exc_type(f"terminal HTTP {status}: {url}", status=status)
+
+
+# Diagnostics attached to the final tier's blocked/exhausted response (#209) so a caller
+# can tell a pure TLS/fingerprint block from a session/behavioral one without dropping to
+# render_session and hand-rolling event listeners. Bounded: the body excerpt is capped, and
+# Set-Cookie (a *response* header that can carry a session token) is always dropped. Never
+# includes request headers/cookies — only what the blocked server sent back.
+_MAX_BODY_EXCERPT_BYTES = 2048
+_REDACTED_RESPONSE_HEADERS = frozenset({"set-cookie"})
+
+
+def bounded_diagnostics(
+    headers: Mapping[str, str] | None, body: bytes | None
+) -> tuple[dict[str, str] | None, str | None]:
+    """Bound a blocked/exhausted response's headers + body for exception diagnostics.
+
+    ``headers`` is copied with ``Set-Cookie`` dropped (case-insensitively); ``None`` in stays
+    ``None`` out (no response was captured, e.g. a transport-level error). ``body`` is
+    truncated to ``_MAX_BODY_EXCERPT_BYTES`` and decoded as UTF-8 with a lossy fallback
+    (``errors="replace"``) so a binary or non-UTF-8 blocked body never raises here.
+    """
+    safe_headers = (
+        None
+        if headers is None
+        else {k: v for k, v in headers.items() if k.lower() not in _REDACTED_RESPONSE_HEADERS}
+    )
+    excerpt = None if not body else body[:_MAX_BODY_EXCERPT_BYTES].decode("utf-8", errors="replace")
+    return safe_headers, excerpt

@@ -208,6 +208,69 @@ def test_curl_backend_raises_fingerprintblock_on_persistent_403(
         )
 
 
+def test_curl_backend_fingerprintblock_carries_bounded_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(
+        status=403,
+        body=b"<html>blocked</html>",
+        headers={"content-type": "text/html", "set-cookie": "sid=abc123"},
+    )
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    exc = excinfo.value
+    assert exc.status == 403
+    assert exc.headers == {"content-type": "text/html"}  # set-cookie redacted
+    assert exc.body_excerpt == "<html>blocked</html>"
+
+
+def test_curl_backend_fetcherror_on_exhaustion_carries_bounded_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=503, body=b"rate limited", headers={"content-type": "text/plain"})
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FetchError) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    exc = excinfo.value
+    assert exc.status == 503
+    assert exc.headers == {"content-type": "text/plain"}
+    assert exc.body_excerpt == "rate limited"
+
+
+def test_curl_backend_body_excerpt_capped_at_2kb(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _fake_response(status=403, body=b"x" * 3000)
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert excinfo.value.body_excerpt is not None
+    assert len(excinfo.value.body_excerpt) == 2048
+
+
 def test_curl_backend_forwards_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _fake_response(status=200, body=b"ok")
     session_cls = _install_session(monkeypatch, return_value=fake)
