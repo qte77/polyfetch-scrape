@@ -13,6 +13,83 @@ Per-PR changes are staged as [scriv](https://scriv.readthedocs.io/) fragments in
 
 <!-- scriv-insert-here -->
 
+## [0.9.0] - 2026-10-09
+
+### Added
+
+- Opt-in HAR 1.2 recording on the patchright tier, mirroring the existing video-recording
+  surface: `RenderOptions(record_har_path=..., record_har_mode="minimal", record_har_content="omit")`
+  and the matching `render_session(record_har_path=..., ...)` kwargs. The file is finalized on
+  `context.close()` (the same lifecycle timing as the video path fixed in #199) and surfaces as
+  `Response.har_path` / `RenderSession.har_path`. CLI: `fetch --har-out FILE`, plus `har_path` in
+  `--json` output alongside `video_path`. A stdlib-`json` HAR summary recipe (requests by
+  host/type, failures, total bytes, slowest requests, third-party hosts) is documented in
+  `docs/scripting.md`. **Security:** a HAR records every request/response header, including
+  `Cookie`/`Authorization` — documented prominently in `USING.md` and `docs/api-reference.md`;
+  defaults omit response bodies.
+  ([#229](https://github.com/qte77/polyfetch-scrape/issues/229))
+
+- `FetchError` (and its subclasses, including the internal `FingerprintBlock`) now carries
+  bounded diagnostics for the final tier's blocked or exhausted response: `headers`
+  (`Set-Cookie` always redacted) and `body_excerpt` (truncated to 2 KB, decoded lossily).
+  `fetch --json`'s error payload mirrors these as optional `headers`/`body_excerpt` keys,
+  present only when captured.
+  ([#209](https://github.com/qte77/polyfetch-scrape/issues/209))
+
+- `polyfetch fetch` CLI: `--json-body VALUE` / `--data VALUE` attach a request body (a
+  literal string, `@path` to read a file, or `@-` for stdin), surfaced through
+  `fetch()`'s existing `json=` / `content=` kwargs. Mutually exclusive (exit 2 if both
+  are given); invalid JSON in `--json-body` also exits 2. Closes #214.
+
+- `Response.request_user_agent` and the `fetch`/`bulk` `--json` payloads now surface the
+  `User-Agent` actually sent, when a tier can determine it cheaply: httpx/curl_cffi from the
+  outgoing headers (curl_cffi's native impersonation profile isn't readable unless overridden),
+  patchright from the context's `user_agent` when `--user-agent`/`--device` set it. `None`
+  otherwise. USING.md documents the httpx tier's default-UA substitution and why a `200` isn't
+  proof a site is open to every client. Closes #198.
+
+### Changed
+
+- `render_session`: `timeout=` now also sets `page.set_default_timeout()` /
+  `page.set_default_navigation_timeout()`, so raw `s.page` calls (e.g.
+  `s.page.locator(...).click()`) honor the session's timeout budget instead of silently
+  falling back to Playwright's own 30000ms default. The `viewport` / `record_video_size`
+  `(width, height)` tuple shape is now documented in `docs/api-reference.md` and `USING.md`.
+  ([#216](https://github.com/qte77/polyfetch-scrape/issues/216))
+
+- Bumped 5 of the 6 packages in the `python-deps` dependency group: `curl-cffi` 0.15.0 to 0.16.3, `typer` 0.27.0 to 0.27.2, `complexipy` 6.0.1 to 8.0.1, `pyright` 1.1.411 to 1.1.414, `ruff` 0.15.21 to 0.16.8. `patchright` stays at 1.61.2 for now — 1.63.0 bundles a new Chromium and moves to its own e2e-verified PR (#241). Reformatted 5 markdown files (README.md, USING.md, docs/api-reference.md, docs/plans/easter-hunt-v0.1.md, docs/scripting.md) to match ruff 0.16's changed formatting of embedded Python code fences (comment spacing, argument wrapping); no content changed.
+
+- `make changelog_new` no longer stages the fragment it creates (`scriv create` without `--add`).
+  Staging the empty template at creation let commits capture the template instead of the edited
+  entry. Edit the fragment, then `git add` it; CONTRIBUTING documents the step.
+
+- Bumped `patchright` 1.61.2 to 1.63.0 and `ruff` 0.16.8 to 0.16.9 (python-deps group; supersedes #245). Patchright 1.63 tracks a newer Playwright and bundles Chromium revision 1243 — Chrome for Testing 153.0.8010.12 (up from Chromium 149 on 1.61), confirmed via the installed `patchright/driver/package/browsers.json` and the [Playwright 1.63 release notes](https://playwright.dev/python/docs/release-notes). Consumers who **borrow polyfetch's venv** (env-borrow, see `USING.md`) must run `polyfetch doctor --fix` after pulling this change to install the matching Chromium build — the old 1.61-era Chromium cache won't satisfy 1.63. If the default browser cache location (`~/.cache/ms-playwright`) is on a tight volume, set `PLAYWRIGHT_BROWSERS_PATH` to relocate it (e.g. to a volume with more free space) before running `doctor --fix`.
+
+### Fixed
+
+- `render_session`: `RenderSession.video_path` is no longer always `None` when recording.
+  `_teardown()` read `video.path()` after the Playwright driver had already stopped, so the
+  call raised against the dead driver and the error was silently swallowed by
+  `contextlib.suppress`, orphaning every recorded `.webm`. The path is now read right after
+  `context.close()`, before the browser and driver tear down — mirroring the already-correct
+  ordering in the `fetch()` patchright tier.
+  ([#199](https://github.com/qte77/polyfetch-scrape/issues/199))
+
+- A `GET` request that comes back `2xx` with an empty (0-byte) body and an HTML-or-missing
+  `Content-Type` is no longer reported as a silent success. It's now treated as a suspected
+  soft block (some anti-bot layers return an empty "success" instead of an explicit `403`):
+  it escalates to the next tier the same way a `403` does, and the last tier raises
+  `FingerprintBlock` instead of returning the empty `Response` — including when that tier
+  was pinned via `--tier`. `204`, `HEAD`, `304`, a non-empty body, and a non-HTML content
+  type (`application/json`, `text/plain`, …) are unaffected.
+  ([#237](https://github.com/qte77/polyfetch-scrape/issues/237))
+
+### Security
+
+- Lock `urllib3` 2.7.0 → 2.8.0 (PYSEC-2026-4175, -4176, -4177). It's a **dev-only** dependency
+  (pulled in by `requests` via `pip-audit` and `scriv`), so polyfetch's runtime is unaffected; the
+  advisories were failing `make audit` in CI on every PR.
+
 ## [0.8.1] - 2026-09-30
 
 ### Changed
