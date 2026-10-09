@@ -170,10 +170,10 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | ~~216~~ | ~~`render_session` default timeouts + viewport shape documented~~ ✅ #235 | L2 / A | agent | 3 | S | Shipped |
 | ~~229~~ | ~~Opt-in HAR recording + summary recipe~~ ✅ #242 (defaults `minimal` / bodies `omit`; credentials warning in USING + api-reference) | L2 / A (after 199) | agent | 4 | M | Shipped |
 | ~~197~~ | ~~Detect musl, fail loudly in `doctor` / browser tier (port #206)~~ ✅ #234 | L3 / A | agent | 4 | S | Shipped. Known limit: patchright is a hard dependency, so `uv sync` on musl still fails at resolution (making it an optional extra is a separate decision) |
-| 214 | CLI request body `--json-body` / `--data` | L4 / A | agent | 4 | S | CLI tests: the body reaches `fetch(json=…)` / `content=`; both at once → exit 2; patchright tier → clear error |
-| 198 | Surface the httpx-tier UA (`request_user_agent`) | L4 / A (after 214) | agent | 3 | S | Response + `--json` carry the sent UA; USING documents the default |
-| 209 | `FingerprintBlock` carries bounded headers / body excerpt | L5 / A | agent | 3 | S–M | Tests at all three raise sites; excerpt ≤ 2 KB; no cookies |
-| 237 | Empty 2xx HTML body is a silent soft block: escalate; on the last tier raise | L5 / A (after 209) | agent | 4 | S | Per-backend tests: empty-HTML GET 2xx escalates; `204` / `HEAD` / JSON / `304` don't; last tier raises (default). Escalation is at `client.py:132-141` |
+| ~~214~~ | ~~CLI request body `--json-body` / `--data`~~ ✅ #248 (`@path` / `@-` supported; both flags or invalid JSON → exit 2) | L4 / A | agent | 4 | S | Shipped |
+| ~~198~~ | ~~Surface the httpx-tier UA (`request_user_agent`)~~ ✅ #249 (httpx: always known; curl_cffi: only an explicit override, since the impersonation UA is injected inside libcurl; Patchright: override or context UA, otherwise `None`) | L4 / A (after 214) | agent | 3 | S | Shipped |
+| ~~209~~ | ~~`FingerprintBlock` carries bounded headers / body excerpt~~ ✅ #244 (`Set-Cookie` redacted; 2 KB excerpt; also in `fetch --json` errors) | L5 / A | agent | 3 | S–M | Shipped |
+| ~~237~~ | ~~Empty 2xx HTML body is a silent soft block: escalate; on the last tier raise~~ ✅ #247 (shared `is_suspected_soft_block` predicate; a pinned `--tier` also raises; escalation loop unchanged) | L5 / A (after 209) | agent | 4 | S | Shipped |
 | ~~212~~ | ~~Dependabot python-deps: fix the red `ci`~~ ✅ #236 (root cause: ruff 0.16 reformats Python fences in Markdown; 5 of 6 bumps; #212 closed as superseded) | L6 / A | agent | 3 | S | Shipped |
 | 241 | patchright 1.61.2 → 1.63.0 (new Chromium), held back from #236 | A (later) | data | 3 | S | ≥1 GB free disk; `make doctor` + `make test_e2e` pass; Chromium/DevTools note re-checked |
 | 222 | Dependabot actions group (after rebase) | L6 / A | data | 2 | S | Rebased onto #226; no `callowayproject` action re-added; passes; merged |
@@ -194,7 +194,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | — | ~~Release **v0.8.1** (security) right after #181 merges~~ ✅ v0.8.1 (#239, 2026-09-30: #181 + #197) | A | agent | 4 | S | Released and marked Latest |
 | — | ~~DNS-rebinding / per-hop / subresource follow-up issue~~ ✅ #240 | A (after 181) | agent | — | S | Opened; vendor mechanisms marked UNVERIFIED |
 | 240 | SSRF follow-up: DNS-rebinding pinning, hop-by-hop redirects, Patchright subresource opt-in | C | agent | 3 | M–L | Per #240 "Done when"; escalation-only model kept (seeds never checked, `fetch()` unguarded) |
-| — | `SECURITY.md` (reporting path + SSRF-guard scope) | A | agent | 3 | S | File exists, linked from README; states what `check_ssrf` guards and what it doesn't |
+| — | ~~`SECURITY.md` (reporting path + SSRF-guard scope)~~ ✅ covered by the estate default `qte77/.github/SECURITY.md` (GitHub applies it to repos without their own; private vulnerability reporting is enabled). No repo copy, to avoid duplication; SSRF-guard scope lives in `docs/architecture.md` | A | agent | 3 | S | Resolved without a file |
 | — | Heads-up comments on contributor PRs; close them after porting | B | owner (D1, D10) | 2 | S | Comment posted before each port merges; PRs closed after merge per D1 |
 | — | Release **v0.9.0** at the end of Phase A (#229 is a feature) | A (end) | agent | 3 | S | All Phase A rows struck; bump `minor`; released as above |
 

@@ -12,6 +12,8 @@ from patchright.sync_api import sync_playwright
 
 from polyfetch_scrape._backends import (
     FingerprintBlock,
+    bounded_diagnostics,
+    is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
 )
@@ -30,6 +32,9 @@ class _Attempt:
     block_status: int | None
     error: Exception | None
     retry_after: float | None = None
+    headers: dict[str, str] | None = None
+    body_excerpt: str | None = None
+    soft_block: bool = False
 
 
 def attempt(
@@ -58,18 +63,29 @@ def attempt(
                 last = _attempt_once(browser, url, headers, timeout_ms, opts, ctx_kwargs, policy)
                 if last.response is not None:
                     return last.response
+                if last.soft_block:
+                    break  # deterministic, not transient — retrying won't un-empty the body
                 if attempt_idx + 1 < policy.max_attempts:
                     time.sleep(next_delay(last.retry_after, policy, attempt_idx))
         finally:
             browser.close()
+
+    diag: dict[str, Any] = {
+        "status": last.block_status,
+        "headers": last.headers,
+        "body_excerpt": last.body_excerpt,
+    }
+    if last.soft_block:
+        msg = f"patchright fetch: empty 2xx body — suspected soft block: {url}"
+        raise FingerprintBlock(msg, **diag)
 
     detail = (
         f"status={last.block_status}" if last.block_status is not None else f"error={last.error!r}"
     )
     msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     if last.block_status in _FINGERPRINT_STATUSES:
-        raise FingerprintBlock(msg) from last.error
-    raise FetchError(msg) from last.error
+        raise FingerprintBlock(msg, **diag) from last.error
+    raise FetchError(msg, **diag) from last.error
 
 
 def available_devices() -> list[str]:
@@ -134,6 +150,17 @@ def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
     return kwargs
 
 
+def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
+    """Case-insensitive lookup — ``headers`` may preserve the caller's own key casing."""
+    if headers is None:
+        return None
+    lname = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lname:
+            return v
+    return None
+
+
 def _attempt_once(
     browser: Any,
     url: str,
@@ -149,10 +176,24 @@ def _attempt_once(
     page = context.new_page()
     console_errors, network_failures = attach_capture(page, opts)
     video = page.video if opts.record_video_dir is not None else None
+    # A caller-supplied header override (set_extra_http_headers, above) wins on the wire;
+    # otherwise the context's own user_agent (explicit --user-agent or a device preset) is
+    # the cheap, already-known value — reading navigator.userAgent back would need a JS
+    # round-trip for no gain. Neither set → the browser's own default; not surfaced (#198).
+    request_user_agent = _header_value(headers, "user-agent") or cast(
+        "str | None", context_kwargs.get("user_agent")
+    )
     try:
         try:
             result = _run_page(
-                page, url, timeout_ms, opts, policy, console_errors, network_failures
+                page,
+                url,
+                timeout_ms,
+                opts,
+                policy,
+                console_errors,
+                network_failures,
+                request_user_agent,
             )
         finally:
             context.close()
@@ -174,6 +215,7 @@ def _run_page(
     policy: RetryPolicy,
     console_errors: list[str],
     network_failures: list[dict[str, object]],
+    request_user_agent: str | None,
 ) -> _Attempt:
     """Navigate, check status/retry conditions, run actions/waits, and build the ``_Attempt``."""
     try:
@@ -187,7 +229,19 @@ def _run_page(
     status = int(response.status)
     if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
         headers_map = {str(k).lower(): str(v) for k, v in dict(response.all_headers()).items()}
-        return _Attempt(None, status, None, parse_retry_after(headers_map.get("retry-after")))
+        # The navigation already completed (a response object exists) — page.content() reads
+        # the currently loaded DOM, including a challenge/error page, safely for a blocked status.
+        resp_headers, body_excerpt = bounded_diagnostics(
+            headers_map, page.content().encode("utf-8")
+        )
+        return _Attempt(
+            None,
+            status,
+            None,
+            parse_retry_after(headers_map.get("retry-after")),
+            resp_headers,
+            body_excerpt,
+        )
 
     raise_for_terminal_status(status, url)
     _apply_actions(page, opts.actions, timeout_ms)
@@ -195,6 +249,10 @@ def _run_page(
 
     body = page.content().encode("utf-8")
     all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
+    content_type = all_headers.get("content-type")
+    if is_suspected_soft_block("GET", status, body, content_type):
+        resp_headers, _ = bounded_diagnostics(all_headers, body)
+        return _Attempt(None, status, None, None, resp_headers, None, soft_block=True)
     screenshots = {s.name: capture_screenshot(page, s.target) or b"" for s in opts.screenshots}
     return _Attempt(
         Response(
@@ -209,6 +267,7 @@ def _run_page(
             console_errors=console_errors,
             network_failures=network_failures,
             screenshots=screenshots,
+            request_user_agent=request_user_agent,
         ),
         None,
         None,

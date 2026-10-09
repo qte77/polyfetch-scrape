@@ -79,6 +79,8 @@ with render_session(url) as s:
 
 `fetch` flags: `--tier httpx|curl_cffi|patchright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|patchright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`.
 
+`fetch` **request body flags:** `--json-body VALUE` (parsed with `json.loads`, sent as `fetch()`'s `json=`) or `--data VALUE` (sent raw as `fetch()`'s `content=`) — mutually exclusive (`exit 2` if both are given). `VALUE` is a literal string, `@path` to read a file, or `@-` to read stdin — handy for a large payload. Invalid JSON in `--json-body` exits `2` with a parse-error message. Both flags are httpx/curl_cffi-tier only: the patchright tier is GET-only and raises a clear `FetchError` if either is combined with `--tier patchright` (or an auto-escalation would reach it).
+
 `fetch` **patchright-tier render flags:** `--wait-until domcontentloaded|load|networkidle`, `--wait-for-selector CSS`, `--wait-for-function JS`, `--screenshot viewport|full_page|<css>` + `--screenshot-out PATH` (writes the PNG). With `--json`, the PNG is also surfaced inline as base64 `screenshot_b64` (no file needed) — see the schema below.
 
 `fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"` — list them with `polyfetch devices`; an unknown name exits `2` and suggests near-misses), `--device-json '<json object>'` (a custom device bundle for a device the registry doesn't carry, e.g. `'{"user_agent": "…", "viewport": {"width": 411, "height": 914}, "is_mobile": true}'` — mutually exclusive with `--device`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path` and, with `--json`, is surfaced as `video_path` — the exact auto-generated filename).
@@ -105,6 +107,13 @@ with render_session(url) as s:
 ```
 
 - `backend` = which tier answered (`httpx` → `curl_cffi` → `patchright`).
+- `request_user_agent` (fetch **and** every `bulk` line) = the `User-Agent` actually sent, when the
+  backend can tell cheaply; present on httpx/curl_cffi (the merged outgoing headers) when it's known,
+  absent when it isn't (curl_cffi's `impersonate=` profile injects its own browser-matching UA
+  natively and doesn't expose it in Python unless you override it yourself); on patchright, present
+  when `--user-agent`/`--device` set it, absent otherwise (the browser's own default isn't probed).
+  See the security note below this schema for why a `200` here is not proof a site is open to every
+  client.
 - `screenshot_b64` (fetch `--json` only) = base64-encoded PNG, present **only** when a screenshot was
   captured (`--screenshot` on the patchright tier); the key is absent otherwise. Decode with
   `jq -r .screenshot_b64 | base64 -d`.
@@ -118,6 +127,16 @@ with render_session(url) as s:
   auto-follow redirects (SSRF-safe, transparent), so on a 301 you get `status:301, bytes:0` — read this
   key and re-fetch the target yourself. Temporary redirects (302/303/307) never set it.
 - Need the page content, not metadata? use `--show-body`.
+
+> **UA substitution — a `200` is not proof a site is open to every client.** The httpx tier
+> defaults to a real desktop-browser `User-Agent` from `utils/http_ua.STABLE_USER_AGENT`
+> (rotated quarterly; see that module's docstring) instead of httpx's own `python-httpx/…`
+> string — a deliberate anti-fingerprint choice (#198). That means `fetch(url)` with no
+> explicit UA answers "is this reachable **pretending to be Chrome**", not "is this reachable
+> at all": a site that 403s a bare `curl`/`python-urllib` request can still return `200` here,
+> and the delta is the UA, not the transport. If you're *characterizing* a target's bot policy
+> rather than scraping it, pass your own `headers={"User-Agent": "..."}` (or an empty one) and
+> read `request_user_agent` back to confirm what was actually sent.
 
 `discover --json` emits the structured entrypoints a site advertises (empty arrays when none):
 
@@ -135,8 +154,15 @@ with render_session(url) as s:
 ```
 
 - `error_type` = the exception class (below); `status` = terminal HTTP code, or `null` when not status-bound (e.g. retries exhausted).
+- `headers` / `body_excerpt` (optional) = the **final tier's** blocked/exhausted response, when captured: `headers` is that response's headers (`Set-Cookie` always redacted — never a request header/cookie), `body_excerpt` is its body truncated to 2 KB and decoded lossily. Both keys are **absent** (not `null`) when not captured, so existing `--json` consumers are unaffected. Lets you tell a pure TLS/fingerprint block from a session/behavioral one without dropping to `render_session` (see #209):
+
+```json
+{"url": "https://…", "error_type": "FingerprintBlock", "status": 403, "message": "…", "headers": {"content-type": "text/html"}, "body_excerpt": "<html>…</html>"}
+```
+
 - Without `--json`, `fetch` prints `<ErrorType>: <message>` to **stderr**.
 - Terminal statuses — no retry, no escalation. Exception names (all subclass `FetchError`): `AuthRequired` (401/407), `GoneError` (404/410), `LegalBlock` (451).
+- **A `GET` + 2xx (not `204`) + empty body + HTML-or-missing `Content-Type` is a suspected soft block**, not a success: some anti-bot layers return an empty `200` instead of an explicit `403`. It escalates like a `403` does; the last tier raises `FingerprintBlock` instead of returning the empty `Response` — including when that tier was pinned with `--tier` (the same as a `403` on a pinned tier today). `HEAD`, `304`, `204`, and a non-HTML content type (`application/json`, `text/plain`, …) are never affected — see [#237](https://github.com/qte77/polyfetch-scrape/issues/237).
 
 ## Fallback tiers (automatic)
 

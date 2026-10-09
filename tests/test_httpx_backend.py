@@ -31,6 +31,53 @@ def test_httpx_backend_raises_fingerprintblock_on_403() -> None:
 
 
 @respx.mock
+def test_httpx_backend_fingerprintblock_carries_bounded_diagnostics() -> None:
+    url = "https://example.com/blocked-diag"
+    respx.get(url).mock(
+        return_value=httpx.Response(
+            403,
+            headers={"content-type": "text/html", "set-cookie": "sid=abc123"},
+            content=b"<html>blocked</html>",
+        )
+    )
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        httpx_backend.attempt(
+            method="GET",
+            url=url,
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    exc = excinfo.value
+    assert exc.status == 403
+    assert exc.headers is not None
+    assert exc.headers.get("content-type") == "text/html"
+    assert "set-cookie" not in {k.lower() for k in exc.headers}
+    assert exc.body_excerpt == "<html>blocked</html>"
+
+
+@respx.mock
+def test_httpx_backend_tls_fingerprintblock_has_no_diagnostics() -> None:
+    """A transport-level TLS error has no HTTP response to diagnose from."""
+    url = "https://example.com/tls-diag"
+    respx.get(url).mock(side_effect=httpx.ConnectError("[SSL: TLSV1_ALERT_INTERNAL_ERROR]"))
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        httpx_backend.attempt(
+            method="GET",
+            url=url,
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert excinfo.value.headers is None
+    assert excinfo.value.body_excerpt is None
+
+
+@respx.mock
 @pytest.mark.parametrize(
     ("status", "exc_type"),
     [(401, AuthRequired), (404, GoneError), (451, LegalBlock)],
@@ -121,7 +168,8 @@ def test_httpx_backend_does_not_block_on_generic_connect_error() -> None:
 @respx.mock
 def test_httpx_backend_sets_default_user_agent_when_caller_omits() -> None:
     url = "https://example.com/ua-default"
-    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+    # Non-empty body: not the #237 soft-block case — this test is about the sent request.
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
 
     httpx_backend.attempt(
         method="GET",
@@ -138,7 +186,7 @@ def test_httpx_backend_sets_default_user_agent_when_caller_omits() -> None:
 @respx.mock
 def test_httpx_backend_preserves_caller_supplied_user_agent() -> None:
     url = "https://example.com/ua-supplied"
-    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
 
     httpx_backend.attempt(
         method="GET",
@@ -155,7 +203,7 @@ def test_httpx_backend_preserves_caller_supplied_user_agent() -> None:
 @respx.mock
 def test_httpx_backend_preserves_caller_supplied_user_agent_case_insensitive() -> None:
     url = "https://example.com/ua-lowercase"
-    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
 
     httpx_backend.attempt(
         method="GET",
@@ -170,9 +218,41 @@ def test_httpx_backend_preserves_caller_supplied_user_agent_case_insensitive() -
 
 
 @respx.mock
+def test_httpx_backend_response_carries_default_user_agent() -> None:
+    url = "https://example.com/ua-response-default"
+    respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    resp = httpx_backend.attempt(
+        method="GET",
+        url=url,
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.request_user_agent == STABLE_USER_AGENT
+
+
+@respx.mock
+def test_httpx_backend_response_carries_caller_supplied_user_agent() -> None:
+    url = "https://example.com/ua-response-supplied"
+    respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
+
+    resp = httpx_backend.attempt(
+        method="GET",
+        url=url,
+        headers={"user-agent": "MyCustom/1.0"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.request_user_agent == "MyCustom/1.0"
+
+
+@respx.mock
 def test_httpx_backend_sets_default_accept_headers_when_caller_omits() -> None:
     url = "https://example.com/accept-default"
-    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
 
     httpx_backend.attempt(
         method="GET",
@@ -190,7 +270,7 @@ def test_httpx_backend_sets_default_accept_headers_when_caller_omits() -> None:
 @respx.mock
 def test_httpx_backend_preserves_caller_supplied_accept_headers() -> None:
     url = "https://example.com/accept-supplied"
-    route = respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+    route = respx.get(url).mock(return_value=httpx.Response(200, content=b"ok"))
 
     httpx_backend.attempt(
         method="GET",
@@ -246,6 +326,85 @@ def test_httpx_backend_caps_excessive_retry_after(monkeypatch: pytest.MonkeyPatc
     )
 
     assert slept == [RETRY_AFTER_CAP_S]
+
+
+@respx.mock
+def test_httpx_backend_empty_2xx_html_body_raises_fingerprintblock_without_retry() -> None:
+    url = "https://example.com/soft-block"
+    route = respx.get(url).mock(
+        return_value=httpx.Response(200, headers={"content-type": "text/html"}, content=b"")
+    )
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        httpx_backend.attempt(
+            method="GET",
+            url=url,
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=3),
+        )
+
+    assert excinfo.value.status == 200
+    assert route.call_count == 1  # deterministic soft block — no point retrying
+
+
+@respx.mock
+def test_httpx_backend_empty_2xx_missing_content_type_raises_fingerprintblock() -> None:
+    url = "https://example.com/soft-block-no-ct"
+    respx.get(url).mock(return_value=httpx.Response(200, content=b""))
+
+    with pytest.raises(FingerprintBlock):
+        httpx_backend.attempt(
+            method="GET",
+            url=url,
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    ("method", "status", "content", "headers"),
+    [
+        ("GET", 204, b"", {}),
+        ("GET", 200, b"", {"content-type": "application/json"}),
+        ("GET", 200, b"non-empty", {"content-type": "text/html"}),
+    ],
+)
+def test_httpx_backend_does_not_soft_block_exempt_cases(
+    method: str, status: int, content: bytes, headers: dict[str, str]
+) -> None:
+    url = "https://example.com/soft-block-exempt"
+    respx.request(method, url).mock(
+        return_value=httpx.Response(status, headers=headers, content=content)
+    )
+
+    resp = httpx_backend.attempt(
+        method=method,
+        url=url,
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == status
+
+
+@respx.mock
+def test_httpx_backend_head_does_not_soft_block() -> None:
+    url = "https://example.com/soft-block-head"
+    respx.head(url).mock(return_value=httpx.Response(200, content=b""))
+
+    resp = httpx_backend.attempt(
+        method="HEAD",
+        url=url,
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == 200
 
 
 @respx.mock

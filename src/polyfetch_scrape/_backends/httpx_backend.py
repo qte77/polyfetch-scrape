@@ -7,6 +7,8 @@ import httpx
 
 from polyfetch_scrape._backends import (
     FingerprintBlock,
+    bounded_diagnostics,
+    is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
 )
@@ -29,6 +31,9 @@ class _Attempt:
     retry_status: int | None
     transport_error: Exception | None
     retry_after: float | None = None
+    headers: dict[str, str] | None = None
+    body_excerpt: str | None = None
+    soft_block: bool = False
 
 
 def attempt(
@@ -48,8 +53,19 @@ def attempt(
             last = _attempt_once(client, method, url, headers, policy, json, content)
             if last.response is not None:
                 return last.response
+            if last.soft_block:
+                break  # deterministic, not transient — retrying won't un-empty the body
             if attempt_idx + 1 < policy.max_attempts:
                 time.sleep(next_delay(last.retry_after, policy, attempt_idx))
+
+    diag: dict[str, Any] = {
+        "status": last.retry_status,
+        "headers": last.headers,
+        "body_excerpt": last.body_excerpt,
+    }
+    if last.soft_block:
+        msg = f"httpx fetch: empty 2xx body — suspected soft block: {url}"
+        raise FingerprintBlock(msg, **diag)
 
     detail = (
         f"status={last.retry_status}"
@@ -61,8 +77,8 @@ def attempt(
     if last.retry_status in _FINGERPRINT_STATUSES or (
         last.transport_error is not None and _is_tls_error(last.transport_error)
     ):
-        raise FingerprintBlock(msg) from last.transport_error
-    raise FetchError(msg) from last.transport_error
+        raise FingerprintBlock(msg, **diag) from last.transport_error
+    raise FetchError(msg, **diag) from last.transport_error
 
 
 def _attempt_once(
@@ -74,10 +90,9 @@ def _attempt_once(
     json: Any | None = None,
     content: bytes | None = None,
 ) -> _Attempt:
+    request_headers = _with_default_headers(headers)
     try:
-        http_resp = client.request(
-            method, url, headers=_with_default_headers(headers), json=json, content=content
-        )
+        http_resp = client.request(method, url, headers=request_headers, json=json, content=content)
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 
@@ -86,10 +101,15 @@ def _attempt_once(
         or http_resp.status_code in _FINGERPRINT_STATUSES
     ):
         retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
-        return _Attempt(None, http_resp.status_code, None, retry_after)
+        resp_headers, body_excerpt = bounded_diagnostics(dict(http_resp.headers), http_resp.content)
+        return _Attempt(None, http_resp.status_code, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(http_resp.status_code, url)
-    return _Attempt(_to_response(http_resp), None, None)
+    resp = _to_response(http_resp, _header_value(request_headers, "user-agent"))
+    if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
+        resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
+        return _Attempt(None, resp.status, None, None, resp_headers, None, soft_block=True)
+    return _Attempt(resp, None, None)
 
 
 _DEFAULT_ACCEPT = (
@@ -115,7 +135,18 @@ def _with_default_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
     return merged
 
 
-def _to_response(http_resp: httpx.Response) -> Response:
+def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
+    """Case-insensitive lookup — ``headers`` may preserve the caller's own key casing."""
+    if headers is None:
+        return None
+    lname = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lname:
+            return v
+    return None
+
+
+def _to_response(http_resp: httpx.Response, request_user_agent: str | None) -> Response:
     return Response(
         url=str(http_resp.url),
         status=http_resp.status_code,
@@ -124,4 +155,5 @@ def _to_response(http_resp: httpx.Response) -> Response:
         content_type=http_resp.headers.get("content-type"),
         backend="httpx",
         permanent_redirect_to=permanent_redirect_target(http_resp.status_code, http_resp.headers),
+        request_user_agent=request_user_agent,
     )

@@ -14,7 +14,7 @@ How a single `fetch(url)` call flows through the three-tier fallback chain to a 
                          ▼   (_run_chain walks the slice; _dispatch calls each tier)
                httpx_backend.attempt ──2xx──► Response
                          │
-                FingerprintBlock (403 / TLS error)
+                FingerprintBlock (403 / TLS error / empty-2xx soft block)
                          ▼
                curl_backend.attempt  ──2xx──► Response
                 (chrome TLS impersonation)
@@ -49,18 +49,18 @@ For how the estate consumes this substrate across repos — and the promotion ru
 |---|---|
 | `client.py` | Public `fetch()` orchestrator: conditional headers, optional per-host `Throttle` (pre-dispatch spacing), tier-range escalation (`min_tier`/`max_tier`; `tier=` pins one), request-body routing (`json`/`content`, httpx/curl only), `RenderOptions` plumbing to the patchright tier. |
 | `throttle.py` | `Throttle` — thread-safe per-host minimum inter-request spacing (proactive politeness); shared across a bulk worker pool. |
-| `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`. |
+| `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`, `bounded_diagnostics` (caps the final tier's blocked-response headers/body onto the raised `FetchError`, redacting `Set-Cookie` — #209). |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
 | `_backends/curl_backend.py` | Tier 2: `curl_cffi` (Python **CFFI** bindings to the **curl-impersonate** fork of curl) — replays a real browser's Chrome TLS/JA3 handshake, which UA/header edits alone can't; engages on 403 / TLS error. |
 | `_backends/patchright_backend.py` | Tier 3: headless Patchright/Chromium — Patchright is a stealth, API-compatible **Playwright fork** (the dependency is `patchright`, never `playwright`); applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture); emulation/video/HAR applied at `new_context()`. |
-| `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, video_path, har_path, console_errors, network_failures, screenshots). |
+| `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, video_path, har_path, request_user_agent, console_errors, network_failures, screenshots). |
 | `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — patchright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures, device (preset name **or** custom bundle)/viewport/color_scheme/user_agent/locale emulation, record_video_dir/record_video_size, record_har_path/record_har_mode/record_har_content). |
 | `render_session.py` | `render_session()` — managed headless multi-step Patchright `Page` context manager for interactive act→assert→act flows; reuses the backend's `attach_capture`/`capture_screenshot`. |
 | `utils/sitemap.py` | `fetch_sitemap_urls()` — sitemap.xml URL discovery (index recursion, gzip, `defusedxml`, SSRF guard) over the public `fetch()`. |
 | `utils/discovery.py` | `discover()` — structured-entrypoint discovery (sitemaps/feeds/`llms.txt`/JSON-LD `@type`) over `fetch()`; soft-404-guarded; returns URLs/types only (no extraction). Shares the SSRF guard via `utils/_ssrf.py`. |
 | `utils/_ssrf.py` | Shared SSRF guard for the utils that fetch attacker-influenced URLs — **escalation-only** (owner decision, 2026-09-30): the seed a caller passes in (`discover(url)`, the sitemap `domain`, each `hunt()` seed) is **never blocked**, including a literal internal IP or `localhost` — local/dev use is intentional. Only a URL the tool *derives* from that seed (a probed path, a redirect target) is checked, and only when the seed is external: `is_seed_internal(seed)` computes that once per run; `check_ssrf(url, seed_is_internal=...)` rejects a derived literal internal IP **and** resolves a derived hostname, rejecting it when *any* answer is internal ("internal" = not `ipaddress`'s `is_global`, plus an explicit `is_multicast` check — an allowlist, not named ranges, so it also catches shared/CGNAT space, e.g. cloud metadata endpoints outside `169.254.169.254`); `check_redirect(url, response, seed_is_internal=...)` re-applies that check to the URL a response landed on and to an unfollowed 301/308 `Location`. DNS rebinding is out of scope (needs pinned-IP connect, which no tier exposes). |
 | `retry.py` | `RetryPolicy` + `should_retry` + `Retry-After` parsing and capped backoff. |
-| `errors.py` | Exception taxonomy: `FetchError` base + terminal `AuthRequired` / `GoneError` / `LegalBlock`. |
+| `errors.py` | Exception taxonomy: `FetchError` base (carries optional `status`/`headers`/`body_excerpt` diagnostics) + terminal `AuthRequired` / `GoneError` / `LegalBlock`. |
 | `cli.py` | Thin typer CLI: `fetch` / `bulk` / `discover`, plus the `devices` (list emulation presets) and `doctor` (browser-tier Chromium check) utilities; opt-in `contrib` subcommands. |
 
 ## Invariants
@@ -69,9 +69,11 @@ For how the estate consumes this substrate across repos — and the promotion ru
   records which tier served the request.
 - **Terminal statuses raise in every tier** (401/407 → `AuthRequired`, 404/410 → `GoneError`, 451 →
   `LegalBlock`) — no retry, no escalation; 451 never reaches the fingerprint tiers (RFC 7725).
-- **Escalation is fingerprint-only.** Only `FingerprintBlock` (403 / TLS error) escalates along the
+- **Escalation is fingerprint-only.** Only `FingerprintBlock` — a 403, a TLS error, or a suspected soft
+  block (`GET` + 2xx, not 204, empty body, HTML-or-missing `Content-Type` — #237) — escalates along the
   active tier range (default httpx → curl_cffi → patchright; bounded by `min_tier`/`max_tier`); every
-  other outcome returns or raises immediately.
+  other outcome returns or raises immediately. The soft-block check never retries within a tier first
+  (an empty body is deterministic, not transient) and fires the same way on a pinned `--tier`.
 - **Browser-tier controls stay on the browser tier.** `RenderOptions` (wait strategies, screenshots) is
   a no-op on the httpx / curl_cffi tiers; screenshots require the patchright tier.
 - **Core is horizontal.** Domain API wrappers and content extraction live in downstream packages that

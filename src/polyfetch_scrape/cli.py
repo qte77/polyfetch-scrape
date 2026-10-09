@@ -109,6 +109,11 @@ def _summarize(resp: Response) -> dict[str, Any]:
         "bytes": len(resp.body),
         "content_type": resp.content_type,
     }
+    if resp.request_user_agent is not None:
+        # The UA actually sent, when the backend can determine it cheaply (httpx/curl_cffi:
+        # the outgoing headers; patchright: the context's user_agent); absent when not
+        # knowable (#198). Lives here (not just fetch) so bulk --json carries it too.
+        payload["request_user_agent"] = resp.request_user_agent
     if resp.permanent_redirect_to is not None:
         # Present only on a permanent redirect (301/308), mirroring the conditional
         # screenshot_b64 / video_path keys. Lives here rather than at the fetch call site
@@ -128,13 +133,26 @@ def _format_text(payload: dict[str, Any]) -> str:
 
 
 def _error_payload(url: str, exc: FetchError) -> dict[str, Any]:
-    """Structured error for ``--json``: shared by ``fetch`` and ``bulk`` (see USING.md)."""
-    return {
+    """Structured error for ``--json``: shared by ``fetch`` and ``bulk`` (see USING.md).
+
+    ``headers``/``body_excerpt`` are present only when the failing backend captured them
+    (bounded diagnostics on the final blocked/exhausted response — see #209); absent
+    otherwise, so every existing ``--json`` error consumer is unaffected. ``headers`` is
+    the blocked response's own headers with ``Set-Cookie`` already redacted (never a
+    request header) and is included as-is: it is inherently small (a single HTTP
+    response's header block), so no further truncation is applied here.
+    """
+    payload: dict[str, Any] = {
         "url": url,
         "error_type": type(exc).__name__,
         "status": exc.status,
         "message": str(exc),
     }
+    if exc.headers is not None:
+        payload["headers"] = exc.headers
+    if exc.body_excerpt is not None:
+        payload["body_excerpt"] = exc.body_excerpt
+    return payload
 
 
 def _resolve_device(device: str | None, device_json: str | None) -> str | dict[str, Any] | None:
@@ -150,6 +168,42 @@ def _resolve_device(device: str | None, device_json: str | None) -> str | dict[s
     if not isinstance(parsed, dict):
         raise typer.BadParameter("--device-json must be a JSON object")
     return cast("dict[str, Any]", parsed)
+
+
+def _read_body_source(value: str) -> bytes:
+    """Resolve a body argument: literal bytes, `@path` to read a file, or `@-` for stdin."""
+    if value == "@-":
+        return sys.stdin.buffer.read()
+    if value.startswith("@"):
+        path = Path(value[1:])
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            raise typer.BadParameter(f"Cannot read body file: {exc}") from exc
+    return value.encode("utf-8")
+
+
+def _resolve_body(json_body: str | None, data: str | None) -> tuple[Any | None, bytes | None]:
+    """Resolve ``--json-body``/``--data`` into ``fetch()``'s ``json=``/``content=`` kwargs.
+
+    Mutually exclusive (exits 2 if both are given, mirroring ``--device``/``--device-json``).
+    """
+    if json_body is not None and data is not None:
+        raise typer.BadParameter("use --json-body or --data, not both")
+    if json_body is not None:
+        raw = _read_body_source(json_body)
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise typer.BadParameter(f"--json-body is not valid UTF-8: {exc}") from exc
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter(f"--json-body is not valid JSON: {exc}") from exc
+        return parsed, None
+    if data is not None:
+        return None, _read_body_source(data)
+    return None, None
 
 
 def _build_render_options(
@@ -297,6 +351,24 @@ def fetch_cmd(
             help="Send If-Modified-Since with this HTTP-date (conditional GET).",
         ),
     ] = None,
+    json_body: Annotated[
+        str | None,
+        typer.Option(
+            "--json-body",
+            help="Request body as JSON: a literal JSON string, `@path` to read a file, "
+            "or `@-` for stdin. Sent via fetch()'s json= kwarg. Mutually exclusive with "
+            "--data. GET-only patchright tier rejects any body.",
+        ),
+    ] = None,
+    data: Annotated[
+        str | None,
+        typer.Option(
+            "--data",
+            help="Raw request body: literal text, `@path` to read a file, or `@-` for "
+            "stdin. Sent via fetch()'s content= kwarg. Mutually exclusive with "
+            "--json-body. GET-only patchright tier rejects any body.",
+        ),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON instead of text")] = False,
     show_body: Annotated[
         bool,
@@ -305,6 +377,7 @@ def fetch_cmd(
 ) -> None:
     """Fetch a single URL through the fallback chain."""
     policy = RetryPolicy(max_attempts=max_attempts)
+    body_json, body_content = _resolve_body(json_body, data)
     render = _build_render_options(
         wait_until=wait_until,
         wait_for_selector=wait_for_selector,
@@ -330,6 +403,8 @@ def fetch_cmd(
             max_tier=_as_tier(max_tier),
             etag=etag,
             last_modified=if_modified_since,
+            json=body_json,
+            content=body_content,
             render=render,
         )
     except ValueError as exc:  # bad argument (e.g. unknown device preset) — not a fetch failure

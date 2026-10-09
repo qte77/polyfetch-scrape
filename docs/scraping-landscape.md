@@ -19,6 +19,8 @@ How `fetch()` maps HTTP status codes to behaviour and exception types (RFC 9110 
 | Status | Meaning | polyfetch-scrape behaviour | Type |
 |---|---|---|---|
 | 200 | OK | returned | `Response` |
+| 2xx (not 204), GET, empty body, HTML-or-missing `Content-Type` | Suspected soft block — some anti-bot layers return an empty "success" instead of an explicit 403 ([#237](https://github.com/qte77/polyfetch-scrape/issues/237)) | escalates to the next tier; the final tier raises instead of returning the empty `Response` | `FingerprintBlock` (internal) |
+| 204 | No Content | returned unchanged — legitimately empty, exempt from the row above | `Response(status=204)` |
 | 301 / 308 | Permanent redirect | the target is surfaced so callers can update stored URLs ([#31](https://github.com/qte77/polyfetch-scrape/issues/31)); also emitted by `fetch` / `bulk --json` ([#188](https://github.com/qte77/polyfetch-scrape/issues/188)) | `Response.permanent_redirect_to` |
 | 304 | Not Modified | returned unchanged (conditional GET via `etag` / `last_modified`) | `Response(status=304)` |
 | 401 / 407 | Unauthorized / Proxy Auth Required | terminal — raises, not retried/escalated | `AuthRequired` |
@@ -59,7 +61,7 @@ The `nowsecure.nl/` and `tls.peet.ws/api/all` httpx-tier results above decayed b
 | `x.com/XDevelopers` (public profile page) | 403 | 403 | 403 |
 | `publish.x.com/oembed?url=https://x.com/XDevelopers` (oEmbed, profile URL) | 200 (438-byte JSON) | n/a | n/a |
 
-Reported by another session the same day and **not re-probed here** (no post URL at hand): for a single *post* URL, the default chain returned `200` with a **0-byte body** (reported as success; see the empty-2xx gap in [#237](https://github.com/qte77/polyfetch-scrape/issues/237)), the Patchright tier raised a 403 after 3 attempts, and oEmbed for that post returned **402 Payment Required**. Treat post-level oEmbed as paid until re-probed.
+Reported by another session the same day and **not re-probed here** (no post URL at hand): for a single *post* URL, the default chain returned `200` with a **0-byte body** (reported as success; the empty-2xx gap this exposed is now closed — see the status-code taxonomy table above and [#237](https://github.com/qte77/polyfetch-scrape/issues/237)), the Patchright tier raised a 403 after 3 attempts, and oEmbed for that post returned **402 Payment Required**. Treat post-level oEmbed as paid until re-probed.
 
 Takeaway: this is an authentication wall plus datacenter/automation blocking, not a fingerprint problem that a stronger tier fixes. polyfetch deliberately does not work around it (see README "What it does not do"). The sanctioned automated route is X's paid API.
 

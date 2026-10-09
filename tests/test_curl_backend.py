@@ -78,6 +78,41 @@ def test_curl_backend_returns_response_on_200(monkeypatch: pytest.MonkeyPatch) -
     session_cls.assert_called_once_with(impersonate="chrome")
 
 
+def test_curl_backend_response_user_agent_is_none_without_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """curl_cffi's impersonation profile picks a UA natively; we can't read it back (#198)."""
+    fake = _fake_response(status=200, body=b"ok")
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.request_user_agent is None
+
+
+def test_curl_backend_response_carries_caller_supplied_user_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=200, body=b"ok")
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers={"User-Agent": "MyCustom/1.0"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.request_user_agent == "MyCustom/1.0"
+
+
 def test_curl_backend_retries_on_503_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     fakes = [
@@ -102,7 +137,7 @@ def test_curl_backend_retries_on_503_then_succeeds(monkeypatch: pytest.MonkeyPat
 
 
 def test_curl_backend_passes_firefox_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _fake_response(status=200)
+    fake = _fake_response(status=200, body=b"ok")  # non-empty: not the #237 soft-block case
     session_cls = _install_session(monkeypatch, return_value=fake)
 
     curl_backend.attempt(
@@ -206,6 +241,135 @@ def test_curl_backend_raises_fingerprintblock_on_persistent_403(
             timeout=5.0,
             policy=RetryPolicy(max_attempts=1),
         )
+
+
+def test_curl_backend_fingerprintblock_carries_bounded_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(
+        status=403,
+        body=b"<html>blocked</html>",
+        headers={"content-type": "text/html", "set-cookie": "sid=abc123"},
+    )
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    exc = excinfo.value
+    assert exc.status == 403
+    assert exc.headers == {"content-type": "text/html"}  # set-cookie redacted
+    assert exc.body_excerpt == "<html>blocked</html>"
+
+
+def test_curl_backend_fetcherror_on_exhaustion_carries_bounded_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=503, body=b"rate limited", headers={"content-type": "text/plain"})
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FetchError) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    exc = excinfo.value
+    assert exc.status == 503
+    assert exc.headers == {"content-type": "text/plain"}
+    assert exc.body_excerpt == "rate limited"
+
+
+def test_curl_backend_body_excerpt_capped_at_2kb(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _fake_response(status=403, body=b"x" * 3000)
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert excinfo.value.body_excerpt is not None
+    assert len(excinfo.value.body_excerpt) == 2048
+
+
+def test_curl_backend_empty_2xx_html_body_raises_fingerprintblock_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=200, body=b"", headers={"content-type": "text/html"})
+    session_cls = _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=3),
+        )
+
+    assert excinfo.value.status == 200
+    # Deterministic soft block — no point retrying within the tier.
+    assert session_cls.return_value.request.call_count == 1
+
+
+def test_curl_backend_empty_2xx_missing_content_type_raises_fingerprintblock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=200, body=b"")
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FingerprintBlock):
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+
+@pytest.mark.parametrize(
+    ("method", "status", "body", "headers"),
+    [
+        ("GET", 204, b"", {}),
+        ("HEAD", 200, b"", {}),
+        ("GET", 200, b"", {"content-type": "application/json"}),
+        ("GET", 200, b"non-empty", {"content-type": "text/html"}),
+    ],
+)
+def test_curl_backend_does_not_soft_block_exempt_cases(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    status: int,
+    body: bytes,
+    headers: dict[str, str],
+) -> None:
+    fake = _fake_response(status=status, body=body, headers=headers)
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method=method,
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == status
 
 
 def test_curl_backend_forwards_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
