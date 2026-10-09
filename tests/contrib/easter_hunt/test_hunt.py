@@ -330,7 +330,11 @@ def test_hunt_integration_drives_real_fetch_and_detectors() -> None:
     )
     respx.get("https://b.test/").mock(
         return_value=httpx.Response(
-            200, content=b"", headers={"x-clacks-overhead": "GNU Terry Pratchett"}
+            200,
+            # Non-empty body: a real page carrying this header isn't the #237 soft-block
+            # case (empty 2xx body) — the novelty detector reads the header, not the body.
+            content=b"<html></html>",
+            headers={"content-type": "text/html", "x-clacks-overhead": "GNU Terry Pratchett"},
         )
     )
 

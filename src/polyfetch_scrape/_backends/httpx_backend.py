@@ -8,6 +8,7 @@ import httpx
 from polyfetch_scrape._backends import (
     FingerprintBlock,
     bounded_diagnostics,
+    is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
 )
@@ -32,6 +33,7 @@ class _Attempt:
     retry_after: float | None = None
     headers: dict[str, str] | None = None
     body_excerpt: str | None = None
+    soft_block: bool = False
 
 
 def attempt(
@@ -51,8 +53,19 @@ def attempt(
             last = _attempt_once(client, method, url, headers, policy, json, content)
             if last.response is not None:
                 return last.response
+            if last.soft_block:
+                break  # deterministic, not transient — retrying won't un-empty the body
             if attempt_idx + 1 < policy.max_attempts:
                 time.sleep(next_delay(last.retry_after, policy, attempt_idx))
+
+    diag: dict[str, Any] = {
+        "status": last.retry_status,
+        "headers": last.headers,
+        "body_excerpt": last.body_excerpt,
+    }
+    if last.soft_block:
+        msg = f"httpx fetch: empty 2xx body — suspected soft block: {url}"
+        raise FingerprintBlock(msg, **diag)
 
     detail = (
         f"status={last.retry_status}"
@@ -60,11 +73,6 @@ def attempt(
         else f"transport={last.transport_error!r}"
     )
     msg = f"httpx fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
-    diag: dict[str, Any] = {
-        "status": last.retry_status,
-        "headers": last.headers,
-        "body_excerpt": last.body_excerpt,
-    }
 
     if last.retry_status in _FINGERPRINT_STATUSES or (
         last.transport_error is not None and _is_tls_error(last.transport_error)
@@ -98,7 +106,11 @@ def _attempt_once(
         return _Attempt(None, http_resp.status_code, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(http_resp.status_code, url)
-    return _Attempt(_to_response(http_resp), None, None)
+    resp = _to_response(http_resp)
+    if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
+        resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
+        return _Attempt(None, resp.status, None, None, resp_headers, None, soft_block=True)
+    return _Attempt(resp, None, None)
 
 
 _DEFAULT_ACCEPT = (

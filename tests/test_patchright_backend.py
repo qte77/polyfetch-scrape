@@ -175,6 +175,73 @@ def test_patchright_backend_body_excerpt_capped_at_2kb(monkeypatch: pytest.Monke
     assert len(excinfo.value.body_excerpt) == 2048
 
 
+def test_patchright_backend_empty_2xx_html_body_raises_fingerprintblock_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(
+        monkeypatch,
+        response_status=200,
+        response_headers={"content-type": "text/html"},
+        page_content="",
+    )
+
+    with pytest.raises(FingerprintBlock) as excinfo:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=3),
+        )
+
+    assert excinfo.value.status == 200
+    assert page.goto.call_count == 1  # deterministic soft block — no point retrying
+
+
+def test_patchright_backend_empty_2xx_missing_content_type_raises_fingerprintblock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _make_pw_chain(monkeypatch, response_status=200, response_headers={}, page_content="")
+
+    with pytest.raises(FingerprintBlock):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "headers", "page_content"),
+    [
+        (204, {}, ""),
+        (200, {"content-type": "application/json"}, ""),
+        (200, {"content-type": "text/html"}, "<html>real content</html>"),
+    ],
+)
+def test_patchright_backend_does_not_soft_block_exempt_cases(
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    headers: dict[str, str],
+    page_content: str,
+) -> None:
+    _make_pw_chain(
+        monkeypatch, response_status=status, response_headers=headers, page_content=page_content
+    )
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == status
+
+
 @pytest.mark.parametrize(
     ("status", "exc_type"),
     [(401, AuthRequired), (404, GoneError), (451, LegalBlock)],
