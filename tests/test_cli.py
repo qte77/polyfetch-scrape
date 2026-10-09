@@ -490,6 +490,123 @@ def test_fetch_device_json_rejects_malformed_json() -> None:
     assert result.exit_code == 2
 
 
+def test_fetch_json_body_flag_reaches_fetch_as_json_kwarg(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app, ["fetch", "https://x.test", "--method", "POST", "--json-body", '{"a": 1}']
+    )
+
+    assert result.exit_code == 0
+    assert captured["json"] == {"a": 1}
+    assert captured["content"] is None
+
+
+def test_fetch_data_flag_reaches_fetch_as_content_kwarg(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app, ["fetch", "https://x.test", "--method", "POST", "--data", "raw text"]
+    )
+
+    assert result.exit_code == 0
+    assert captured["content"] == b"raw text"
+    assert captured["json"] is None
+
+
+def test_fetch_json_body_at_file_reads_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+    body_file = tmp_path / "body.json"
+    body_file.write_text('{"b": [1, 2]}')
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--json-body", f"@{body_file}"])
+
+    assert result.exit_code == 0
+    assert captured["json"] == {"b": [1, 2]}
+
+
+def test_fetch_data_at_dash_reads_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--data", "@-"], input="from stdin")
+
+    assert result.exit_code == 0
+    assert captured["content"] == b"from stdin"
+
+
+def test_fetch_json_body_rejects_malformed_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def fake(url: str, **kwargs: object) -> Response:
+        nonlocal called
+        called = True
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--json-body", "{not json"])
+
+    assert result.exit_code == 2
+    assert called is False
+
+
+def test_fetch_json_body_and_data_together_exits_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def fake(url: str, **kwargs: object) -> Response:
+        nonlocal called
+        called = True
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(
+        app,
+        ["fetch", "https://x.test", "--json-body", "{}", "--data", "x"],
+    )
+
+    assert result.exit_code == 2
+    assert called is False
+
+
+def test_fetch_patchright_tier_with_body_surfaces_fetcherror() -> None:
+    # No monkeypatch: the real client.fetch() rejects a body on the patchright tier
+    # before any browser dispatch (client.py's _dispatch), so this stays network-free.
+    result = runner.invoke(
+        app,
+        ["fetch", "https://x.test", "--tier", "patchright", "--data", "payload"],
+    )
+
+    assert result.exit_code == 1
+    assert "patchright" in result.output.lower()
+
+
 def test_bulk_json_includes_permanent_redirect_to(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

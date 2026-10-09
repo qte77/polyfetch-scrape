@@ -84,6 +84,7 @@ polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
 polyfetch fetch https://httpbin.org/user-agent --show-body   # verify the UA you send
 polyfetch fetch https://example.com --etag '"abc123"'   # conditional GET (If-None-Match → 304 on match)
+polyfetch fetch https://httpbin.org/post --method POST --json-body '{"a": 1}'   # JSON request body (or --data for raw bytes; @file/@- also work)
 polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright   # force the JS-render tier
 polyfetch fetch https://example.com --max-tier curl_cffi   # cap escalation — never launch a browser
 polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright --screenshot viewport --screenshot-out shot.png   # render + screenshot

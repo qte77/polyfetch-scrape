@@ -170,7 +170,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | ~~216~~ | ~~`render_session` default timeouts + viewport shape documented~~ ✅ #235 | L2 / A | agent | 3 | S | Shipped |
 | ~~229~~ | ~~Opt-in HAR recording + summary recipe~~ ✅ #242 (defaults `minimal` / bodies `omit`; credentials warning in USING + api-reference) | L2 / A (after 199) | agent | 4 | M | Shipped |
 | ~~197~~ | ~~Detect musl, fail loudly in `doctor` / browser tier (port #206)~~ ✅ #234 | L3 / A | agent | 4 | S | Shipped. Known limit: patchright is a hard dependency, so `uv sync` on musl still fails at resolution (making it an optional extra is a separate decision) |
-| 214 | CLI request body `--json-body` / `--data` | L4 / A | agent | 4 | S | CLI tests: the body reaches `fetch(json=…)` / `content=`; both at once → exit 2; patchright tier → clear error |
+| ~~214~~ | ~~CLI request body `--json-body` / `--data`~~ ✅ #248 (`@path` / `@-` supported; both flags or invalid JSON → exit 2) | L4 / A | agent | 4 | S | Shipped |
 | 198 | Surface the httpx-tier UA (`request_user_agent`) | L4 / A (after 214) | agent | 3 | S | Response + `--json` carry the sent UA; USING documents the default |
 | ~~209~~ | ~~`FingerprintBlock` carries bounded headers / body excerpt~~ ✅ #244 (`Set-Cookie` redacted; 2 KB excerpt; also in `fetch --json` errors) | L5 / A | agent | 3 | S–M | Shipped |
 | ~~237~~ | ~~Empty 2xx HTML body is a silent soft block: escalate; on the last tier raise~~ ✅ #247 (shared `is_suspected_soft_block` predicate; a pinned `--tier` also raises; escalation loop unchanged) | L5 / A (after 209) | agent | 4 | S | Shipped |
