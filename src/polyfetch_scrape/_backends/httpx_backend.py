@@ -90,10 +90,9 @@ def _attempt_once(
     json: Any | None = None,
     content: bytes | None = None,
 ) -> _Attempt:
+    request_headers = _with_default_headers(headers)
     try:
-        http_resp = client.request(
-            method, url, headers=_with_default_headers(headers), json=json, content=content
-        )
+        http_resp = client.request(method, url, headers=request_headers, json=json, content=content)
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 
@@ -106,7 +105,7 @@ def _attempt_once(
         return _Attempt(None, http_resp.status_code, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(http_resp.status_code, url)
-    resp = _to_response(http_resp)
+    resp = _to_response(http_resp, _header_value(request_headers, "user-agent"))
     if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
         resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
         return _Attempt(None, resp.status, None, None, resp_headers, None, soft_block=True)
@@ -136,7 +135,18 @@ def _with_default_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
     return merged
 
 
-def _to_response(http_resp: httpx.Response) -> Response:
+def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
+    """Case-insensitive lookup — ``headers`` may preserve the caller's own key casing."""
+    if headers is None:
+        return None
+    lname = name.lower()
+    for k, v in headers.items():
+        if k.lower() == lname:
+            return v
+    return None
+
+
+def _to_response(http_resp: httpx.Response, request_user_agent: str | None) -> Response:
     return Response(
         url=str(http_resp.url),
         status=http_resp.status_code,
@@ -145,4 +155,5 @@ def _to_response(http_resp: httpx.Response) -> Response:
         content_type=http_resp.headers.get("content-type"),
         backend="httpx",
         permanent_redirect_to=permanent_redirect_target(http_resp.status_code, http_resp.headers),
+        request_user_agent=request_user_agent,
     )
