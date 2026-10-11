@@ -9,7 +9,7 @@
 
 - `make setup_dev` — sync dev deps via `uv`
 - `make setup_browsers` — one-off; install Patchright Chromium (~300 MB; required only for the patchright tier)
-- `make doctor` — check the browser-tier Chromium is installed and install it if missing (idempotent; handy when borrowing polyfetch's venv, where the Chromium cache can get wiped)
+- `make doctor` — check the browser-tier Chromium is installed and install it if missing (idempotent; handy when borrowing polyfetch's venv, where the Chromium cache can get wiped). Set `PLAYWRIGHT_BROWSERS_PATH` to put the browser on a roomier volume — see [`USING.md`](USING.md)
 
 **Inner loop:**
 
