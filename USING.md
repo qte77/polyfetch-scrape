@@ -174,6 +174,15 @@ uv run --directory <polyfetch> patchright install chromium   # ~300 MB; tiers 1�
 
 Not on Alpine/musl, though — patchright has no `musllinux` wheel there. `polyfetch doctor` detects this and exits non-zero with the workaround instead of a cryptic launch failure; see [`docs/api-reference.md`](docs/api-reference.md#cli-only-commands). Tiers 1–2 (httpx, curl_cffi) are unaffected.
 
+**Browser cache location (`PLAYWRIGHT_BROWSERS_PATH`).** Chromium installs into `~/.cache/ms-playwright` by default. If that volume is tight, set `PLAYWRIGHT_BROWSERS_PATH` to a directory with room, and set it **both** when installing and when running. patchright honours it:
+
+```bash
+export PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright
+uv run --directory <polyfetch> polyfetch doctor --fix   # installs into $PLAYWRIGHT_BROWSERS_PATH
+```
+
+After a patchright upgrade (e.g. 1.63 = Chromium 153), run `polyfetch doctor --fix` again: a newer patchright needs its matching Chromium build.
+
 ## Gotchas
 
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
