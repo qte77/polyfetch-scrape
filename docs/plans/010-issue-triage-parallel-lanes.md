@@ -4,7 +4,8 @@
 - **Shipped:** #181, #197, #199, #216, #229, #209, #237, #214, #198, #241 (patchright 1.63 = Chromium 153), the dependency bumps (#236, #246, #222) and the tooling fix #243.
 - **Next: Phase C.** All gates are now settled (see the owner decisions under the D table), so Phase C items are **agent-runnable** except #218 (the owner edits their own comments) and #228 (deferred).
 - **Start order:**
-  - **#190** launch options (headed/xvfb/mobile), then #59.
+  - **#253** docs-only (patchright console-capture caveat); runs alongside anything.
+  - **#190** launch options (headed/xvfb/mobile), then #59 (human-in-the-loop CAPTCHA takeover, per D11).
   - **#200** auth sessions on WIP `c61557f` + #203's fixes, then #182.
   - **#179**, **#147**, **#240** (SSRF follow-up), **#230** (spike first) and **#183** in parallel lanes as file ownership allows.
 - **Source-map line numbers are stale.** They come from v0.8.0 (`f689c3c`), and `src/` has changed a lot since, so lanes must re-grep.
@@ -159,6 +160,7 @@ Defaults apply unattended except where marked 🔒 (the agent must wait).
 | D8 | 🔒 #230: engine `capture_performance` or trace recipe | Trace recipe + a real-browser spike first |
 | D9 | 🔒 Remove the unused `callowayproject/bump-my-version@*` from the Actions allow-list | Remove. That also makes any stale re-add (e.g. an old Dependabot #222) fail when the workflow is parsed |
 | D10 | 🔒 Community: before each port lands, post a one-line heads-up on #201/#202/#206 ("landing as #N with you as co-author")? Invite `dntywntme` as a collaborator, which removes the fork-run approval/expiry problem at the root? | Heads-up: yes (the orchestrator posts it once you approve). Invite: your call |
+| D11 | Bot-check / CAPTCHA handling (owner, 2026-10-11) | **In scope:** headed and mobile launch (#190), **human-in-the-loop** CAPTCHA takeover (#59) with session reuse via `storage_state` (#200), and challenge detection that raises instead of returning the challenge page. **Out of scope:** automated CAPTCHA solving (ML solvers, paid solver services). A CAPTCHA is a site's explicit access control |
 
 **Owner decisions, 2026-09-30:** the defaults were accepted for D1–D9. Agents build on D2, D3, D4, D5 and D8 as written.
 - **Done:**
@@ -197,7 +199,8 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 228 | Proxy passthrough | deferred (D3) | owner | 2 | S | Revisit only when a 2nd consumer needs it; README excludes proxy *rotation* |
 | 144 | Shared ui-check helper | later | data | 3 | L | ≥2 consumers agree on a stable API (AHA) |
 | 153 | Tracking: structured-first | tracker | — | — | — | Closes when #147 ships |
-| 218 | Third-party mentions on #190 | B | owner (D6) | 2 | S | Comments edited or hidden |
+| 218 | Third-party mentions (tracker) | B | owner (web UI) | 2 | S | Live text is clean everywhere (verified 2026-10-10: #190 comments, #228, #148 edited). Left: the owner deletes ~11 old edit-history revisions in the web UI (no API exists), then closes #218 |
+| 253 | Docs: on the patchright tier, console capture misses page-script `console.*` / uncaught errors (patchright avoids `Runtime.enable`) | C | agent | 4 | S | `USING.md` + `docs/api-reference.md` state the caveat and recommend a DOM-attribute + screenshot signal instead |
 | ~~205, 207, 127, 211~~ | ~~Close as superseded / decided / not planned~~ ✅ closed 2026-09-30 with remarks | B | owner (D7) | — | S | Done |
 | — | ~~Actions allow-list cleanup~~ ✅ the owner set it (D9) | B | owner (D9) | 1 | S | Done |
 | — | ~~Release **v0.8.1** (security) right after #181 merges~~ ✅ v0.8.1 (#239, 2026-09-30: #181 + #197) | A | agent | 4 | S | Released and marked Latest |
