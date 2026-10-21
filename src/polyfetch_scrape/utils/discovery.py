@@ -148,6 +148,57 @@ def _robots_sitemaps(origin: str, seed_internal: bool) -> list[str]:
     return _SITEMAP_LINE_RE.findall(text)
 
 
+@dataclass(frozen=True, slots=True)
+class RobotsFetch:
+    """A ``/robots.txt`` fetch outcome that preserves the HTTP status, for
+    :mod:`polyfetch_scrape.utils.robots`'s RFC 9309 status-dependent semantics (section
+    2.3.1.3 "Unavailable" Status vs. section 2.3.1.4 "Unreachable" Status — see
+    :func:`fetch_robots_txt_status`). ``fetch_robots_txt``/``_robots_sitemaps`` above are
+    unaffected by this: they keep the module's existing swallow-every-failure-to-absence
+    convention, unchanged.
+    """
+
+    # None when the failure carried no HTTP status (a transport/network failure below the
+    # HTTP layer, e.g. DNS/connection failure — see fetch_robots_txt_status).
+    status: int | None
+    text: str | None  # robots.txt body text on a successful, non-soft-404 2xx; None otherwise
+
+
+def _fetch_status(url: str, seed_internal: bool) -> tuple[int | None, Response | None]:
+    """Status-preserving sibling of :func:`_fetch`, for :func:`fetch_robots_txt_status` only.
+    ``status`` is ``None`` on a failure that carried no HTTP status at all (a pure
+    transport/network failure); every other ``_fetch`` caller keeps swallowing to ``None``
+    and does not need this distinction.
+    """
+    check_ssrf(url, seed_is_internal=seed_internal)
+    try:
+        resp = fetch(url, max_tier="curl_cffi")
+    except FetchError as exc:
+        return exc.status, None
+    check_redirect(url, resp, seed_is_internal=seed_internal)
+    return resp.status, resp
+
+
+def fetch_robots_txt_status(origin: str, seed_internal: bool) -> RobotsFetch:
+    """``origin``'s ``/robots.txt`` fetch outcome, status included — for
+    :mod:`polyfetch_scrape.utils.robots`'s ``is_allowed()`` only.
+
+    RFC 9309 (https://www.rfc-editor.org/rfc/rfc9309), section 2.3.1.3 "Unavailable" Status
+    (HTTP 4xx, including 404): "the crawler MAY access any resources on the server." Section
+    2.3.1.4 "Unreachable" Status (HTTP 5xx, **or** "server or network errors" with no HTTP
+    response at all): "the robots.txt file is undefined and the crawler MUST assume complete
+    disallow." Telling these apart needs the status code on failure, which
+    :func:`fetch_robots_txt`'s swallow-to-``None`` does not preserve — hence this sibling,
+    used nowhere else. An HTML soft-404 (a ``200`` SPA shell, same guard as the other probes
+    in this module) reports its real status with ``text=None``, same as any other
+    non-robots.txt body.
+    """
+    status, resp = _fetch_status(f"{origin}/robots.txt", seed_internal)
+    if resp is None or _looks_like_html(resp):
+        return RobotsFetch(status=status, text=None)
+    return RobotsFetch(status=status, text=resp.body.decode("utf-8", "replace"))
+
+
 def _split_events(urls: list[str]) -> tuple[list[str], list[str]]:
     plain: list[str] = []
     event: list[str] = []
