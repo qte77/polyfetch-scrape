@@ -32,16 +32,20 @@ Attach any `page.on(...)` listener and react to the browser's DevTools events as
 
 ```python
 with render_session(url) as s:
-    s.page.on("console", lambda m: print(m.type, m.text))  # console.log / warn / error
-    s.page.on("pageerror", lambda e: print("uncaught JS:", e))  # uncaught JS exceptions
+    s.page.on(
+        "console", lambda m: print(m.type, m.text)
+    )  # browser-generated only — see caveat below
+    s.page.on(
+        "pageerror", lambda e: print("uncaught JS:", e)
+    )  # browser-generated only — see caveat below
     s.page.on("requestfailed", lambda r: print(r.url, r.failure))  # failed network requests
     s.click_text("Load more")  # …then drive the page
 ```
 
 You don't even have to wire listeners: capture is **always on out of the box** — `s.console_errors`
-(console errors + uncaught JS errors) and `s.network_failures` (failed / `≥400` requests) fill for the
-whole session, initial page load included. On the one-shot `fetch()` tier the same capture is opt-in
-via `RenderOptions(capture_console=True, capture_network_failures=True)` → `Response.console_errors` /
+and `s.network_failures` (failed / `≥400` requests) fill for the whole session, initial page load
+included. On the one-shot `fetch()` tier the same capture is opt-in via
+`RenderOptions(capture_console=True, capture_network_failures=True)` → `Response.console_errors` /
 `Response.network_failures`.
 
 > **Caveat:** a headless capture reflects only *this* runner's network — a failure a real user hits
@@ -55,6 +59,22 @@ via `RenderOptions(capture_console=True, capture_network_failures=True)` → `Re
 > render". Use **screenshots as ground truth** for "did it render", `page.on(...)` for "did it load",
 > and reserve `evaluate` for DOM you set or read structurally (element presence, attributes,
 > `textContent`).
+>
+> **Caveat:** on the patchright tier, `console_errors` / `page.on("console")` / `page.on("pageerror")`
+> only see **browser-generated** messages (e.g. a CORS failure), never page-script output. Verified
+> against the installed `patchright` package's own README (`patchright-*.dist-info/METADATA`, §
+> Patches): it states it "patches [the `Console.enable` leak] by disabling the Console API all
+> together. This means, console functionality will not work in Patchright" — so page `console.*`
+> calls never reach `page.on("console")`. Page-script uncaught exceptions are very likely lost the
+> same way — Patchright's README calls avoiding `Runtime.enable` (by running page JS in isolated
+> `ExecutionContexts`) "the biggest Patch Patchright uses", and CDP needs `Runtime.enable` to emit
+> `Runtime.exceptionThrown`. The README doesn't say so explicitly, so treat this half as an
+> **inference**: a four-page repro (sync throw, module throw, unhandled promise rejection, bare
+> `console.error()`) fired none of them through `console_errors` or `pageerror`, while a real
+> CORS failure on the same page did. Treat `console_errors` / `pageerror` as a network/browser
+> signal, not a page-script one — set a DOM attribute from your own script and read it structurally
+> instead (pairs with the isolated-world `evaluate` caveat above; see AGENT_LEARNINGS.md), then
+> confirm visually with a screenshot.
 
 ### Other `.page` recipes
 
@@ -190,9 +210,17 @@ After a patchright upgrade (e.g. 1.63 = Chromium 153), run `polyfetch doctor --f
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
+- **Opt-in robots.txt compliance**: `utils.robots.is_allowed(url, user_agent="*")` fetches
+  and parses the origin's `/robots.txt` (stdlib `urllib.robotparser`) and reports
+  allow/deny; dual-use, so `fetch()`/`discover()` never call it automatically (#147). Implements
+  RFC 9309 explicitly rather than relying on the installed Python's own `urllib.robotparser`
+  quirks: `/robots.txt` itself is always allowed (§2.2.2); a 4xx/404/soft-404 allows everything
+  (§2.3.1.3); a 5xx or a network failure disallows everything (§2.3.1.4). Full signature:
+  [`docs/api-reference.md`](docs/api-reference.md#robotstxt-compliance-helper-utilsrobots-opt-in).
 - **SSRF guard is escalation-only, and only on the discovery paths.** `discover()` /
-  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the `easter-hunt`
-  contrib follow attacker-influenced URLs (sitemap entries, feed links, JSON-LD). The
+  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, `utils.robots.is_allowed()`,
+  and the `easter-hunt` contrib follow attacker-influenced URLs (sitemap entries, feed
+  links, JSON-LD, the robots.txt fetch itself). The
   **seed** you pass in — the `url`/`domain`/seed argument — is **never blocked**, even
   a literal internal IP or `localhost`: pointing these at a local dev server is
   intentional and supported. Only a URL the tool *derives* from that seed (a probed
