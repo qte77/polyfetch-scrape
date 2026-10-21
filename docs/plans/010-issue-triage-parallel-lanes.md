@@ -195,7 +195,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 179 | Automation-fingerprint diagnostic report | C | agent | 3 | M | Read-only report; no spoofing |
 | ~~147~~ | ~~Opt-in robots.txt helper (reuse `_robots_sitemaps`)~~ ✅ #263 (`utils.robots.is_allowed`; RFC 9309: 4xx allows, 5xx or unreachable disallows, `/robots.txt` itself is always allowed; `discover()` unchanged) | C | agent | 3 | M | Shipped; the orchestrator updates the #153 checklist after merge |
 | 59 | Headed manual-takeover handoff | C (after 190) | agent (D4: engine) | 3 | L | Engine option built on #190's launch plumbing; e2e on a benign page |
-| 230 | Performance capture | C | agent (D8: `browser.start_tracing()` recipe + a real-browser spike first; Chromium 153 now ships DevTools 152) | 3 | M | Spike findings recorded on #230; the recipe lands in `docs/scripting.md` |
+| ~~230~~ | ~~Performance capture~~ ✅ #266 (`browser.start_tracing()` recipe in `docs/scripting.md`; spike on #230: the trace carries FCP/LCP, while paint/LCP entries read via `page.evaluate` came back empty; detectability UNVERIFIED) | C | agent (D8) | 3 | M | Shipped |
 | 183 | Chromium crash under load | C | agent (D5: no auto-relaunch) | 3 | L | A page crash surfaces as a typed error; repro notes |
 | 228 | Proxy passthrough | deferred (D3) | owner | 2 | S | Revisit only when a 2nd consumer needs it; README excludes proxy *rotation* |
 | 144 | Shared ui-check helper | later | data | 3 | L | ≥2 consumers agree on a stable API (AHA) |
