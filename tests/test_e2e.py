@@ -5,6 +5,7 @@ Run via `make test_e2e` or `uv run pytest -m e2e`.
 """
 
 import json
+import os
 from urllib.parse import urlparse
 
 import pytest
@@ -234,6 +235,31 @@ def test_render_session_video_record_real_webm(tmp_path) -> None:
     assert s.video_path.suffix == ".webm"
     assert s.video_path.exists()
     assert s.video_path.stat().st_size > 0
+
+
+def test_patchright_headed_launch_against_real_target() -> None:
+    """Headed launch (#190): the hardcoded `headless=True` ceiling is gone.
+
+    Needs a real X display. CI runs the headed leg under `xvfb-run -a` (the issue's own CI
+    note) so it stays unattended; locally, with no `DISPLAY` set, this skips cleanly instead
+    of failing on Patchright's "Missing X server or $DISPLAY" — run it under `xvfb-run -a`
+    (e.g. `xvfb-run -a uv run pytest -m e2e -k headed --no-cov`) to actually exercise it.
+    """
+    if not os.environ.get("DISPLAY"):
+        pytest.skip("no DISPLAY available — run under `xvfb-run -a` to exercise headed launch")
+
+    from polyfetch_scrape._backends import patchright_backend
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=30.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(headless=False),
+    )
+    assert resp.status == 200
+    assert resp.backend == "patchright"
 
 
 def test_fetch_sitemap_urls_against_real_sitemap() -> None:
