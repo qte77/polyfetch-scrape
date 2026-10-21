@@ -1,4 +1,4 @@
-"""Managed, headless-but-interactive Patchright session for multi-step SPA flows.
+"""Managed, interactive Patchright session for multi-step SPA flows.
 
 The browser tier's ``fetch(url, render=...)`` is single-shot: one linear
 ``RenderOptions(actions=...)`` sequence, one capture, teardown. A genuine
@@ -7,7 +7,8 @@ interactive flow (act → assert → act, branch on the DOM) needs a live ``Page
 console/network capture and screenshot helpers, so consumers stop re-hand-rolling
 raw Patchright launch/teardown/capture boilerplate.
 
-Chromium-only (headless), consistent with the patchright fetch tier.
+Chromium-only; headless by default, consistent with the patchright fetch tier —
+``headless=False`` launches headed instead (#190).
 
 NOTE: like the fetch-tier capture, ``console_errors`` / ``network_failures``
 reflect only THIS process's network — a cross-origin failure a real user hits
@@ -62,6 +63,7 @@ class RenderSession:
         record_har_path: str | Path | None = None,
         record_har_mode: HarMode = "minimal",
         record_har_content: HarContent = "omit",
+        headless: bool = True,
     ) -> None:
         self._url = url
         self._wait_until = wait_until
@@ -79,6 +81,7 @@ class RenderSession:
             record_har_path=record_har_path,
             record_har_mode=record_har_mode,
             record_har_content=record_har_content,
+            headless=headless,
         )
         self._pw: Any = None
         self._browser: Any = None
@@ -95,7 +98,7 @@ class RenderSession:
         # Same platform gate as the fetch tier: no musllinux patchright wheel (#197).
         ensure_browser_tier_supported()
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(headless=True)
+        self._browser = self._pw.chromium.launch(headless=self._opts.headless)
         self._context = self._browser.new_context(**context_kwargs(self._pw, self._opts))
         self.page = self._context.new_page()
         # Raw `s.page` calls (e.g. `.locator(...).click()`) otherwise fall back to Playwright's
@@ -187,8 +190,9 @@ def render_session(
     record_har_path: str | Path | None = None,
     record_har_mode: HarMode = "minimal",
     record_har_content: HarContent = "omit",
+    headless: bool = True,
 ) -> RenderSession:
-    """Open a managed headless Patchright session for an interactive multi-step flow.
+    """Open a managed Patchright session for an interactive multi-step flow.
 
     ``device``/``viewport``/``color_scheme``/``user_agent``/``locale`` set emulation at
     ``new_context()`` time (mirrors ``RenderOptions``). ``viewport`` is a plain
@@ -210,6 +214,10 @@ def render_session(
     ``set_default_navigation_timeout``, to raw calls on ``s.page`` — so a direct
     ``s.page.locator(...).click()`` honors the same budget instead of Playwright's own
     30000ms default.
+
+    ``headless`` (default ``True``) launches Chromium headless; ``headless=False`` launches
+    headed, which clears some anti-bot challenges a headless launch never does (#190) — on a
+    display-less host (e.g. CI) run it under ``xvfb-run -a`` to stay unattended.
 
     Use as a context manager::
 
@@ -235,4 +243,5 @@ def render_session(
         record_har_path=record_har_path,
         record_har_mode=record_har_mode,
         record_har_content=record_har_content,
+        headless=headless,
     )
