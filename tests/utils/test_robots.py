@@ -2,7 +2,7 @@ from collections.abc import Callable, Mapping
 
 import pytest
 
-from polyfetch_scrape.errors import GoneError
+from polyfetch_scrape.errors import FetchError, GoneError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.utils.robots import is_allowed
 
@@ -25,9 +25,16 @@ def _mapping_fetch(mapping: Mapping[str, Response]) -> Callable[..., Response]:
     return _fetch
 
 
+def _raising_fetch(exc: Exception) -> Callable[..., Response]:
+    def _fetch(_url: str, **_kwargs: object) -> Response:
+        raise exc
+
+    return _fetch
+
+
 def _patch(monkeypatch: pytest.MonkeyPatch, mapping: Mapping[str, Response]) -> None:
-    # is_allowed() fetches robots.txt via utils.discovery.fetch_robots_txt, which calls
-    # this module's `fetch` — reusing discovery's fetch+SSRF-guard pattern (#147).
+    # is_allowed() fetches robots.txt via utils.discovery.fetch_robots_txt_status, which
+    # calls this module's `fetch` — reusing discovery's fetch+SSRF-guard pattern (#147).
     monkeypatch.setattr("polyfetch_scrape.utils.discovery.fetch", _mapping_fetch(mapping))
 
 
@@ -66,6 +73,58 @@ def test_bare_domain_seed_is_normalized_to_https(monkeypatch: pytest.MonkeyPatch
     _patch(monkeypatch, {"https://ex.com/robots.txt": _resp(robots)})
 
     assert is_allowed("ex.com/private") is False
+
+
+def test_robots_txt_itself_is_always_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RFC 9309 §2.2.2: "The /robots.txt URI is implicitly allowed." is_allowed() checks the
+    # path explicitly before any fetch/parse — assert fetch() is never even called, so this
+    # is deterministic on every supported Python (3.11-3.14), unlike relying on whichever
+    # urllib.robotparser version happens to special-case it (it doesn't, before 3.13/3.14).
+    def _boom(*_a: object, **_kw: object) -> Response:
+        raise AssertionError("fetch() must not be called for the /robots.txt path itself")
+
+    monkeypatch.setattr("polyfetch_scrape.utils.discovery.fetch", _boom)
+
+    assert is_allowed("https://ex.com/robots.txt") is True
+
+
+@pytest.mark.parametrize("status", [400, 403, 404, 429])
+def test_4xx_status_allows_everything(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
+    # RFC 9309 §2.3.1.3 "Unavailable" Status: any 4xx (incl. 404) means "the crawler MAY
+    # access any resources on the server."
+    monkeypatch.setattr(
+        "polyfetch_scrape.utils.discovery.fetch",
+        _raising_fetch(FetchError(f"terminal HTTP {status}", status=status)),
+    )
+
+    assert is_allowed("https://ex.com/anything") is True
+
+
+@pytest.mark.parametrize("status", [500, 502, 503])
+def test_5xx_status_disallows_everything(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
+    # RFC 9309 §2.3.1.4 "Unreachable" Status: a 5xx response means "the robots.txt file is
+    # undefined and the crawler MUST assume complete disallow."
+    monkeypatch.setattr(
+        "polyfetch_scrape.utils.discovery.fetch",
+        _raising_fetch(FetchError(f"server error {status}", status=status)),
+    )
+
+    assert is_allowed("https://ex.com/anything") is False
+
+
+def test_network_failure_with_no_status_disallows_everything(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # RFC 9309 §2.3.1.4 also groups "server or network errors" (no HTTP response at all) with
+    # a 5xx — both mean "the robots.txt file is undefined", not the §2.3.1.3 "Unavailable"
+    # allow-all case. A FetchError with no status= models a transport-level failure (e.g. a
+    # DNS/connection failure — see httpx_backend.py's TransportError handling).
+    monkeypatch.setattr(
+        "polyfetch_scrape.utils.discovery.fetch",
+        _raising_fetch(FetchError("connection failed")),
+    )
+
+    assert is_allowed("https://ex.com/anything") is False
 
 
 def test_ssrf_blocks_robots_txt_redirected_onto_internal_address(
