@@ -22,9 +22,9 @@ How a single `fetch(url)` call flows through the three-tier fallback chain to a 
                 FingerprintBlock
                          ▼
             patchright_backend.attempt ──2xx──► Response
-            (headless Chromium; RenderOptions:
+            (Chromium, headless by default; RenderOptions:
              wait_until / wait_for_* / screenshot
-             + emulation/video/HAR)
+             + emulation/video/HAR/headless)
                          │
       terminal 4xx/451 ──┴── raise_for_terminal_status ──► AuthRequired / GoneError / LegalBlock
 ```
@@ -52,10 +52,10 @@ For how the estate consumes this substrate across repos — and the promotion ru
 | `_backends/__init__.py` | Shared backend helpers: `FingerprintBlock` sentinel, `raise_for_terminal_status` (`_TERMINAL` map), `permanent_redirect_target`, `bounded_diagnostics` (caps the final tier's blocked-response headers/body onto the raised `FetchError`, redacting `Set-Cookie` — #209). |
 | `_backends/httpx_backend.py` | Tier 1: plain `httpx` + browser-default headers; first attempt for every request. |
 | `_backends/curl_backend.py` | Tier 2: `curl_cffi` (Python **CFFI** bindings to the **curl-impersonate** fork of curl) — replays a real browser's Chrome TLS/JA3 handshake, which UA/header edits alone can't; engages on 403 / TLS error. |
-| `_backends/patchright_backend.py` | Tier 3: headless Patchright/Chromium — Patchright is a stealth, API-compatible **Playwright fork** (the dependency is `patchright`, never `playwright`); applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture); emulation/video/HAR applied at `new_context()`. |
+| `_backends/patchright_backend.py` | Tier 3: Patchright/Chromium, headless by default (`RenderOptions.headless=False` launches headed — clears some anti-bot challenges a headless launch never does; run it under `xvfb-run -a` on a display-less host, #190) — Patchright is a stealth, API-compatible **Playwright fork** (the dependency is `patchright`, never `playwright`); applies `RenderOptions` (wait strategies, screenshot, opt-in console/network-failure capture); emulation/video/HAR applied at `new_context()`. |
 | `response.py` | Frozen `Response` (url, status, headers, body, content_type, backend, permanent_redirect_to, screenshot, video_path, har_path, request_user_agent, console_errors, network_failures, screenshots). |
-| `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — patchright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures, device (preset name **or** custom bundle)/viewport/color_scheme/user_agent/locale emulation, record_video_dir/record_video_size, record_har_path/record_har_mode/record_har_content). |
-| `render_session.py` | `render_session()` — managed headless multi-step Patchright `Page` context manager for interactive act→assert→act flows; reuses the backend's `attach_capture`/`capture_screenshot`. |
+| `render_options.py` | `RenderOptions` + `RenderAction` + `Screenshot` — patchright-tier controls (waits, screenshot, scripted actions, named multi-screenshots, capture_console, capture_network_failures, device (preset name **or** custom bundle)/viewport/color_scheme/user_agent/locale emulation, record_video_dir/record_video_size, record_har_path/record_har_mode/record_har_content, headless). |
+| `render_session.py` | `render_session()` — managed multi-step Patchright `Page` context manager (headless by default) for interactive act→assert→act flows; reuses the backend's `attach_capture`/`capture_screenshot`. |
 | `utils/sitemap.py` | `fetch_sitemap_urls()` — sitemap.xml URL discovery (index recursion, gzip, `defusedxml`, SSRF guard) over the public `fetch()`. |
 | `utils/discovery.py` | `discover()` — structured-entrypoint discovery (sitemaps/feeds/`llms.txt`/JSON-LD `@type`) over `fetch()`; soft-404-guarded; returns URLs/types only (no extraction). Shares the SSRF guard via `utils/_ssrf.py`. |
 | `utils/_ssrf.py` | Shared SSRF guard for the utils that fetch attacker-influenced URLs — **escalation-only** (owner decision, 2026-09-30): the seed a caller passes in (`discover(url)`, the sitemap `domain`, each `hunt()` seed) is **never blocked**, including a literal internal IP or `localhost` — local/dev use is intentional. Only a URL the tool *derives* from that seed (a probed path, a redirect target) is checked, and only when the seed is external: `is_seed_internal(seed)` computes that once per run; `check_ssrf(url, seed_is_internal=...)` rejects a derived literal internal IP **and** resolves a derived hostname, rejecting it when *any* answer is internal ("internal" = not `ipaddress`'s `is_global`, plus an explicit `is_multicast` check — an allowlist, not named ranges, so it also catches shared/CGNAT space, e.g. cloud metadata endpoints outside `169.254.169.254`); `check_redirect(url, response, seed_is_internal=...)` re-applies that check to the URL a response landed on and to an unfollowed 301/308 `Location`. DNS rebinding is out of scope (needs pinned-IP connect, which no tier exposes). |

@@ -23,7 +23,7 @@ A single call runs the three-tier fallback chain (or the pinned `tier`) and retu
 
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
-CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE]` — the patchright-tier emulation/video/HAR flags; `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested, and `request_user_agent` (the UA actually sent, when cheaply knowable — on `fetch` and every `bulk` line; #198). `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. Full flag list: [USING.md](../USING.md).
+CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE] [--headed]` — the patchright-tier emulation/video/HAR/launch flags (`--headed` launches Chromium headed instead of headless; default headless — clears some anti-bot challenges a headless launch never does, #190); `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested, and `request_user_agent` (the UA actually sent, when cheaply knowable — on `fetch` and every `bulk` line; #198). `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. Full flag list: [USING.md](../USING.md).
 
 ## Throttle (optional per-host rate limit)
 
@@ -60,6 +60,7 @@ RenderOptions(
     record_har_path=None,
     record_har_mode="minimal",
     record_har_content="omit",
+    headless=True,
 )
 # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
 # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
@@ -90,6 +91,9 @@ RenderOptions(
 #     SECURITY: a HAR records every request/response header, including Cookie and
 #     Authorization — treat it as a credentials-bearing artifact once an authenticated
 #     session is in play (#200/#178), and never commit or share one uninspected.
+# headless=True|False — launch Chromium headless (default) or headed. A headed launch is
+#     heavier but clears some anti-bot challenges a headless launch never does (#190); on a
+#     display-less host (e.g. CI) run it under `xvfb-run -a` to stay unattended.
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
 # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -105,14 +109,14 @@ Screenshot(name, target="viewport")
 
 ## Render session (interactive, patchright tier)
 
-A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on.
+A managed Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; headless by default (`headless=False` launches headed, #190); library-only (no CLI). Console + network-failure capture is always on.
 
 ```python
 with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
                      device=None, viewport=None, color_scheme=None, user_agent=None,
                      locale=None, record_video_dir=None, record_video_size=None,
                      record_har_path=None, record_har_mode="minimal",
-                     record_har_content="omit") as s:
+                     record_har_content="omit", headless=True) as s:
     s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
     s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
     s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
@@ -125,7 +129,7 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
 # a navigation timeout raises FetchError.
 ```
 
-`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content` mirror the same-named `RenderOptions` fields above — set at `new_context()` time, same emulation/video/HAR semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play.
+`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content`/`headless` mirror the same-named `RenderOptions` fields above — set at launch/`new_context()` time, same emulation/video/HAR/launch semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play.
 
 `timeout` (seconds, default `30.0`) applies to both the `RenderSession` convenience methods above **and** raw calls on `s.page` (`page.set_default_timeout` / `set_default_navigation_timeout` are set right after the page is created) — so e.g. `s.page.locator(sel).click()` honors the same budget instead of Playwright's own 30000ms default.
 
@@ -218,7 +222,7 @@ CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(Discov
 
 ## CLI-only commands
 
-`polyfetch doctor [--fix]` — checks whether the browser-tier (patchright) Chromium binary is installed; exits non-zero when it's missing. `--fix` installs it. No Python equivalent — CLI-only. Handy when borrowing this repo's venv via `uv run --directory` (see [USING.md](../USING.md)), where the Chromium cache can get wiped between runs. **On musl (Alpine)** — patchright publishes no `musllinux` wheel, so the browser tier cannot run there at all; `doctor` detects this and exits non-zero with a message naming the workaround (`--max-tier curl_cffi` / `max_tier="curl_cffi"`) before probing or trying to install anything (#197). The httpx and curl_cffi tiers are unaffected.
+`polyfetch doctor [--fix] [--headed]` — checks whether the browser-tier (patchright) Chromium binary is installed; exits non-zero when it's missing. `--fix` installs it. `--headed` probes a headed launch instead of headless — useful to verify a display (e.g. `xvfb-run -a`) actually works, not just that the binary is installed (#190). No Python equivalent — CLI-only. Handy when borrowing this repo's venv via `uv run --directory` (see [USING.md](../USING.md)), where the Chromium cache can get wiped between runs. **On musl (Alpine)** — patchright publishes no `musllinux` wheel, so the browser tier cannot run there at all; `doctor` detects this and exits non-zero with a message naming the workaround (`--max-tier curl_cffi` / `max_tier="curl_cffi"`) before probing or trying to install anything (#197). The httpx and curl_cffi tiers are unaffected.
 
 `polyfetch devices` — lists the Patchright device preset names usable with `fetch --device` (or `RenderOptions(device=...)`), one per line. Starts the Patchright driver but launches no browser. No public Python equivalent — the enumeration lives in the private backend. For a device the registry doesn't carry, pass a custom bundle instead: `fetch --device-json '{...}'` / `RenderOptions(device={...})`.
 
