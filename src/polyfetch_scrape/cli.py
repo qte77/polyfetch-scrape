@@ -219,6 +219,7 @@ def _build_render_options(
     locale: str | None,
     video_out: Path | None,
     har_out: Path | None,
+    headless: bool,
 ) -> RenderOptions:
     return RenderOptions(
         wait_until=wait_until,  # type: ignore[arg-type]
@@ -232,6 +233,7 @@ def _build_render_options(
         locale=locale,
         record_video_dir=video_out,
         record_har_path=har_out,
+        headless=headless,
     )
 
 
@@ -319,6 +321,15 @@ def fetch_cmd(
             "a credentials-bearing artifact once an authenticated session is in play.",
         ),
     ] = None,
+    headed: Annotated[
+        bool,
+        typer.Option(
+            "--headed",
+            help="Browser tier: launch Chromium headed instead of headless (clears some "
+            "anti-bot challenges a headless launch never does). On a display-less host "
+            "(e.g. CI) run it under `xvfb-run -a` to stay unattended.",
+        ),
+    ] = False,
     tier: Annotated[
         _TierChoice | None,
         typer.Option(
@@ -390,6 +401,7 @@ def fetch_cmd(
         locale=locale,
         video_out=video_out,
         har_out=har_out,
+        headless=not headed,
     )
     try:
         resp = fetch(
@@ -566,17 +578,19 @@ def devices() -> None:
         typer.echo(name)
 
 
-def _chromium_ok() -> bool:  # pragma: no cover - launches a real browser; not unit-testable
-    """True if headless Chromium launches (installed); False when the browser is missing.
+def _chromium_ok(headless: bool = True) -> bool:  # pragma: no cover - launches a real browser
+    """True if Chromium launches (installed); False when the browser is missing.
 
-    A local, network-free probe: launch and immediately close a headless Patchright Chromium.
+    A local, network-free probe: launch and immediately close a Patchright Chromium.
     Any launch failure (most commonly the browser not being installed) reads as unhealthy.
+    ``headless=False`` probes a headed launch instead (#190) — handy to verify a display
+    (e.g. `xvfb-run -a`) is actually usable, not just that the binary is installed.
     """
     from patchright.sync_api import sync_playwright
 
     try:
         with sync_playwright() as pw:
-            pw.chromium.launch(headless=True).close()
+            pw.chromium.launch(headless=headless).close()
     except Exception:
         return False
     return True
@@ -592,6 +606,14 @@ def _install_chromium() -> int:  # pragma: no cover - shells out to the patchrig
 @app.command()
 def doctor(
     fix: Annotated[bool, typer.Option("--fix", help="Install Chromium if it is missing.")] = False,
+    headed: Annotated[
+        bool,
+        typer.Option(
+            "--headed",
+            help="Probe a headed launch instead of headless — verifies a display "
+            "(e.g. `xvfb-run -a`) actually works, not just that the binary is installed.",
+        ),
+    ] = False,
 ) -> None:
     """Check the Patchright Chromium the browser tier needs; ``--fix`` installs it if missing.
 
@@ -603,7 +625,7 @@ def doctor(
     if is_musl():
         typer.echo(f"chromium: unsupported platform — {MUSL_UNSUPPORTED_MSG}", err=True)
         raise typer.Exit(1)
-    if _chromium_ok():
+    if _chromium_ok(headless=not headed):
         typer.echo("chromium: ok")
         return
     if not fix:
