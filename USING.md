@@ -189,9 +189,11 @@ After a patchright upgrade (e.g. 1.63 = Chromium 153), run `polyfetch doctor --f
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
 - **Opt-in robots.txt compliance**: `utils.robots.is_allowed(url, user_agent="*")` fetches
-  and parses the origin's `/robots.txt` (stdlib `urllib.robotparser`, RFC 9309) and reports
-  allow/deny; dual-use, so `fetch()`/`discover()` never call it automatically (#147). Full
-  signature and the "absent robots.txt allows everything" simplification:
+  and parses the origin's `/robots.txt` (stdlib `urllib.robotparser`) and reports
+  allow/deny; dual-use, so `fetch()`/`discover()` never call it automatically (#147). Implements
+  RFC 9309 explicitly rather than relying on the installed Python's own `urllib.robotparser`
+  quirks: `/robots.txt` itself is always allowed (§2.2.2); a 4xx/404/soft-404 allows everything
+  (§2.3.1.3); a 5xx or a network failure disallows everything (§2.3.1.4). Full signature:
   [`docs/api-reference.md`](docs/api-reference.md#robotstxt-compliance-helper-utilsrobots-opt-in).
 - **SSRF guard is escalation-only, and only on the discovery paths.** `discover()` /
   `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, `utils.robots.is_allowed()`,
