@@ -88,6 +88,10 @@ class RenderOptions:
       **Security:** a HAR records every request/response header, including ``Cookie`` and
       ``Authorization`` — treat a HAR as a credentials-bearing artifact once an authenticated
       session is in play, and never commit or share one uninspected.
+    - ``headless``: launch Chromium headless (default) or headed. A headed launch is heavier
+      but clears some anti-bot challenges a headless launch never does (#190) — on a
+      display-less host (e.g. CI) run it under ``xvfb-run -a`` to stay unattended. Also
+      threads through ``render_session``/``RenderSession``.
     """
 
     wait_until: WaitUntil = "domcontentloaded"
@@ -108,3 +112,4 @@ class RenderOptions:
     record_har_path: str | Path | None = None
     record_har_mode: HarMode = "minimal"
     record_har_content: HarContent = "omit"
+    headless: bool = True

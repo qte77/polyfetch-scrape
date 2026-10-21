@@ -63,6 +63,7 @@ def _make_pw_chain(
 
     chromium = MagicMock()
     chromium.launch.return_value = browser
+    page._test_chromium = chromium
 
     pw_instance = MagicMock(spec=pw_sync.Playwright)
     pw_instance.chromium = chromium
@@ -1094,3 +1095,40 @@ def test_patchright_backend_no_har_path_when_not_recording(
     )
 
     assert resp.har_path is None
+
+
+# --------------------------------------------------------------------------- #
+# headless launch option (#190): headless=True hardcoded was the hidden ceiling
+# that kept some anti-bot challenges from ever being clearable unattended.
+# --------------------------------------------------------------------------- #
+
+
+def test_patchright_backend_launches_headless_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    page._test_chromium.launch.assert_called_once_with(headless=True)
+
+
+def test_patchright_backend_launches_headed_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(headless=False),
+    )
+
+    page._test_chromium.launch.assert_called_once_with(headless=False)

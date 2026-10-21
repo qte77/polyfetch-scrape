@@ -179,6 +179,38 @@ def test_fetch_har_flag_builds_render_options(monkeypatch: pytest.MonkeyPatch) -
     assert render.record_har_path == Path("captured.har")  # type: ignore[attr-defined]
 
 
+def test_fetch_headless_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test"])
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.headless is True  # type: ignore[attr-defined]
+
+
+def test_fetch_headed_flag_builds_render_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--headed"])
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.headless is False  # type: ignore[attr-defined]
+
+
 def test_fetch_rejects_malformed_viewport(monkeypatch: pytest.MonkeyPatch) -> None:
     called = False
 
@@ -710,7 +742,7 @@ def test_doctor_on_musl_exits_1_without_probing_or_installing(
 
 def test_doctor_ok_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
-    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: True)
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda headless=True: True)
 
     result = runner.invoke(app, ["doctor"])
 
@@ -720,7 +752,7 @@ def test_doctor_ok_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_doctor_missing_without_fix_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
-    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda headless=True: False)
 
     result = runner.invoke(app, ["doctor"])
 
@@ -730,7 +762,7 @@ def test_doctor_missing_without_fix_exits_1(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_doctor_fix_installs_and_exits_0(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
-    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda headless=True: False)
     monkeypatch.setattr("polyfetch_scrape.cli._install_chromium", lambda: 0)
 
     result = runner.invoke(app, ["doctor", "--fix"])
@@ -739,9 +771,42 @@ def test_doctor_fix_installs_and_exits_0(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "installed" in result.stdout
 
 
+def test_doctor_default_probes_headless(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#190: the doctor probe's own launch() is one of the three hardcoded headless sites."""
+    seen: dict[str, object] = {}
+
+    def _fake_chromium_ok(headless: bool = True) -> bool:
+        seen["headless"] = headless
+        return True
+
+    monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", _fake_chromium_ok)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert seen["headless"] is True
+
+
+def test_doctor_headed_flag_probes_headed(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def _fake_chromium_ok(headless: bool = True) -> bool:
+        seen["headless"] = headless
+        return True
+
+    monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", _fake_chromium_ok)
+
+    result = runner.invoke(app, ["doctor", "--headed"])
+
+    assert result.exit_code == 0
+    assert seen["headless"] is False
+
+
 def test_doctor_fix_install_failure_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("polyfetch_scrape.cli.is_musl", lambda: False)
-    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda: False)
+    monkeypatch.setattr("polyfetch_scrape.cli._chromium_ok", lambda headless=True: False)
     monkeypatch.setattr("polyfetch_scrape.cli._install_chromium", lambda: 1)
 
     result = runner.invoke(app, ["doctor", "--fix"])

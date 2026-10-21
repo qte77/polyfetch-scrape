@@ -24,7 +24,7 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 
 Beyond the CLI, polyfetch is a **substrate you script against**: `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page`, with the **full Chromium DevTools / CDP surface** — for flows the CLI doesn't cover.
 
-`render_session(url, *, wait_until=..., timeout=30.0, device=None, viewport=None, color_scheme=None, user_agent=None, locale=None, record_video_dir=None, record_video_size=None, record_har_path=None, record_har_mode="minimal", record_har_content="omit") -> RenderSession` — `viewport`/`record_video_size` are plain `(width, height)` pixel tuples, **not** a `RenderOptions`/dict. `record_har_path` records a HAR 1.2 file of every request — **contains every request/response header, including cookies**; see the security note below. Full signature + semantics: [`docs/api-reference.md` § Render session](docs/api-reference.md#render-session-interactive-patchright-tier).
+`render_session(url, *, wait_until=..., timeout=30.0, device=None, viewport=None, color_scheme=None, user_agent=None, locale=None, record_video_dir=None, record_video_size=None, record_har_path=None, record_har_mode="minimal", record_har_content="omit", headless=True) -> RenderSession` — `viewport`/`record_video_size` are plain `(width, height)` pixel tuples, **not** a `RenderOptions`/dict. `record_har_path` records a HAR 1.2 file of every request — **contains every request/response header, including cookies**; see the security note below. `headless=False` launches Chromium headed instead (clears some anti-bot challenges a headless launch never does, #190) — on a display-less host run it under `xvfb-run -a` to stay unattended. Full signature + semantics: [`docs/api-reference.md` § Render session](docs/api-reference.md#render-session-interactive-patchright-tier).
 
 ### DevTools capture (console, network, JS errors)
 
@@ -93,7 +93,7 @@ with render_session(url) as s:
 | `polyfetch fetch <url> --show-body` | raw response **bytes** to stdout (binary-safe; takes precedence over `--json`) |
 | `polyfetch bulk <file> [--workers N]` | one URL per line (`#`/blank skipped) → JSON-lines |
 | `polyfetch discover <url> [--json]` | structured entrypoints (sitemaps/feeds/`llms.txt`/JSON-LD `@type`s) → JSON |
-| `polyfetch doctor [--fix]` | check the browser-tier Chromium is installed (exit non-zero if missing); `--fix` installs it. Handy when borrowing this venv — the Chromium cache can get wiped |
+| `polyfetch doctor [--fix] [--headed]` | check the browser-tier Chromium is installed (exit non-zero if missing); `--fix` installs it. `--headed` probes a headed launch instead, to verify a display (e.g. `xvfb-run -a`) actually works. Handy when borrowing this venv — the Chromium cache can get wiped |
 | `polyfetch devices` | list the device presets usable with `fetch --device`, one per line |
 | `polyfetch --help` / `polyfetch --version` | discover the surface / print version |
 
@@ -106,6 +106,8 @@ with render_session(url) as s:
 `fetch` **patchright-tier emulation + video flags:** `--device NAME` (a Patchright device preset, e.g. `"iPhone 13"` — list them with `polyfetch devices`; an unknown name exits `2` and suggests near-misses), `--device-json '<json object>'` (a custom device bundle for a device the registry doesn't carry, e.g. `'{"user_agent": "…", "viewport": {"width": 411, "height": 914}, "is_mobile": true}'` — mutually exclusive with `--device`), `--viewport WxH` (e.g. `1280x720`), `--color-scheme light|dark|no-preference`, `--user-agent STR`, `--locale STR` (BCP 47, e.g. `en-US`), `--video-out DIR` (records a VP8 `.webm` of the session into `DIR`; the finished path lands on `Response.video_path` and, with `--json`, is surfaced as `video_path` — the exact auto-generated filename).
 
 `fetch` **patchright-tier HAR flag:** `--har-out FILE` (records a HAR 1.2 file of every request the session makes, to that exact path; the path lands on `Response.har_path` and, with `--json`, is surfaced as `har_path`). Defaults to `"minimal"` mode and omitted response bodies.
+
+`fetch` **patchright-tier launch flag:** `--headed` (launch Chromium headed instead of headless; default is headless). A headed launch clears some anti-bot challenges a headless launch never does (#190) — on a display-less host (e.g. CI) run it under `xvfb-run -a` to stay unattended.
 
 > **Security — HAR files contain credentials.** A HAR records every request/response header,
 > including `Cookie` and `Authorization`. It is safe today because polyfetch has no

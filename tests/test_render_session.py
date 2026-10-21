@@ -281,3 +281,27 @@ def test_har_path_none_when_not_recording(monkeypatch: pytest.MonkeyPatch) -> No
         pass
 
     assert s.har_path is None
+
+
+# --------------------------------------------------------------------------- #
+# headless launch option (#190): mirrors the fetch-tier patchright_backend fix —
+# headless=True was hardcoded at this launch site too.
+# --------------------------------------------------------------------------- #
+
+
+def test_launches_headless_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, _browser, pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com"):
+        pass
+
+    pw.chromium.launch.assert_called_once_with(headless=True)
+
+
+def test_launches_headed_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, _browser, pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com", headless=False):
+        pass
+
+    pw.chromium.launch.assert_called_once_with(headless=False)
