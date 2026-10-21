@@ -192,13 +192,13 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | 182 | Opt-in full network log (+SSE via CDP) | C (after 200) | agent (D2; port the useful parts of #204 with credit) | 3 | M | Per-request list on Response / RenderSession; e2e; then close #204 with a closing remark |
 | 190 | Launch option: headed-under-xvfb / mobile mode | C | agent | 4 | M | Option threads through all three headless sites; e2e on a benign page |
 | 179 | Automation-fingerprint diagnostic report | C | agent | 3 | M | Read-only report; no spoofing |
-| 147 | Opt-in robots.txt helper (reuse `_robots_sitemaps`) | C | agent | 3 | M | Allow/deny per UA, unit-tested; #153 checklist updated |
+| ~~147~~ | ~~Opt-in robots.txt helper (reuse `_robots_sitemaps`)~~ ✅ #263 (`utils.robots.is_allowed`; RFC 9309: 4xx allows, 5xx or unreachable disallows, `/robots.txt` itself is always allowed; `discover()` unchanged) | C | agent | 3 | M | Shipped; the orchestrator updates the #153 checklist after merge |
 | 59 | Headed manual-takeover handoff | C (after 190) | agent (D4: engine) | 3 | L | Engine option built on #190's launch plumbing; e2e on a benign page |
 | 230 | Performance capture | C | agent (D8: `browser.start_tracing()` recipe + a real-browser spike first; Chromium 153 now ships DevTools 152) | 3 | M | Spike findings recorded on #230; the recipe lands in `docs/scripting.md` |
 | 183 | Chromium crash under load | C | agent (D5: no auto-relaunch) | 3 | L | A page crash surfaces as a typed error; repro notes |
 | 228 | Proxy passthrough | deferred (D3) | owner | 2 | S | Revisit only when a 2nd consumer needs it; README excludes proxy *rotation* |
 | 144 | Shared ui-check helper | later | data | 3 | L | ≥2 consumers agree on a stable API (AHA) |
-| 153 | Tracking: structured-first | tracker | — | — | — | Closes when #147 ships |
+| ~~153~~ | ~~Tracking: structured-first~~ ✅ closes with #263 (its "future directions" stay listed on #153, not commitments) | tracker | — | — | — | Done |
 | 218 | Third-party mentions (tracker) | B | owner (web UI) | 2 | S | Live text is clean everywhere (verified 2026-10-10: #190 comments, #228, #148 edited). Left: the owner deletes ~11 old edit-history revisions in the web UI (no API exists), then closes #218 |
 | 253 | Docs: on the patchright tier, console capture misses page-script `console.*` / uncaught errors (patchright avoids `Runtime.enable`) | C | agent | 4 | S | `USING.md` + `docs/api-reference.md` state the caveat and recommend a DOM-attribute + screenshot signal instead |
 | ~~205, 207, 127, 211~~ | ~~Close as superseded / decided / not planned~~ ✅ closed 2026-09-30 with remarks | B | owner (D7) | — | S | Done |
