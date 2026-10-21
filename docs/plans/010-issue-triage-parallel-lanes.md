@@ -190,7 +190,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | ~~222~~ | ~~Dependabot actions group (after rebase)~~ ✅ #222 merged (setup-uv 10.2.0 + codeql-action pins; no `callowayproject` re-added) | L6 / A | data | 2 | S | Shipped |
 | 200 | Authenticated sessions (storage_state, headers); absorbs #178 core | C | agent (D2: build on WIP `c61557f` + cherry-pick #203's header-clobber fix and `extra_http_headers`, crediting @dntywntme) | 4 | M | Save + resume round-trip e2e; persistent-profile sub-ask split into a new issue; then close #203 with a closing remark |
 | 182 | Opt-in full network log (+SSE via CDP) | C (after 200) | agent (D2; port the useful parts of #204 with credit) | 3 | M | Per-request list on Response / RenderSession; e2e; then close #204 with a closing remark |
-| 190 | Launch option: headed-under-xvfb / mobile mode | C | agent | 4 | M | Option threads through all three headless sites; e2e on a benign page |
+| ~~190~~ | ~~Launch option: headed-under-xvfb / mobile mode~~ ✅ #264 (`headless` on `RenderOptions` / `render_session()`, `--headed` on `fetch` and `doctor`; mobile was already covered by `--device`; the headed e2e skips without `DISPLAY` and passes under `xvfb-run`) | C | agent | 4 | M | Shipped |
 | 179 | Automation-fingerprint diagnostic report | C | agent | 3 | M | Read-only report; no spoofing |
 | 147 | Opt-in robots.txt helper (reuse `_robots_sitemaps`) | C | agent | 3 | M | Allow/deny per UA, unit-tested; #153 checklist updated |
 | 59 | Headed manual-takeover handoff | C (after 190) | agent (D4: engine) | 3 | L | Engine option built on #190's launch plumbing; e2e on a benign page |
