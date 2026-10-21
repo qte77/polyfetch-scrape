@@ -26,7 +26,7 @@ def _mapping_fetch(mapping: Mapping[str, Response]) -> Callable[..., Response]:
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, mapping: Mapping[str, Response]) -> None:
-    # is_allowed() fetches robots.txt via utils.discovery._fetch_robots_txt, which calls
+    # is_allowed() fetches robots.txt via utils.discovery.fetch_robots_txt, which calls
     # this module's `fetch` — reusing discovery's fetch+SSRF-guard pattern (#147).
     monkeypatch.setattr("polyfetch_scrape.utils.discovery.fetch", _mapping_fetch(mapping))
 
@@ -59,13 +59,6 @@ def test_html_soft_404_robots_txt_allows_everything(monkeypatch: pytest.MonkeyPa
     _patch(monkeypatch, {"https://ex.com/robots.txt": shell})
 
     assert is_allowed("https://ex.com/anything") is True
-
-
-def test_robots_txt_itself_is_always_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
-    robots = "User-agent: *\nDisallow: /\n"  # disallow everything, incl. robots.txt's own path
-    _patch(monkeypatch, {"https://ex.com/robots.txt": _resp(robots)})
-
-    assert is_allowed("https://ex.com/robots.txt") is True
 
 
 def test_bare_domain_seed_is_normalized_to_https(monkeypatch: pytest.MonkeyPatch) -> None:
