@@ -64,7 +64,10 @@ RenderOptions(
 # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
 # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
 # screenshots=(Screenshot(...), ...) → Response.screenshots (dict[name, PNG bytes]); after waits
-# capture_console → Response.console_errors (console + uncaught-JS errors)
+# capture_console → Response.console_errors — browser-generated messages only (e.g. a CORS
+#     failure); page-script console.* calls and, very likely, page-script uncaught exceptions
+#     are NOT captured (patchright disables the Console API and avoids Runtime.enable — see
+#     USING.md § DevTools capture caveat for the verified source and a DOM-attribute alternative)
 # capture_network_failures → Response.network_failures (failed requests + HTTP >= 400)
 # --- emulation + video: set at browser new_context() time (both the fetch tier and
 #     render_session apply these the same way) ---
@@ -105,7 +108,7 @@ Screenshot(name, target="viewport")
 
 ## Render session (interactive, patchright tier)
 
-A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on.
+A managed, **headless** Patchright `Page` for multi-step interactive flows (act → assert → act) — the interactive counterpart to single-shot `fetch(url, render=...)`. Chromium-only; library-only (no CLI). Console + network-failure capture is always on — console capture is browser-generated only (see [USING.md § DevTools capture](../USING.md#devtools-capture-console-network-js-errors) caveat); page-script console/exception output needs a DOM-attribute + screenshot signal instead.
 
 ```python
 with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
@@ -167,6 +170,10 @@ Response(
 #   opt-in via RenderOptions.capture_network_failures
 # CAVEAT: console_errors / network_failures reflect only THIS process's network — a failure a
 #   real user hits (CORS / extension / proxy) can read clean here; force a known failure to trust it
+# CAVEAT (patchright tier): console_errors is browser-generated only — page-script console.*
+#   calls and, very likely, page-script uncaught exceptions are not captured (patchright disables
+#   the Console API and avoids Runtime.enable). See USING.md § DevTools capture for the verified
+#   source and a DOM-attribute + screenshot alternative.
 
 RetryPolicy(
     max_attempts=3,
