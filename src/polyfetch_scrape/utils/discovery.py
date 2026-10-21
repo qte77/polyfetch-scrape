@@ -129,11 +129,23 @@ def _discover_sitemaps(origin: str, seed_internal: bool) -> tuple[list[str], lis
     return _split_events(found)
 
 
-def _robots_sitemaps(origin: str, seed_internal: bool) -> list[str]:
+def fetch_robots_txt(origin: str, seed_internal: bool) -> str | None:
+    """``origin``'s ``/robots.txt`` body as text; ``None`` when absent (same soft-404 guard
+    as the other probes). No leading underscore: shared with
+    :mod:`polyfetch_scrape.utils.robots` (#147) so both modules fetch robots.txt exactly
+    once, the same way (same cross-module convention as ``utils._ssrf``'s functions).
+    """
     resp = _fetch(f"{origin}/robots.txt", seed_internal)
     if resp is None or _looks_like_html(resp):  # HTML soft-404 → no robots.txt
+        return None
+    return resp.body.decode("utf-8", "replace")
+
+
+def _robots_sitemaps(origin: str, seed_internal: bool) -> list[str]:
+    text = fetch_robots_txt(origin, seed_internal)
+    if text is None:
         return []
-    return _SITEMAP_LINE_RE.findall(resp.body.decode("utf-8", "replace"))
+    return _SITEMAP_LINE_RE.findall(text)
 
 
 def _split_events(urls: list[str]) -> tuple[list[str], list[str]]:
