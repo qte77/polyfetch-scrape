@@ -188,9 +188,15 @@ After a patchright upgrade (e.g. 1.63 = Chromium 153), run `polyfetch doctor --f
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
+- **Opt-in robots.txt compliance**: `utils.robots.is_allowed(url, user_agent="*")` fetches
+  and parses the origin's `/robots.txt` (stdlib `urllib.robotparser`, RFC 9309) and reports
+  allow/deny; dual-use, so `fetch()`/`discover()` never call it automatically (#147). Full
+  signature and the "absent robots.txt allows everything" simplification:
+  [`docs/api-reference.md`](docs/api-reference.md#robotstxt-compliance-helper-utilsrobots-opt-in).
 - **SSRF guard is escalation-only, and only on the discovery paths.** `discover()` /
-  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, and the `easter-hunt`
-  contrib follow attacker-influenced URLs (sitemap entries, feed links, JSON-LD). The
+  `polyfetch discover`, `utils.sitemap.fetch_sitemap_urls()`, `utils.robots.is_allowed()`,
+  and the `easter-hunt` contrib follow attacker-influenced URLs (sitemap entries, feed
+  links, JSON-LD, the robots.txt fetch itself). The
   **seed** you pass in — the `url`/`domain`/seed argument — is **never blocked**, even
   a literal internal IP or `localhost`: pointing these at a local dev server is
   intentional and supported. Only a URL the tool *derives* from that seed (a probed

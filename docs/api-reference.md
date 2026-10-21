@@ -216,6 +216,26 @@ discover(url: str) -> DiscoveredSources
 
 CLI: `polyfetch discover <url> [--json]` (the `--json` payload is `asdict(DiscoveredSources)`).
 
+## Robots.txt compliance helper (`utils.robots`, opt-in)
+
+Semi-public helper (import by module path — `from polyfetch_scrape.utils.robots import is_allowed`; not re-exported from the package root). **Opt-in and dual-use** (#147): neither `fetch()` nor `discover()` calls this automatically — a caller that wants robots.txt enforcement calls it itself. No CLI equivalent.
+
+```python
+is_allowed(url: str, user_agent: str = "*") -> bool
+      # Fetches + parses url's origin's /robots.txt (reuses utils.discovery's
+      # fetch_robots_txt(), the same escalation-only SSRF guard as discover()) and
+      # reports allow/deny via the stdlib urllib.robotparser (RFC 9309) — no
+      # hand-rolled parsing.
+      # Missing / unreachable / unparseable robots.txt (any non-2xx, a connection
+      # failure, or an HTML soft-404 shell) → allow everything. Does NOT reproduce
+      # RFC 9309 §2.3.1.4's stricter "401/403/5xx is a full disallow" — see the
+      # module docstring.
+      # url is the seed — never blocked (even a literal internal IP or localhost).
+      # Raises ValueError if the derived /robots.txt fetch resolves to, or
+      # redirects to, an internal address while url is external (SSRF guard,
+      # escalation-only — see architecture.md's utils/_ssrf.py row).
+```
+
 ## CLI-only commands
 
 `polyfetch doctor [--fix]` — checks whether the browser-tier (patchright) Chromium binary is installed; exits non-zero when it's missing. `--fix` installs it. No Python equivalent — CLI-only. Handy when borrowing this repo's venv via `uv run --directory` (see [USING.md](../USING.md)), where the Chromium cache can get wiped between runs. **On musl (Alpine)** — patchright publishes no `musllinux` wheel, so the browser tier cannot run there at all; `doctor` detects this and exits non-zero with a message naming the workaround (`--max-tier curl_cffi` / `max_tier="curl_cffi"`) before probing or trying to install anything (#197). The httpx and curl_cffi tiers are unaffected.
