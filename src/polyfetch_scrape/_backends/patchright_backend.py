@@ -57,7 +57,7 @@ def attempt(
 
     with sync_playwright() as pw:
         ctx_kwargs = context_kwargs(pw, opts)
-        browser = pw.chromium.launch(headless=True)
+        browser = pw.chromium.launch(headless=opts.headless)
         try:
             for attempt_idx in range(policy.max_attempts):
                 last = _attempt_once(browser, url, headers, timeout_ms, opts, ctx_kwargs, policy)
