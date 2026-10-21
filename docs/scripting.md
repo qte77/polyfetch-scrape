@@ -103,6 +103,107 @@ so this works on a HAR from any tool. `stdlib json` only — no new dependency.
 > Never commit or share a HAR file uninspected — treat it like a secret. `record_har_content`
 > defaults to `"omit"` (no response bodies); headers are not redacted.
 
+## Performance trace recipe
+
+`browser.start_tracing()` / `browser.stop_tracing()` capture a raw Chromium trace —
+openable in Chrome DevTools' Performance panel — including navigation timing and
+paint markers (`firstPaint`, `firstContentfulPaint`, `largestContentfulPaint::Candidate`,
+`LayoutShift`). This is a **recipe, not an engine feature** (AHA/#230): it's a low-level,
+browser-wide capability, not a per-request concern, so it stays a snippet here rather than
+a `capture_performance` option. Core Web Vitals scoring/pass-fail stays a consumer concern
+(the estate `perf-cwv-pass` skill), per [`docs/architecture.md`](architecture.md).
+
+Trace the **initial page load** before `render_session()` navigates, so start tracing
+first and drive the navigation yourself with raw Patchright — this is the pattern
+documented by Patchright itself, and the only one verified to reliably include
+navigation + paint markers:
+
+```python
+import json
+
+from patchright.sync_api import sync_playwright
+
+TRACE_CATEGORIES = ["loading", "blink.user_timing"]  # minimal set for nav/paint/LCP marks
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(headless=True)
+    page = browser.new_page()
+    browser.start_tracing(page=page, categories=TRACE_CATEGORIES)
+    page.goto("https://example.com", wait_until="load")
+    page.wait_for_timeout(300)  # let the trace buffer flush before stopping
+    trace_bytes = browser.stop_tracing()
+    browser.close()
+
+trace = json.loads(trace_bytes)
+events = trace["traceEvents"]
+nav_start = next(e for e in events if e["name"] == "navigationStart")
+fcp = next(e for e in events if e["name"] == "firstContentfulPaint")
+lcp = next((e for e in events if e["name"] == "largestContentfulPaint::Candidate"), None)
+
+print("FCP (ms):", (fcp["ts"] - nav_start["ts"]) / 1000)
+if lcp:
+    print("LCP (ms):", (lcp["ts"] - nav_start["ts"]) / 1000)
+```
+
+To trace a specific **interaction** inside an already-open `render_session()` — e.g. "did
+this click cause a layout shift" — reach the browser via `s.page.context.browser` and
+start tracing around just that action. This is a **forward** capture (new events during the
+window) and was reliable in testing; retroactively re-capturing marks from *before* tracing
+started was not (see caveats below), so don't rely on it for the initial-load metrics:
+
+```python
+from polyfetch_scrape import render_session
+
+with render_session(url) as s:
+    browser = s.page.context.browser
+    browser.start_tracing(page=s.page, categories=["loading", "blink.user_timing"])
+    s.click_text("Load more")
+    s.wait_ms(300)
+    trace_bytes = browser.stop_tracing()
+
+trace = json.loads(trace_bytes)
+shifts = [e for e in trace["traceEvents"] if e["name"] == "LayoutShift"]
+```
+
+A `LayoutShift` event's `args.data.score` is its individual shift score; `had_recent_input`
+is `True` for shifts the browser attributes to a recent user action (clicks, typing) — those
+are correctly excluded from a cumulative CLS score, matching the CLS spec.
+
+`stdlib json` only, no new dependency. The trace is a plain JSON object (`{"metadata": …,
+"traceEvents": [...]}` — Chrome's "Trace Event Format"); `ts` is microseconds on an
+internal monotonic clock, so always compute deltas against another event in the same
+trace (e.g. `navigationStart`), never against wall-clock time.
+
+**Verified (patchright 1.63.0 / Chromium 153.0.8010.12, 2026-10-21, against
+`https://example.com` and a local `python -m http.server` page):**
+
+- `browser.start_tracing()` / `stop_tracing()` work and return a non-empty trace. The
+  default category set is large and unfocused (≈800 KB / 3,200+ events for a single trivial
+  page load, no paint/LCP markers included); `categories=["loading", "blink.user_timing"]`
+  is both smaller (≈100 KB / ~250 events) and the set that actually includes
+  `firstContentfulPaint` / `largestContentfulPaint::Candidate` / `navigationStart`.
+- `performance.getEntriesByType("navigation")` **is** reachable via `page.evaluate()` and
+  returns the full Navigation Timing entry (`domContentLoadedEventEnd`, `loadEventEnd`,
+  `transferSize`, etc.) — Patchright's isolated-evaluate-world caveat
+  ([`AGENT_LEARNINGS.md`](../AGENT_LEARNINGS.md)) applies to page-script-defined globals, not
+  to this native DOM API.
+- `performance.getEntriesByType("paint" | "largest-contentful-paint" | "layout-shift")` via
+  `page.evaluate()` — including a buffered `PerformanceObserver`, the standard fallback for
+  entries that fire before a listener attaches — consistently returned **empty**, even though
+  `PerformanceObserver.supportedEntryTypes` lists all three as supported. The *same* paint/LCP
+  events are present in the Chrome trace for the same page load. Root cause (a headless-mode
+  gap vs. a Patchright-specific restriction) is **UNVERIFIED**; the actionable takeaway is: use
+  the trace for paint/LCP/CLS, use `evaluate()` only for Navigation Timing.
+- Starting a trace on a page that already finished loading minutes/seconds earlier did
+  **not** reliably reproduce that load's `navigationStart`/paint marks — results varied
+  run to run. Starting the trace before `page.goto()` (as shown above) was fully reliable
+  across repeated runs.
+- CDP (`page.context.new_cdp_session(page)`, `Performance.enable` + `Performance.getMetrics`)
+  worked without error or any observable anomaly against these benign targets. Whether
+  opening a CDP session changes any automation-detection signal was **not** tested — that
+  needs a dedicated fingerprinting test page, out of scope for this spike's benign-targets-only
+  constraint, and stays **UNVERIFIED**.
+
 ## Accessibility snapshot
 
 ```python
