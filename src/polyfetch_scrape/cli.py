@@ -120,6 +120,9 @@ def _summarize(resp: Response) -> dict[str, Any]:
         # because bulk needs it too: without it a CLI consumer sees status:301, bytes:0 and
         # cannot learn where to re-fetch (#188).
         payload["permanent_redirect_to"] = resp.permanent_redirect_to
+    if resp.redirect_to is not None:
+        # Any unfollowed 3xx (temporary ones too), so a CLI consumer can follow it (#260).
+        payload["redirect_to"] = resp.redirect_to
     return payload
 
 
@@ -432,10 +435,7 @@ def fetch_cmd(
         screenshot_out.write_bytes(resp.screenshot)
 
     if show_body:
-        # Write the raw bytes verbatim: decoding to str dropped output on non-UTF-8 /
-        # non-TTY stdout (redirect/pipe) and mangled binary bodies (#66).
-        sys.stdout.buffer.write(resp.body)
-        sys.stdout.buffer.flush()
+        _write_body(resp)
         return
 
     payload = _summarize(resp)
@@ -452,6 +452,19 @@ def fetch_cmd(
         # mostly a convenience echo). Absent when not recording.
         payload["har_path"] = str(resp.har_path)
     typer.echo(json.dumps(payload) if json_output else _format_text(payload))
+
+
+def _write_body(resp: Response) -> None:
+    """``--show-body``: the raw body to stdout, or exit 1 on an unfollowed redirect."""
+    if resp.redirect_to is not None:
+        # An unfollowed redirect has no body to show: an empty file + exit 0 would be
+        # indistinguishable from a real empty body (#260).
+        typer.echo(f"unfollowed HTTP {resp.status} redirect to {resp.redirect_to}", err=True)
+        raise typer.Exit(1)
+    # Write the raw bytes verbatim: decoding to str dropped output on non-UTF-8 /
+    # non-TTY stdout (redirect/pipe) and mangled binary bodies (#66).
+    sys.stdout.buffer.write(resp.body)
+    sys.stdout.buffer.flush()
 
 
 # Bind 'fetch' as the command name (function name kept distinct from the import)
