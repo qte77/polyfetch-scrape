@@ -378,6 +378,72 @@ def test_fetch_screenshot_out_writes_png(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert out.read_bytes() == png
 
 
+def test_fetch_output_paths_create_missing_parent_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing parent dir is created up front, not a FileNotFoundError after the fetch (#255)."""
+    png = b"\x89PNG-fake"
+    seen_dirs: dict[str, bool] = {}
+
+    def fake(url: str, **kw: Any) -> Response:
+        render = kw["render"]
+        seen_dirs["video"] = Path(render.record_video_dir).is_dir()
+        seen_dirs["har_parent"] = Path(render.record_har_path).parent.is_dir()
+        return Response(
+            url=url,
+            status=200,
+            headers={},
+            body=b"x",
+            content_type="text/html",
+            backend="patchright",
+            screenshot=png,
+        )
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+    shot = tmp_path / "a" / "b" / "shot.png"
+
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "https://x.test",
+            "--tier",
+            "patchright",
+            "--screenshot",
+            "viewport",
+            "--screenshot-out",
+            str(shot),
+            "--video-out",
+            str(tmp_path / "v" / "vids"),
+            "--har-out",
+            str(tmp_path / "h" / "captured.har"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert shot.read_bytes() == png
+    assert seen_dirs == {"video": True, "har_parent": True}
+
+
+def test_fetch_output_path_that_cannot_be_created_is_a_usage_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parent that can't be created (a file is in the way) exits 2 before any fetch (#255)."""
+    calls: list[str] = []
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", lambda url, **_kw: calls.append(url))
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x")
+
+    result = runner.invoke(
+        app,
+        ["fetch", "https://x.test", "--screenshot-out", str(blocker / "shot.png")],
+    )
+
+    assert result.exit_code == 2
+    assert calls == []
+    assert "Traceback" not in result.output
+
+
 def test_fetch_json_includes_screenshot_b64(monkeypatch: pytest.MonkeyPatch) -> None:
     png = b"\x89PNG-x"
 
