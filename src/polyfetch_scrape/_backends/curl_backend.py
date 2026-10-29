@@ -11,6 +11,7 @@ from polyfetch_scrape._backends import (
     is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
+    redirect_target,
 )
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
@@ -143,4 +144,5 @@ def _to_response(http_resp: Any, fallback_url: str, request_user_agent: str | No
             int(http_resp.status_code), dict(http_resp.headers)
         ),
         request_user_agent=request_user_agent,
+        redirect_to=redirect_target(int(http_resp.status_code), dict(http_resp.headers)),
     )

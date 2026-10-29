@@ -87,6 +87,54 @@ def test_fetch_show_body_writes_raw_bytes(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.stdout_bytes == body
 
 
+def _temp_redirect(target: str = "https://cdn.example.com/asset") -> Response:
+    """An unfollowed 302 as the httpx tier surfaces it: no body, Location captured (#260)."""
+    return Response(
+        url="https://x.test/dl",
+        status=302,
+        headers={"location": target},
+        body=b"",
+        content_type="text/html; charset=utf-8",
+        backend="httpx",
+        redirect_to=target,
+    )
+
+
+def test_fetch_show_body_on_unfollowed_redirect_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unfollowed 3xx is not a body: no silent 0-byte output with exit 0 (#260)."""
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", lambda *a, **kw: _temp_redirect())
+
+    result = runner.invoke(app, ["fetch", "https://x.test/dl", "--show-body"])
+
+    assert result.exit_code == 1
+    assert result.stdout_bytes == b""
+    assert "302" in result.stderr
+    assert "https://cdn.example.com/asset" in result.stderr
+
+
+def test_fetch_json_surfaces_redirect_to_for_temporary_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", lambda *a, **kw: _temp_redirect())
+
+    result = runner.invoke(app, ["fetch", "https://x.test/dl", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["redirect_to"] == "https://cdn.example.com/asset"
+    assert "permanent_redirect_to" not in payload
+
+
+def test_fetch_json_omits_redirect_to_when_not_redirected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", lambda *a, **kw: _ok())
+
+    result = runner.invoke(app, ["fetch", "https://example.com", "--json"])
+
+    assert "redirect_to" not in json.loads(result.stdout)
+
+
 def test_fetch_render_flags_build_render_options(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 

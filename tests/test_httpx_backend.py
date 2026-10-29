@@ -127,6 +127,19 @@ def test_httpx_backend_ignores_temporary_redirect() -> None:
 
     assert resp.status == 302
     assert resp.permanent_redirect_to is None
+    assert resp.redirect_to == "https://example.com/elsewhere"  # any 3xx Location (#260)
+
+
+@respx.mock
+def test_httpx_backend_redirect_to_is_none_without_redirect() -> None:
+    url = "https://example.com/ok"
+    respx.get(url).mock(return_value=httpx.Response(200, content=b"<html/>"))
+
+    resp = httpx_backend.attempt(
+        method="GET", url=url, headers=None, timeout=5.0, policy=RetryPolicy(max_attempts=1)
+    )
+
+    assert resp.redirect_to is None
 
 
 @respx.mock

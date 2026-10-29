@@ -154,8 +154,10 @@ Response(
     console_errors=[],
     network_failures=[],
     screenshots={},
+    redirect_to=None,
 )
 # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
+# redirect_to: Location target on ANY unfollowed 3xx (incl. temporary 302/303/307), else None
 # screenshot: PNG bytes when requested on the patchright tier, else None
 # video_path: Path to the recorded VP8 .webm when RenderOptions.record_video_dir was set
 #   (patchright tier), else None
