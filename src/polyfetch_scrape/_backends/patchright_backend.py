@@ -7,6 +7,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
+from patchright.sync_api import Error as PwError
 from patchright.sync_api import TimeoutError as PwTimeoutError
 from patchright.sync_api import sync_playwright
 
@@ -232,7 +233,7 @@ def _run_page(
         # The navigation already completed (a response object exists) — page.content() reads
         # the currently loaded DOM, including a challenge/error page, safely for a blocked status.
         resp_headers, body_excerpt = bounded_diagnostics(
-            headers_map, page.content().encode("utf-8")
+            headers_map, _read_content(page, url, timeout_ms).encode("utf-8")
         )
         return _Attempt(
             None,
@@ -247,7 +248,7 @@ def _run_page(
     _apply_actions(page, opts.actions, timeout_ms)
     _apply_waits(page, opts, timeout_ms)
 
-    body = page.content().encode("utf-8")
+    body = _read_content(page, url, timeout_ms).encode("utf-8")
     all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
     content_type = all_headers.get("content-type")
     if is_suspected_soft_block("GET", status, body, content_type):
@@ -272,6 +273,34 @@ def _run_page(
         None,
         None,
     )
+
+
+# Patchright's message when page.content() runs while a client-side redirect is replacing the
+# document, e.g. a DOMContentLoaded-then-redirect to a login wall (#256).
+_NAVIGATING_MARKER = "page is navigating"
+
+
+def _read_content(page: Any, url: str, timeout_ms: int) -> str:
+    """``page.content()``, tolerant of a client-side redirect in flight (#256).
+
+    On Patchright's "page is navigating" error, wait for the new document's load state and
+    read once more — the same page ``--wait-until networkidle`` would have settled on. If it
+    is still unreadable, raise a ``FetchError`` naming the cause instead of the raw error.
+    Any other Patchright error propagates unchanged.
+    """
+    try:
+        return page.content()
+    except PwError as exc:
+        if _NAVIGATING_MARKER not in str(exc):
+            raise
+    try:
+        page.wait_for_load_state(timeout=timeout_ms)
+        return page.content()
+    except PwError as exc:
+        raise FetchError(
+            "patchright: the page kept navigating while being read (client-side redirect);"
+            f" try --wait-until networkidle: {url}"
+        ) from exc
 
 
 def _finalize_video(result: _Attempt, video: Any) -> _Attempt:
