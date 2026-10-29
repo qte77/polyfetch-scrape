@@ -315,6 +315,70 @@ def test_patchright_backend_raises_terminal_status(
         )
 
 
+_NAVIGATING = (
+    "Page.content: Unable to retrieve content because the page is navigating "
+    "and changing the content."
+)
+
+
+def test_patchright_backend_rereads_content_after_client_side_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A read mid-redirect waits for the load state and reads the settled page (#256)."""
+    page, _ = _make_pw_chain(monkeypatch, final_url="https://example.com/landed")
+    page.content.side_effect = [pw_sync.Error(_NAVIGATING), "<html>landed</html>"]
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com/",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.body == b"<html>landed</html>"
+    assert resp.url == "https://example.com/landed"
+    page.wait_for_load_state.assert_called_once()
+
+
+def test_patchright_backend_raises_clean_error_when_page_keeps_navigating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Still navigating after the wait → a FetchError naming the cause, not a raw traceback."""
+    page, _ = _make_pw_chain(monkeypatch)
+    page.content.side_effect = pw_sync.Error(_NAVIGATING)
+
+    with pytest.raises(FetchError, match="navigat") as info:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com/",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert type(info.value) is FetchError
+    assert "networkidle" in str(info.value)
+
+
+def test_patchright_backend_does_not_swallow_other_content_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the navigating error is handled; any other Patchright error propagates as-is."""
+    page, _ = _make_pw_chain(monkeypatch)
+    page.content.side_effect = pw_sync.Error("Target page, context or browser has been closed")
+
+    with pytest.raises(pw_sync.Error, match="has been closed"):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com/",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+    page.wait_for_load_state.assert_not_called()
+
+
 def test_patchright_backend_deletes_video_on_terminal_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
