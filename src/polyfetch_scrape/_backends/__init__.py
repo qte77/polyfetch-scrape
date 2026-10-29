@@ -27,6 +27,13 @@ def permanent_redirect_target(status: int, headers: Mapping[str, str]) -> str | 
     """Return the ``Location`` target for a permanent redirect (301/308), else None."""
     if status not in _PERMANENT_REDIRECT_STATUSES:
         return None
+    return redirect_target(status, headers)
+
+
+def redirect_target(status: int, headers: Mapping[str, str]) -> str | None:
+    """Return the ``Location`` target for any 3xx redirect, else None (#260)."""
+    if not 300 <= status < 400:
+        return None
     for key, value in headers.items():
         if key.lower() == "location":
             return value

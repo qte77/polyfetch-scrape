@@ -144,6 +144,7 @@ with render_session(url) as s:
 - `har_path` (fetch `--json` only) = filesystem path to the recorded HAR 1.2 file, present **only**
   when `--har-out FILE` recorded one on the patchright tier; absent otherwise. See the security
   note above before sharing this file.
+- `redirect_to` (fetch **and** every `bulk` line) = the `Location` target of **any** unfollowed 3xx (`301`/`302`/`303`/`307`/`308`), so you can follow a temporary redirect yourself; absent otherwise. The httpx tier never follows redirects. `fetch --show-body` on an unfollowed redirect writes nothing to stdout, prints `unfollowed HTTP <status> redirect to <url>` to **stderr**, and exits `1`, instead of an empty body with exit `0` ([#260](https://github.com/qte77/polyfetch-scrape/issues/260)).
 - `permanent_redirect_to` (fetch **and** every `bulk` line) = the `Location` target of a **permanent**
   redirect (301/308), present **only** when the response was one; absent otherwise. polyfetch does not
   auto-follow redirects (SSRF-safe, transparent), so on a 301 you get `status:301, bytes:0` — read this

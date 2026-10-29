@@ -35,3 +35,7 @@ class Response:
     network_failures: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
     # Named PNGs from RenderOptions.screenshots (patchright tier); empty otherwise.
     screenshots: dict[str, bytes] = field(default_factory=dict[str, bytes])
+    # The Location target of ANY unfollowed 3xx (301/302/303/307/308), so a caller can follow
+    # a temporary redirect itself; None otherwise. httpx never follows redirects, so this is
+    # how its 302 stays recoverable (#260). A superset of permanent_redirect_to.
+    redirect_to: str | None = None
