@@ -315,6 +315,30 @@ def test_patchright_backend_raises_terminal_status(
         )
 
 
+def test_patchright_backend_raises_on_non_success_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A login wall served as LinkedIn's non-standard 999 is an error, not content (#254)."""
+    page, _ = _make_pw_chain(
+        monkeypatch,
+        response_status=999,
+        page_content="<html>Join LinkedIn</html>",
+        final_url="https://www.linkedin.com/authwall",
+    )
+
+    with pytest.raises(FetchError) as info:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://www.linkedin.com/in/someone/",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=3),
+        )
+
+    assert type(info.value) is FetchError
+    assert info.value.status == 999
+    assert info.value.body_excerpt == "<html>Join LinkedIn</html>"
+    assert page.goto.call_count == 1  # terminal: not retried
+
+
 def test_patchright_backend_deletes_video_on_terminal_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -184,6 +184,7 @@ with render_session(url) as s:
 
 - Without `--json`, `fetch` prints `<ErrorType>: <message>` to **stderr**.
 - Terminal statuses — no retry, no escalation. Exception names (all subclass `FetchError`): `AuthRequired` (401/407), `GoneError` (404/410), `LegalBlock` (451).
+- **Only a 2xx/3xx final status is a success.** Any other status that isn't retried (`429`/`5xx` per the retry policy) or escalated (`403`) — e.g. `400`, `405`, or a non-standard code like LinkedIn's `999` login wall — raises a plain `FetchError` on the first attempt, with `status` and the bounded `headers` / `body_excerpt` diagnostics, instead of returning the page served in place of the content ([#254](https://github.com/qte77/polyfetch-scrape/issues/254)).
 - **A `GET` + 2xx (not `204`) + empty body + HTML-or-missing `Content-Type` is a suspected soft block**, not a success: some anti-bot layers return an empty `200` instead of an explicit `403`. It escalates like a `403` does; the last tier raises `FingerprintBlock` instead of returning the empty `Response` — including when that tier was pinned with `--tier` (the same as a `403` on a pinned tier today). `HEAD`, `304`, `204`, and a non-HTML content type (`application/json`, `text/plain`, …) are never affected — see [#237](https://github.com/qte77/polyfetch-scrape/issues/237).
 
 ## Fallback tiers (automatic)

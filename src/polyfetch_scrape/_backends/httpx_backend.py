@@ -8,9 +8,11 @@ import httpx
 from polyfetch_scrape._backends import (
     FingerprintBlock,
     bounded_diagnostics,
+    is_success_status,
     is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
+    unsuccessful_status_error,
 )
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
@@ -105,6 +107,10 @@ def _attempt_once(
         return _Attempt(None, http_resp.status_code, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(http_resp.status_code, url)
+    if not is_success_status(http_resp.status_code):
+        raise unsuccessful_status_error(
+            http_resp.status_code, url, dict(http_resp.headers), http_resp.content
+        )
     resp = _to_response(http_resp, _header_value(request_headers, "user-agent"))
     if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
         resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
