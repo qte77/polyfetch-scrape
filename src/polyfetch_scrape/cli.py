@@ -206,6 +206,25 @@ def _resolve_body(json_body: str | None, data: str | None) -> tuple[Any | None, 
     return None, None
 
 
+def _ensure_output_dirs(
+    screenshot_out: Path | None, video_out: Path | None, har_out: Path | None
+) -> None:
+    """Create the output locations before the fetch, so a missing directory is not a traceback.
+
+    ``--screenshot-out`` and ``--har-out`` are files (create the parent); ``--video-out`` is
+    the directory itself. A path that can't be created is a usage error (exit 2), raised
+    before any fetch work is spent (#255).
+    """
+    dirs = [p.parent for p in (screenshot_out, har_out) if p is not None]
+    if video_out is not None:
+        dirs.append(video_out)
+    for d in dirs:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise typer.BadParameter(f"cannot create output directory {d}: {exc}") from exc
+
+
 def _build_render_options(
     *,
     wait_until: str,
@@ -389,6 +408,7 @@ def fetch_cmd(
     """Fetch a single URL through the fallback chain."""
     policy = RetryPolicy(max_attempts=max_attempts)
     body_json, body_content = _resolve_body(json_body, data)
+    _ensure_output_dirs(screenshot_out, video_out, har_out)
     render = _build_render_options(
         wait_until=wait_until,
         wait_for_selector=wait_for_selector,
