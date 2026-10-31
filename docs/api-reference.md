@@ -192,7 +192,7 @@ RetryPolicy(
 All subclass `FetchError`. Terminal statuses raise on the first attempt in every tier — no retry, no escalation:
 
 ```python
-FetchError  # base: retries exhausted on every tier
+FetchError  # base: retries exhausted on every tier, or a final status outside 2xx/3xx (e.g. 400, 999)
 AuthRequired  # 401 / 407
 GoneError  # 404 / 410
 LegalBlock  # 451 (RFC 7725) — never escalated to the fingerprint tiers

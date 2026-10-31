@@ -211,6 +211,29 @@ def test_curl_backend_raises_terminal_status(
         )
 
 
+@pytest.mark.parametrize("status", [400, 418, 999])
+def test_curl_backend_raises_on_non_success_status(
+    monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    """A final status outside 2xx/3xx is an error with diagnostics, not a Response (#254)."""
+    fake = _fake_response(status=status, body=b"login wall", headers={"set-cookie": "s=1"})
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FetchError) as info:
+        curl_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert type(info.value) is FetchError
+    assert info.value.status == status
+    assert info.value.body_excerpt == "login wall"
+    assert info.value.headers == {}  # Set-Cookie redacted
+
+
 def test_curl_backend_surfaces_permanent_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _fake_response(status=301, headers={"location": "https://example.com/new"})
     _install_session(monkeypatch, return_value=fake)

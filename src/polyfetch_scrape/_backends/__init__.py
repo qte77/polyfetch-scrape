@@ -51,6 +51,29 @@ def raise_for_terminal_status(status: int, url: str) -> None:
         raise exc_type(f"terminal HTTP {status}: {url}", status=status)
 
 
+def is_success_status(status: int) -> bool:
+    """True for a 2xx/3xx final status — the only ones returned as a ``Response`` (#254)."""
+    return 200 <= status < 400
+
+
+def unsuccessful_status_error(
+    status: int, url: str, headers: Mapping[str, str] | None, body: bytes | None
+) -> FetchError:
+    """A terminal ``FetchError`` for a final status outside 2xx/3xx that has no typed error.
+
+    Covers e.g. 400/405/418 and non-standard codes like LinkedIn's ``999`` login wall: the
+    page served instead of the content is easy to mistake for content (#254). Carries the
+    same bounded diagnostics as a block, so the reason stays inspectable.
+    """
+    resp_headers, body_excerpt = bounded_diagnostics(headers, body)
+    return FetchError(
+        f"HTTP {status} is not a success status: {url}",
+        status=status,
+        headers=resp_headers,
+        body_excerpt=body_excerpt,
+    )
+
+
 # Diagnostics attached to the final tier's blocked/exhausted response (#209) so a caller
 # can tell a pure TLS/fingerprint block from a session/behavioral one without dropping to
 # render_session and hand-rolling event listeners. Bounded: the body excerpt is capped, and

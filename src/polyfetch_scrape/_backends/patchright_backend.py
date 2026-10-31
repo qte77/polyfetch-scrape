@@ -13,9 +13,11 @@ from patchright.sync_api import sync_playwright
 from polyfetch_scrape._backends import (
     FingerprintBlock,
     bounded_diagnostics,
+    is_success_status,
     is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
+    unsuccessful_status_error,
 )
 from polyfetch_scrape._platform import ensure_browser_tier_supported
 from polyfetch_scrape.errors import FetchError
@@ -244,6 +246,10 @@ def _run_page(
         )
 
     raise_for_terminal_status(status, url)
+    if not is_success_status(status):
+        raise unsuccessful_status_error(
+            status, url, dict(response.all_headers()), page.content().encode("utf-8")
+        )
     _apply_actions(page, opts.actions, timeout_ms)
     _apply_waits(page, opts, timeout_ms)
 

@@ -3,7 +3,7 @@ import pytest
 import respx
 
 from polyfetch_scrape._backends import FingerprintBlock, httpx_backend
-from polyfetch_scrape.errors import AuthRequired, GoneError, LegalBlock
+from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.retry import RETRY_AFTER_CAP_S, RetryPolicy
 from polyfetch_scrape.utils.http_ua import STABLE_USER_AGENT
 
@@ -97,6 +97,28 @@ def test_httpx_backend_raises_terminal_status(status: int, exc_type: type[Except
             policy=RetryPolicy(max_attempts=3),
         )
     assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.parametrize("status", [400, 405, 999])
+def test_httpx_backend_raises_on_non_success_status(status: int) -> None:
+    """A final status outside 2xx/3xx is an error with diagnostics, not a Response (#254)."""
+    url = "https://example.com/wall"
+    route = respx.get(url).mock(
+        return_value=httpx.Response(status, headers={"x-wall": "1"}, content=b"login wall")
+    )
+
+    with pytest.raises(FetchError) as info:
+        httpx_backend.attempt(
+            method="GET", url=url, headers=None, timeout=5.0, policy=RetryPolicy(max_attempts=3)
+        )
+
+    assert type(info.value) is FetchError
+    assert info.value.status == status
+    assert info.value.body_excerpt == "login wall"
+    assert info.value.headers is not None
+    assert info.value.headers["x-wall"] == "1"
+    assert route.call_count == 1  # terminal: not retried
 
 
 @respx.mock
