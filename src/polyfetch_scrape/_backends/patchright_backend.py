@@ -249,7 +249,10 @@ def _run_page(
     raise_for_terminal_status(status, url)
     if not is_success_status(status):
         raise unsuccessful_status_error(
-            status, url, dict(response.all_headers()), page.content().encode("utf-8")
+            status,
+            url,
+            dict(response.all_headers()),
+            _read_content(page, url, timeout_ms).encode("utf-8"),
         )
     _apply_actions(page, opts.actions, timeout_ms)
     _apply_waits(page, opts, timeout_ms)
