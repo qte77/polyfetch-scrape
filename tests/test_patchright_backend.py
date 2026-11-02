@@ -403,6 +403,29 @@ def test_patchright_backend_does_not_swallow_other_content_errors(
     page.wait_for_load_state.assert_not_called()
 
 
+def test_patchright_backend_non_success_status_reads_body_after_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-success page read mid-redirect still yields its FetchError with the settled body."""
+    page, _ = _make_pw_chain(
+        monkeypatch, response_status=999, final_url="https://www.linkedin.com/authwall"
+    )
+    page.content.side_effect = [pw_sync.Error(_NAVIGATING), "<html>Join LinkedIn</html>"]
+
+    with pytest.raises(FetchError) as info:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://www.linkedin.com/in/someone/",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+        )
+
+    assert info.value.status == 999
+    assert info.value.body_excerpt == "<html>Join LinkedIn</html>"
+    page.wait_for_load_state.assert_called_once()
+
+
 def test_patchright_backend_deletes_video_on_terminal_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
