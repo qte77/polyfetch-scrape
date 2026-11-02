@@ -12,6 +12,7 @@ from polyfetch_scrape._backends import (
     is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
+    redirect_target,
     unsuccessful_status_error,
 )
 from polyfetch_scrape.errors import FetchError
@@ -162,4 +163,5 @@ def _to_response(http_resp: httpx.Response, request_user_agent: str | None) -> R
         backend="httpx",
         permanent_redirect_to=permanent_redirect_target(http_resp.status_code, http_resp.headers),
         request_user_agent=request_user_agent,
+        redirect_to=redirect_target(http_resp.status_code, http_resp.headers),
     )

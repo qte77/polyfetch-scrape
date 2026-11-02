@@ -18,6 +18,7 @@ from polyfetch_scrape._backends import (
     is_suspected_soft_block,
     permanent_redirect_target,
     raise_for_terminal_status,
+    redirect_target,
     unsuccessful_status_error,
 )
 from polyfetch_scrape._platform import ensure_browser_tier_supported
@@ -278,6 +279,7 @@ def _run_page(
             network_failures=network_failures,
             screenshots=screenshots,
             request_user_agent=request_user_agent,
+            redirect_to=redirect_target(status, all_headers),
         ),
         None,
         None,
