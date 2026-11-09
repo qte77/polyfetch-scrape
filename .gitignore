@@ -23,3 +23,6 @@ MEMORY.md
 
 # Git worktrees created for parallel subagents (Agent tool `isolation: "worktree"`)
 .claude/worktrees/
+
+# Personal Claude Code settings, never shared
+.claude/settings.local.json
