@@ -13,6 +13,54 @@ Per-PR changes are staged as [scriv](https://scriv.readthedocs.io/) fragments in
 
 <!-- scriv-insert-here -->
 
+## [0.10.0] - 2026-11-09
+
+### Added
+
+- Browser-tier launch option: Chromium now launches headed instead of headless on request — `RenderOptions(headless=False)`, `render_session(..., headless=False)`, and the CLI `polyfetch fetch --headed` / `polyfetch doctor --headed` flags. Headed launch clears some anti-bot challenges a headless launch never does; on a display-less host (e.g. CI) run it under `xvfb-run -a` to stay unattended (#190).
+
+- Opt-in `utils.robots.is_allowed(url, user_agent="*")`: fetches and parses a site's `/robots.txt` and reports allow/deny via the stdlib `urllib.robotparser`. Dual-use — `fetch()` and `discover()` never call it automatically. Reuses `discover()`'s escalation-only SSRF guard for the robots.txt fetch itself. Implements RFC 9309 explicitly rather than relying on the installed Python's own `urllib.robotparser` quirks: `/robots.txt` itself is always allowed (§2.2.2, checked before any fetch, deterministic on Python 3.11-3.14); a 4xx (incl. 404) or an HTML soft-404 allows everything (§2.3.1.3 "Unavailable"); a 5xx or a network failure disallows everything (§2.3.1.4 "Unreachable") (#147).
+
+- `docs/scripting.md`: a performance-trace recipe using Patchright's
+  `browser.start_tracing()` / `stop_tracing()` (Chromium DevTools trace), verified
+  against a real browser. Navigation Timing is reachable via `page.evaluate()`, but
+  paint/LCP/CLS entries are not in this headless configuration — the trace is the
+  reliable source for those (#230).
+
+- `Response.redirect_to`: the `Location` target of **any** unfollowed 3xx (temporary `302`/`303`/`307` too, not only the permanent `301`/`308` that `permanent_redirect_to` covers), on every tier. `fetch --json` and every `bulk --json` line surface it as `redirect_to` when set (#260).
+
+### Changed
+
+- `USING.md` documents the `PLAYWRIGHT_BROWSERS_PATH` environment variable: it relocates the
+  browser-tier Chromium cache off a tight `~/.cache` volume, and must be set for both
+  `polyfetch doctor --fix` and runs. It also says to re-run `doctor --fix` after a patchright
+  upgrade. `CONTRIBUTING.md` points to it from `make doctor`.
+
+- **Breaking:** only a 2xx/3xx final status is returned as a `Response`. Any other status with no typed error and no retry/escalation (e.g. `400`, `405`, `418`, or a non-standard code like LinkedIn's `999` login wall) now raises a plain `FetchError` on the first attempt, on every tier. It carries `status` and the bounded `headers` / `body_excerpt` diagnostics, and `fetch --json` prints the error schema with exit `1` instead of the success schema. Previously the page served in place of the content was returned as if it were the content (#254).
+
+### Fixed
+
+- Corrected `USING.md` and `docs/api-reference.md`: on the patchright tier, `console_errors` / `page.on("console")` / `page.on("pageerror")` capture browser-generated messages only, not page-script `console.*` calls or page-script uncaught exceptions. Verified against the installed `patchright` package's own README (disables the Console API; avoids `Runtime.enable`). Docs now recommend a DOM-attribute + screenshot signal instead (#253).
+
+- `polyfetch fetch --screenshot-out PATH` no longer crashes with a raw `FileNotFoundError` after a successful fetch when `PATH`'s parent directory doesn't exist. Missing parent directories of `--screenshot-out` / `--har-out`, and the `--video-out` directory itself, are now created before the fetch; a path that can't be created (e.g. a file is in the way) exits `2` with a one-line usage error and no fetch is made (#255).
+
+- Patchright tier: reading the page while a client-side redirect is in flight (e.g. `--wait-until domcontentloaded` on a page that then redirects to a login wall) no longer crashes with Patchright's raw `Page.content: Unable to retrieve content because the page is navigating` traceback. The backend now waits for the new document's load state and reads the settled page; if it is still navigating, it raises a `FetchError` that names the cause and suggests `--wait-until networkidle` (#256). The same guard covers the body read for a non-success status (#254), so a login wall reached by a client-side redirect keeps its `FetchError` and body excerpt.
+
+- `polyfetch fetch --show-body` on an unfollowed redirect (e.g. the httpx tier's `302` to a release-asset CDN) no longer writes an empty body with exit `0`, which a script could not tell apart from a real empty file. It now prints `unfollowed HTTP <status> redirect to <url>` to stderr and exits `1` (#260).
+
+- `.claude/settings.json`: multi-colon `Bash(...)` rules such as `Bash(git:add:*)` never matched,
+  since `:*` is only a trailing wildcard; they are rewritten in space form. Following the
+  qte77/claude-code-plugins#183 template decision, `git commit` is allowed and `git push` now asks
+  (its old deny was never enforced). Read-command denies (`cat`, `find`, `grep`, `head`, `ls`,
+  `tail`) are removed.
+- `.gitignore` lists `.claude/settings.local.json`, so personal settings stay out of every clone.
+
+- `easter-hunt scan`: seed-file reading moved into its own helper, so `_resolve_seeds` stays under the complexipy limit with complexipy 8.3 (it scored 17 against 15 and failed `make complexity` on the Dependabot bump #276). No behaviour change.
+
+### Security
+
+- Bump `certifi` to 2026.10.19, fixing PYSEC-2026-4320 flagged by `make audit` (pip-audit) on 2026.4.22.
+
 ## [0.9.0] - 2026-10-09
 
 ### Added
