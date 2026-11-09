@@ -686,16 +686,19 @@ try:
         no_args_is_help=True, help="Scan fetched pages for notable artifacts."
     )
 
+    def _read_seeds_file(seeds_file: Path) -> list[str]:
+        try:
+            text = seeds_file.read_text()
+        except OSError as exc:
+            raise typer.BadParameter(f"Cannot read seeds file: {exc}") from exc
+        stripped = (line.strip() for line in text.splitlines())
+        return [line for line in stripped if line and not line.startswith("#")]
+
     def _resolve_seeds(url: str | None, seeds_file: Path | None) -> list[str]:
         if url is not None and seeds_file is not None:
             raise typer.BadParameter("Provide a URL or --seeds-file, not both")
         if seeds_file is not None:
-            try:
-                text = seeds_file.read_text()
-            except OSError as exc:
-                raise typer.BadParameter(f"Cannot read seeds file: {exc}") from exc
-            stripped = (line.strip() for line in text.splitlines())
-            seeds = [line for line in stripped if line and not line.startswith("#")]
+            seeds = _read_seeds_file(seeds_file)
         elif url is not None:
             seeds = [url]
         else:
