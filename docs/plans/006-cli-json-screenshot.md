@@ -21,7 +21,7 @@ existing `test_cli.py` bulk tests are the regression net (no new red-first test 
 
 **Repo facts:** src layout `src/polyfetch_scrape/`; make-driven (never bare `pip`/`pytest`/`ruff`/`pyright`);
 pyright **strict** `include=["src"]` (tests NOT type-checked); complexipy ≤ 15; cov ≥ 90; e2e opt-in.
-`gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN`.
+`gh` needs an authenticated session with repo scope.
 
 | File / anchor | What's there / what to do |
 |---|---|
