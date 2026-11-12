@@ -4,13 +4,11 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.10.0-informational)](CHANGELOG.md)
-[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-blue)](pyproject.toml)
-[![Python](https://img.shields.io/badge/python-3.11+-blue)](pyproject.toml)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25%20enforced-blue)](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml)
 [![CodeQL](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml)
 [![CodeFactor](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape/badge)](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape)
 [![Test](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml)
 [![Lint MD and Links](https://github.com/qte77/polyfetch-scrape/actions/workflows/lint-md-links.yml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/lint-md-links.yml)
-[![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ## Why
 
