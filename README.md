@@ -3,7 +3,7 @@
 > HTTP scraping toolkit: one typed `fetch()` over a reactive httpx → curl_cffi → Patchright fallback chain — TLS/JA3 impersonation, JS rendering, interactive browser sessions with DevTools capture (console, network, HAR, screenshots, video), structured-source discovery, and a typed error taxonomy behind a single `Response`.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.10.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.0-informational)](CHANGELOG.md)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25%20enforced-blue)](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml)
 [![CodeQL](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml)
 [![CodeFactor](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape/badge)](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape)
