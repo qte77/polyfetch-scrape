@@ -28,8 +28,7 @@ it; verify-only.
 - Everything via `make`/`uv run` (never bare pip/pytest/ruff/pyright/polyfetch); `make validate` green
   before "done"; scriv fragment per non-trivial change (`make changelog_new`).
 - Git: branch per concern, topical commits, squash-merge on green CI, delete branch.
-  `gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN` (App token lacks repo scope; OAuth login has it). Same
-  unset for `git push` (OAuth credential helper).
+  `gh` and `git push` need an authenticated session with repo scope.
 - **`main` enforces signed commits (ruleset).** Your OAuth `git commit` auto-signs (works). The one
   place it bites: the release bump branch is bot-authored + unsigned → the release PR is BLOCKED until
   re-signed: `git checkout -B bump-N-main origin/bump-N-main; git commit --amend --no-edit
@@ -39,18 +38,10 @@ it; verify-only.
 - **`docs/plans/` + `docs/handoffs/` are markdownlint-linted in CI** — author these lint-clean from the
   start (blank lines around every heading/table/code-fence; ≤ header-column-count table rows; no blank
   line inside a blockquote). The 007 plan needed a 15-error cleanup because it wasn't.
-- **Actions allow-list self-emptied once** → `lint / markdown` `startup_failure`. If that recurs,
-  re-apply (root cause may be an org-level policy — see plan op2):
-
-  ```bash
-  env -u GH_TOKEN -u GITHUB_TOKEN gh api --method PUT \
-    repos/qte77/polyfetch-scrape/actions/permissions/selected-actions \
-    -F github_owned_allowed=true -F verified_allowed=true \
-    -f 'patterns_allowed[]=astral-sh/setup-uv@*' \
-    -f 'patterns_allowed[]=callowayproject/bump-my-version@*' \
-    -f 'patterns_allowed[]=DavidAnson/markdownlint-cli2-action@*' \
-    -f 'patterns_allowed[]=lycheeverse/lychee-action@*'
-  ```
+- **Actions allow-list self-emptied once** → `lint / markdown` `startup_failure`. If that recurs, the
+  repo owner re-applies the allow-list in the repo's Actions settings (root cause may be an org-level
+  policy — see plan op2). The current list is recorded under D9 in
+  [plan 010](../plans/010-issue-triage-parallel-lanes.md#phase-b--owner-decisions-with-defaults).
 
 ## Sequence (do in order)
 

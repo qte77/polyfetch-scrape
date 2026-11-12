@@ -28,7 +28,7 @@ not a fresh Explore pass. Don't re-map the codebase.
 2. **Strict TDD, red first** — write the 3 capture tests (plan §"Strict TDD") and watch them fail before
    implementing. Non-trivial only: the wiring + filter + opt-in-gating tests are the point; no coverage
    padding. Keep `_attempt_once` under complexity 15 (filters live in `_record_*`).
-3. `make validate` **and** `make ci` green **before** pushing. `gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN`.
+3. `make validate` **and** `make ci` green **before** pushing. `gh` needs an authenticated session with repo scope.
 4. **Security:** run `/security-review` on the diff (expected clean — listeners collecting strings/dicts,
    no new sink); confirm the runner-network caveat is documented.
 5. **Docs (full set, lockstep):** `docs/api-reference.md` (RenderOptions + Response + caveat),

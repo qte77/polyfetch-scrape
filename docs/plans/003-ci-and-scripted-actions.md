@@ -27,7 +27,7 @@ session once **agents became the framing primary users** (the CLI+JSON is their 
 
 **Repo facts:** src layout `src/polyfetch_scrape/`; `make`-driven (AGENTS.md: never bare
 `pip`/`pytest`/`ruff`/`pyright`); pyright strict; complexipy threshold 15; coverage ≥ 90; `gh` needs
-`env -u GH_TOKEN -u GITHUB_TOKEN`. Tests mock the browser (no network in `make test`).
+an authenticated session with repo scope. Tests mock the browser (no network in `make test`).
 
 | File / path | What's there (anchors) |
 |---|---|
