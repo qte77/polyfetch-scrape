@@ -457,6 +457,12 @@ class _NetworkCaptureFixtureHandler(http.server.BaseHTTPRequestHandler):
             self._html(404, "<html><body>not found</body></html>")
         elif self.path == "/sse":
             self._sse()
+        elif self.path == "/start":
+            self._redirect("/hop2")
+        elif self.path == "/hop2":
+            self._redirect("/final")
+        elif self.path == "/final":
+            self._html(200, "<html><body>final</body></html>")
         elif self.path == "/stealth-check":
             self._html(
                 200,
@@ -510,6 +516,11 @@ es.onmessage = () => {{
         self.end_headers()
         self.wfile.write(data)
 
+    def _redirect(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.end_headers()
+
     def log_message(self, *args: object) -> None:  # silence stdout noise during the run
         pass
 
@@ -528,12 +539,21 @@ def network_capture_fixture_server() -> Iterator[str]:
             thread.join()
 
 
-def test_capture_network_does_not_change_page_visible_automation_signals(
+def test_capture_network_does_not_flip_webdriver_or_chrome_signals(
     network_capture_fixture_server,
 ) -> None:
-    """Stealth safety (#182): navigator.webdriver (read via a DOM attribute the fixture page
-    writes itself -- page.evaluate runs in an isolated world under Patchright and can't read
-    page-script globals back) must be IDENTICAL whether capture_network is on or off."""
+    """#182's TRUE, narrow claim: turning capture_network on does not flip
+    navigator.webdriver / window.chrome specifically (read via a DOM attribute the fixture
+    page writes itself -- page.evaluate runs in an isolated world under Patchright and can't
+    read page-script globals back). These two signals are controlled by Chromium LAUNCH
+    FLAGS (--disable-blink-features=AutomationControlled, no --enable-automation), not by
+    which CDP domains are enabled -- so this test would still pass even if capture_network
+    sent Runtime.enable/Console.enable, and is NOT the guard against that. The actual guard
+    against ever sending those is test_attach_network_capture_sends_only_network_enable in
+    tests/test_patchright_backend.py, which pins the exact cdp.send call list. This e2e test
+    is a real-browser sanity check of these two specific signals only, not a general
+    detectability claim (see RenderOptions.capture_network's docstring for the UNVERIFIED
+    scope)."""
     url = f"{network_capture_fixture_server}/stealth-check"
 
     with render_session(url) as s_off:
@@ -576,6 +596,28 @@ def test_capture_network_records_ok_404_connrefused_and_sse(
     assert len(sse_messages) == 3
     assert [m["data"] for m in sse_messages] == ["msg-0", "msg-1", "msg-2"]
     assert s.network_log_truncated is False
+
+
+def test_capture_network_records_one_entry_per_redirect_hop(
+    network_capture_fixture_server,
+) -> None:
+    """#182 review bug fix, confirmed against a real browser: CDP reuses one requestId
+    across an entire 302->302->200 chain, so this must record THREE entries (one per hop,
+    each with its own URL and status, the finished hops naming the next via redirected_to)
+    -- not one entry stuck with the first hop's URL and the last hop's status."""
+    with render_session(f"{network_capture_fixture_server}/start", capture_network=True) as s:
+        pass
+
+    start = next(e for e in s.network_log if str(e["url"]).endswith("/start"))
+    hop2 = next(e for e in s.network_log if str(e["url"]).endswith("/hop2"))
+    final = next(e for e in s.network_log if str(e["url"]).endswith("/final"))
+
+    assert start["status"] == 302
+    assert str(start["redirected_to"]).endswith("/hop2")
+    assert hop2["status"] == 302
+    assert str(hop2["redirected_to"]).endswith("/final")
+    assert final["status"] == 200
+    assert "redirected_to" not in final
 
 
 def test_capture_network_coexists_with_har_route_and_network_failures(

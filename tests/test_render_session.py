@@ -470,3 +470,27 @@ def test_capture_network_populates_network_log_live(monkeypatch: pytest.MonkeyPa
         assert s.network_log[0]["sse_messages"][0]["data"] == "hi"
 
     assert s.network_log_truncated is False
+
+
+def test_capture_network_marks_inflight_request_unfinished_at_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#182 review gap: a request still open when the session tears down must not stay
+    silently unresolved forever."""
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+
+    with render_session("https://example.com", capture_network=True) as s:
+        handlers = {c.args[0]: c.args[1] for c in cdp.on.call_args_list}
+        handlers["Network.requestWillBeSent"](
+            {
+                "requestId": "r1",
+                "request": {"url": "https://x.test/open", "method": "GET"},
+                "timestamp": 1.0,
+            }
+        )
+        # still open: no responseReceived/loadingFinished/loadingFailed before teardown
+
+    assert s.network_log[0]["status"] is None
+    assert s.network_log[0]["error"] == "unfinished at close"

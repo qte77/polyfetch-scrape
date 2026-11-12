@@ -1686,8 +1686,131 @@ def test_network_capture_ignores_response_for_unknown_request_id() -> None:
     assert capture.entries == []
 
 
-def test_network_capture_dedupes_redirect_replay_of_same_request_id() -> None:
-    """A redirect re-fires requestWillBeSent for the SAME requestId; keep the first entry."""
+def test_network_capture_redirect_chain_records_one_entry_per_hop() -> None:
+    """#182 review bug fix: CDP fires requestWillBeSent once per hop, all under the SAME
+    requestId -- each later call carries redirectResponse describing the PREVIOUS hop (not a
+    duplicate to discard). The old dedup kept only the first hop's URL and then wrote the
+    FINAL hop's status onto it (a 302->302->200 run reported {url: "/start", status: 200},
+    and "/hop2"/"/final" never appeared). Verified against real Chromium: CDP really does
+    reuse one requestId across the whole chain, with responseReceived firing only once, for
+    the last hop.
+
+    Fix: on a requestWillBeSent carrying redirectResponse, finalize the hop currently tracked
+    for this requestId (status + duration from redirectResponse/timestamp, plus
+    redirected_to), then start a fresh entry for the new URL and track THAT as current.
+    """
+    capture, handlers = _attach()
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/start", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/hop2", "method": "GET"},
+            "timestamp": 1.1,
+            "redirectResponse": {"status": 302, "url": "https://x.test/start"},
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/final", "method": "GET"},
+            "timestamp": 1.2,
+            "redirectResponse": {"status": 302, "url": "https://x.test/hop2"},
+        }
+    )
+    handlers["Network.responseReceived"](
+        {"requestId": "r1", "response": {"status": 200, "url": "https://x.test/final"}}
+    )
+    handlers["Network.loadingFinished"]({"requestId": "r1", "timestamp": 1.3})
+
+    assert [e["url"] for e in capture.entries] == [
+        "https://x.test/start",
+        "https://x.test/hop2",
+        "https://x.test/final",
+    ]
+    assert [e["status"] for e in capture.entries] == [302, 302, 200]
+    assert capture.entries[0]["redirected_to"] == "https://x.test/hop2"
+    assert capture.entries[1]["redirected_to"] == "https://x.test/final"
+    assert "redirected_to" not in capture.entries[2]
+    # each hop's duration is computed from ITS OWN start to its own finalization
+    assert capture.entries[0]["duration_ms"] == pytest.approx(100.0)
+    assert capture.entries[1]["duration_ms"] == pytest.approx(100.0)
+    assert capture.entries[2]["duration_ms"] == pytest.approx(100.0)
+
+
+def test_network_capture_redirect_chain_counts_each_hop_against_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend._MAX_NETWORK_ENTRIES", 2)
+    capture, handlers = _attach()
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/start", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/hop2", "method": "GET"},
+            "timestamp": 1.1,
+            "redirectResponse": {"status": 302, "url": "https://x.test/start"},
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/final", "method": "GET"},
+            "timestamp": 1.2,
+            "redirectResponse": {"status": 302, "url": "https://x.test/hop2"},
+        }
+    )
+
+    assert len(capture.entries) == 2  # the 3rd hop was dropped by the cap
+    assert capture.truncated is True
+    # no current entry is tracked for the dropped hop -- a later responseReceived no-ops
+    handlers["Network.responseReceived"](
+        {"requestId": "r1", "response": {"status": 200, "url": "https://x.test/final"}}
+    )
+    assert capture.entries[1]["status"] == 302  # unaffected
+
+
+def test_network_capture_redirect_does_not_overwrite_an_already_set_duration() -> None:
+    """An unusual ordering (loadingFinished landing before the redirect's requestWillBeSent)
+    must not clobber a duration already computed."""
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/start", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.loadingFinished"]({"requestId": "r1", "timestamp": 1.05})
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/hop2", "method": "GET"},
+            "timestamp": 1.1,
+            "redirectResponse": {"status": 302, "url": "https://x.test/start"},
+        }
+    )
+
+    assert capture.entries[0]["duration_ms"] == pytest.approx(50.0)  # from loadingFinished
+
+
+def test_network_capture_ignores_repeat_request_will_be_sent_without_redirect_response() -> None:
+    """Defensive: a repeat requestWillBeSent for an in-flight hop that does NOT carry
+    redirectResponse is not expected from CDP, but must not create a duplicate entry."""
     capture, handlers = _attach()
     handlers["Network.requestWillBeSent"](
         {
@@ -1700,13 +1823,47 @@ def test_network_capture_dedupes_redirect_replay_of_same_request_id() -> None:
     handlers["Network.requestWillBeSent"](
         {
             "requestId": "r1",
-            "request": {"url": "https://x.test/b", "method": "GET"},
+            "request": {"url": "https://x.test/a", "method": "GET"},
             "timestamp": 2.0,
         }
     )
 
     assert len(capture.entries) == 1
-    assert capture.entries[0]["url"] == "https://x.test/a"
+
+
+def test_finalize_network_capture_marks_still_open_entries_unfinished() -> None:
+    """#182 review gap: a request still in flight when the context closes must not stay
+    silently {status: None, error: None, duration_ms: None} forever -- finalize_network_capture
+    (called once, right after context.close(), since no further CDP events can fire) marks it."""
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "done",
+            "request": {"url": "https://x.test/done", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.responseReceived"]({"requestId": "done", "response": {"status": 200}})
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "open",
+            "request": {"url": "https://x.test/open", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+
+    patchright_backend.finalize_network_capture(capture)
+
+    done_entry = next(e for e in capture.entries if e["url"] == "https://x.test/done")
+    open_entry = next(e for e in capture.entries if e["url"] == "https://x.test/open")
+    assert done_entry["status"] == 200
+    assert done_entry["error"] is None  # untouched -- it finished normally
+    assert open_entry["status"] is None
+    assert open_entry["error"] == "unfinished at close"
+
+
+def test_finalize_network_capture_noop_for_none() -> None:
+    patchright_backend.finalize_network_capture(None)  # no raise
 
 
 def test_network_capture_nests_sse_messages_under_their_request() -> None:
@@ -1877,3 +2034,40 @@ def test_patchright_backend_network_log_populated_when_enabled(
     assert resp.network_log[0]["status"] == 200
     assert resp.network_log_truncated is False
     cdp.send.assert_called_once_with("Network.enable")
+
+
+def test_patchright_backend_marks_inflight_request_unfinished_at_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#182 review gap: a sub-request still open when context.close() runs (e.g. a slow
+    background XHR the page never awaited) must not stay silently unresolved forever."""
+    page, response = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+
+    def _goto_with_inflight_request(*_args: object, **_kwargs: object) -> MagicMock:
+        handlers = _cdp_handlers(cdp)
+        handlers["Network.requestWillBeSent"](
+            {
+                "requestId": "r1",
+                "request": {"url": "https://x.test/open", "method": "GET"},
+                "timestamp": 1.0,
+            }
+        )
+        return response
+
+    page.goto.side_effect = _goto_with_inflight_request
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network=True),
+    )
+
+    assert resp.network_log[0]["url"] == "https://x.test/open"
+    assert resp.network_log[0]["status"] is None
+    assert resp.network_log[0]["error"] == "unfinished at close"
