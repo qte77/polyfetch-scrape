@@ -44,7 +44,14 @@
       "Read(.claude/rules/)",
       "SlashCommand",
       "Skill",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(lychee *)",
+      "Bash(gh run watch *)",
+      "Bash(gh repo list *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk read *)",
+      "Bash(ffprobe *)",
+      "mcp__plugin_cloudflare_cloudflare-docs__search_cloudflare_documentation"
     ],
     "deny": [
       "Bash(awk:*)",
