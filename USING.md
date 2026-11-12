@@ -83,7 +83,7 @@ with render_session(url) as s:
     snap = s.page.locator("body").aria_snapshot()  # accessibility tree of the page
 ```
 
-(`aria_snapshot()` is the current Patchright API; `page.accessibility.snapshot()` was removed upstream.) polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. See README's [Two layers](README.md#two-layers-engine--scripting-substrate) for the full engine/scripts split. For more worked recipes (multi-step walks, live emulation, what not to do), see the [scripting cookbook](docs/scripting.md).
+(`aria_snapshot()` is the current Patchright API; `page.accessibility.snapshot()` was removed upstream.) polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. See README's [Two layers](README.md#two-layers-engine--scripting-substrate) for the full engine/scripts split. For more worked recipes (multi-step walks, live emulation, what not to do), see the [scripting cookbook](docs/scripting.md) — including analysing a video *embedded in the page* (not `--video-out`'s session recording): [find the media URL, download it, inspect it](docs/scripting.md#embedded-video-find-download-inspect).
 
 ## Commands
 
