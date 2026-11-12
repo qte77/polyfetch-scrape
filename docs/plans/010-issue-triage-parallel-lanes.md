@@ -211,6 +211,8 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | — | ~~`SECURITY.md` (reporting path + SSRF-guard scope)~~ ✅ covered by the estate default `qte77/.github/SECURITY.md` (GitHub applies it to repos without their own; private vulnerability reporting is enabled). No repo copy, to avoid duplication; SSRF-guard scope lives in `docs/architecture.md` | A | agent | 3 | S | Resolved without a file |
 | — | ~~Heads-up comments on contributor PRs; close them after porting~~ ✅ D10: no heads-ups; #201/#202/#205/#206/#207 closed with remarks crediting @dntywntme (#203/#204 close when #200/#182 port them) | B | owner (D1, D10) | 2 | S | Done |
 | — | ~~Release **v0.9.0** at the end of Phase A~~ ✅ v0.9.0 (#251, 2026-10-09) | A (end) | agent | 3 | S | Released and marked Latest |
+| ~~282~~ | ~~Embedded-video recipe (step 1): page → media URL → file → metadata + frames~~ ✅ #284 | C | agent | 3 | S | Shipped: `docs/scripting.md` recipe (fetch on the patchright tier, extract DOM media URLs, download with `--show-body`, `ffprobe`/`ffmpeg` metadata + capped/scaled frames) and a short `USING.md` pointer; verified end to end against a local fixture |
+| 282 | Embedded-video discovery (steps 2/3, deferred by the owner): a `media`/`discover --json` subcommand listing embedded media URLs (type, source attribute, manifest flag), then `--frames-out DIR --every S` shelling out to `ffmpeg` | C | owner | 3 | M | Per #282: `polyfetch discover`/`media --json` lists the media URLs of a page with a `<video>` element and of a page whose video arrives through an HLS manifest; both covered by real-browser e2e |
 
 ## Watch-outs
 
