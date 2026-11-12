@@ -2,7 +2,8 @@
 
 **Status (2026-11-12): PAUSED by the owner on 2026-10-21.** Work moved to the downstream qte77 repos that consume polyfetch. Resume a remaining row only when a downstream need pulls it in; until then the [remaining-work table](#remaining-work) is parked, not stale.
 - **Phase C batch 1 shipped (2026-10-21):** #253 (#262), #147 (#263, which also closed tracker #153), #190 (#264), #230 (#266), and the certifi security bump #265.
-- **Not yet triaged into this plan:** issues #254, #255, #256, #260, #261 (opened after the 2026-09-29 triage). Add a row only if one is resumed.
+- **Shipped outside this plan's table (2026-10-31 to 2026-11-02), released in v0.10.0 (#279):** #254 login-wall status as an error (#272), #255 missing output dirs (#271), #256 client-side redirect read (#273), #260 unfollowed redirect (#274), plus the easter-hunt refactor #278 and the permission-rule fix #277.
+- **Not yet triaged into this plan:** #261 (streaming to disk). Add a row only if it is resumed.
 
 **Earlier status (2026-10-09): Phase A and Phase B are DONE. v0.8.1 (2026-09-30) and v0.9.0 (2026-10-09) are released.**
 - **Shipped:** #181, #197, #199, #216, #229, #209, #237, #214, #198, #241 (patchright 1.63 = Chromium 153), the dependency bumps (#236, #246, #222) and the tooling fix #243.
