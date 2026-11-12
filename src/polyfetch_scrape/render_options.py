@@ -92,6 +92,24 @@ class RenderOptions:
       but clears some anti-bot challenges a headless launch never does (#190) — on a
       display-less host (e.g. CI) run it under ``xvfb-run -a`` to stay unattended. Also
       threads through ``render_session``/``RenderSession``.
+    - ``storage_state``: a Playwright storage-state path or mapping (cookies + localStorage),
+      applied at ``new_context()`` time so the session is authenticated from the **first**
+      navigation. Capture one with ``RenderSession.save_storage_state(path)``, then reuse it
+      non-interactively. **Security:** a storage-state file holds live session credentials —
+      handle it like the HAR/video outputs above, never commit or share one uninspected.
+    - ``cookies``: cookie dicts (Playwright's ``add_cookies`` shape, e.g.
+      ``{"name": ..., "value": ..., "url": ...}``) added to the context **before** the first
+      navigation — a targeted alternative to a full ``storage_state`` when all that's on hand
+      is a session token. Sessions are per-origin: a cookie or storage state captured for one
+      origin does not authenticate a different subdomain.
+    - ``extra_http_headers``: headers sent with every request on this context (e.g. a bearer
+      ``Authorization`` token), mirroring ``fetch(headers=...)`` for the browser tier. When
+      ``fetch(headers=...)`` is *also* given, the two are merged — ``fetch(headers=...)`` wins
+      per key — rather than one silently replacing the other (Patchright's
+      ``set_extra_http_headers`` replaces the whole header set on every call; see
+      ``_backends/patchright_backend.py``'s ``_merge_extra_headers``). These headers are sent to
+      **every** origin the page contacts, so an ``Authorization`` bearer here can leak to
+      third-party CDNs/analytics the page loads — prefer a narrower mechanism when that matters.
     """
 
     wait_until: WaitUntil = "domcontentloaded"
@@ -113,3 +131,6 @@ class RenderOptions:
     record_har_mode: HarMode = "minimal"
     record_har_content: HarContent = "omit"
     headless: bool = True
+    storage_state: str | Path | Mapping[str, Any] | None = None
+    cookies: tuple[Mapping[str, Any], ...] = ()
+    extra_http_headers: Mapping[str, str] | None = None

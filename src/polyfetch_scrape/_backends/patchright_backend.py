@@ -151,7 +151,41 @@ def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
         kwargs["record_har_path"] = str(opts.record_har_path)
         kwargs["record_har_mode"] = opts.record_har_mode
         kwargs["record_har_content"] = opts.record_har_content
+    if opts.storage_state is not None:
+        kwargs["storage_state"] = opts.storage_state
     return kwargs
+
+
+def apply_cookies(context: Any, opts: RenderOptions) -> None:
+    """Seed ``opts.cookies`` on ``context`` BEFORE the first navigation.
+
+    A targeted alternative to ``storage_state`` (context_kwargs, above) when all that's on
+    hand is a session token rather than a full cookie/localStorage snapshot. No-op when empty.
+    """
+    if opts.cookies:
+        context.add_cookies([dict(cookie) for cookie in opts.cookies])
+
+
+def _merge_extra_headers(
+    render_headers: Mapping[str, str] | None, fetch_headers: Mapping[str, str] | None
+) -> dict[str, str] | None:
+    """Union ``RenderOptions.extra_http_headers`` with ``fetch(headers=...)``.
+
+    ``context.set_extra_http_headers()`` REPLACES the context's whole extra-header set on
+    every call -- confirmed against a real Chromium request: a header set via
+    ``new_context(extra_http_headers=...)`` did not reach the wire once a second
+    ``set_extra_http_headers()`` call followed it. So this must be called **at most once**
+    per context, with the full union computed here, rather than one caller's headers quietly
+    replacing another's. ``fetch_headers`` wins on a key collision -- it is the more specific,
+    per-call override. Returns ``None`` when neither side has anything to send (zero overhead,
+    matching the no-headers default).
+    """
+    if not render_headers and not fetch_headers:
+        return None
+    merged = dict(render_headers) if render_headers else {}
+    if fetch_headers:
+        merged.update(fetch_headers)
+    return merged
 
 
 def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
@@ -175,8 +209,10 @@ def _attempt_once(
     policy: RetryPolicy,
 ) -> _Attempt:
     context = browser.new_context(**context_kwargs)
-    if headers:
-        context.set_extra_http_headers(dict(headers))
+    apply_cookies(context, opts)
+    merged_headers = _merge_extra_headers(opts.extra_http_headers, headers)
+    if merged_headers:
+        context.set_extra_http_headers(merged_headers)
     page = context.new_page()
     console_errors, network_failures = attach_capture(page, opts)
     video = page.video if opts.record_video_dir is not None else None
