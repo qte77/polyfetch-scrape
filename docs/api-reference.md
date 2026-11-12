@@ -64,6 +64,7 @@ RenderOptions(
     storage_state=None,
     cookies=(),
     extra_http_headers=None,
+    capture_network=False,
 )
 # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
 # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
@@ -123,6 +124,22 @@ RenderOptions(
 #     header set on every call, so this is sent in exactly one call per context. Sent to
 #     EVERY origin the page contacts — an Authorization bearer here can leak to third-party
 #     CDNs/analytics the page loads.
+# capture_network → Response.network_log (#182): a BOUNDED per-request log (url, method,
+#     resource_type, status, failure errorText, start_ms + duration_ms), INCLUDING SSE
+#     (EventSource) message frames nested under their request's sse_messages (event, data,
+#     timestamp_ms) — the gap capture_network_failures doesn't cover (that one stays a cheap
+#     failures-only {url,error}/{url,status} subset; keep using it when all you need is "did
+#     anything fail"). Uses a SEPARATE CDP session sending only Network.enable — never
+#     Runtime.enable/Console.enable/Page.enable, the leaks Patchright's own stealth model
+#     specifically patches (its README's "Patches" section); verified not to change
+#     page-visible automation signals (navigator.webdriver and friends) and to coexist with
+#     HAR recording, page.route, and capture_network_failures. Off by default (zero overhead).
+#     BOUNDED: at most 1000 request entries and 1000 SSE messages (cumulative) per session —
+#     Response.network_log_truncated / RenderSession.network_log_truncated flips to True once
+#     either cap is hit. SSE data is truncated to 2 KB per message (mirrors
+#     FingerprintBlock.body_excerpt). NEVER records request/response bodies or header values
+#     (nothing header-shaped is read, so there is nothing to redact). Detectability by
+#     anti-automation fingerprinting scripts beyond the signals checked above is UNVERIFIED.
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
 # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -146,23 +163,24 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
                      locale=None, record_video_dir=None, record_video_size=None,
                      record_har_path=None, record_har_mode="minimal",
                      record_har_content="omit", headless=True, storage_state=None,
-                     cookies=(), extra_http_headers=None) as s:
+                     cookies=(), extra_http_headers=None, capture_network=False) as s:
     s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
     s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
     s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
     s.page           # the managed Patchright Page (escape hatch for structural reads)
     s.video_path     # Path to the recorded .webm once set (only after the `with` block exits)
     s.har_path       # Path to the recorded HAR once set (only after the `with` block exits)
+    s.network_log    # bounded per-request list (+ nested SSE messages), live, when requested
     s.save_storage_state(path)  # persist cookies+localStorage to path (parent dirs created);
                                  # must be called INSIDE this block — FetchError afterwards
-# auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
-#   on an exception inside the block → an "exception" screenshot is captured first;
-#   s.video_path / s.har_path are set once the context closes, when requested.
+# auto on exit: teardown; s.console_errors / s.network_failures / s.network_log collected
+#   throughout; on an exception inside the block → an "exception" screenshot is captured
+#   first; s.video_path / s.har_path are set once the context closes, when requested.
 # a navigation timeout raises FetchError; so does a storage_state path that doesn't exist,
 #   can't be read, or isn't valid JSON — checked before the browser even launches.
 ```
 
-`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content`/`headless`/`storage_state`/`cookies`/`extra_http_headers` mirror the same-named `RenderOptions` fields above — set at launch/`new_context()` time, same emulation/video/HAR/launch/session semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play. A `storage_state` file (passed in, or written by `save_storage_state`) holds the same kind of live session credentials — handle it identically.
+`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content`/`headless`/`storage_state`/`cookies`/`extra_http_headers`/`capture_network` mirror the same-named `RenderOptions` fields above — set at launch/`new_context()` time, same emulation/video/HAR/launch/session/capture semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` / `s.network_log` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play. A `storage_state` file (passed in, or written by `save_storage_state`) holds the same kind of live session credentials — handle it identically. `s.network_log` never records bodies or header values, so there is nothing to redact there.
 
 `save_storage_state(path)` persists the session's current cookies + localStorage to `path`, creating the parent directory first (Patchright does **not** create it for a storage-state path the way it does for `screenshot`/`pdf`/`video`). Must be called **inside** the `with` block: the context — and its storage — is gone once it exits, and a call after exit raises `FetchError` instead of a raw driver error against the already-closed context (#200; mirrors the #199 video-path-after-close ordering bug, in reverse).
 
@@ -187,6 +205,8 @@ Response(
     network_failures=[],
     screenshots={},
     redirect_to=None,
+    network_log=[],
+    network_log_truncated=False,
 )
 # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
 # redirect_to: Location target on ANY unfollowed 3xx (incl. temporary 302/303/307), else None
@@ -212,6 +232,14 @@ Response(
 #   calls and, very likely, page-script uncaught exceptions are not captured (patchright disables
 #   the Console API and avoids Runtime.enable). See USING.md § DevTools capture for the verified
 #   source and a DOM-attribute + screenshot alternative.
+# network_log: bounded per-request list — url, method, resource_type, status, error
+#   (failure errorText, e.g. "net::ERR_CONNECTION_REFUSED"), start_ms, duration_ms, and
+#   sse_messages (a list of {event, data, timestamp_ms} for an EventSource request) — opt-in
+#   via RenderOptions.capture_network (#182). Via a SEPARATE CDP session sending only
+#   Network.enable (never Runtime/Console/Page) — see RenderOptions.capture_network's
+#   docstring for the full stealth-safety verification. Capped at 1000 entries and 1000 SSE
+#   messages (cumulative) per session; network_log_truncated is True once either cap is hit.
+#   Never carries request/response bodies or header values.
 
 RetryPolicy(
     max_attempts=3,

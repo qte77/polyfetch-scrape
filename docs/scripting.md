@@ -7,7 +7,7 @@ guard; you own the app-specific steps once you have a live `Page` on `s.page`. E
 snippet below uses only the public `RenderSession` surface: `click` / `click_text` /
 `fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot` /
 `save_storage_state`, plus `.page`, `s.console_errors`, `s.network_failures`,
-`s.screenshots`, `s.video_path`, and `s.har_path`.
+`s.network_log`, `s.screenshots`, `s.video_path`, and `s.har_path`.
 
 ## DevTools capture
 
@@ -33,6 +33,49 @@ fill for the whole session (initial page load included) with no setup.
 > **Caveat:** a headless capture reflects only *this* runner's network. A cross-origin
 > failure a real user hits (CORS, a browser extension, a proxy) can succeed here and
 > read clean — treat an empty capture as "no error on this network", not "no error".
+
+## Full network log + SSE capture
+
+`s.network_failures` only sees failures. For the **full** request picture — including
+`EventSource` (SSE) message frames, which `page.on(...)` cannot see at all —
+`capture_network=True` opens a separate CDP session (sending only `Network.enable`)
+and fills `s.network_log`:
+
+```python
+from polyfetch_scrape import render_session
+
+with render_session(url, capture_network=True) as s:
+    s.wait_for_selector(".stream-done")  # let the page's EventSource messages land
+
+for entry in s.network_log:
+    print(entry["method"], entry["url"], entry["status"], entry.get("error"))
+    for msg in entry["sse_messages"]:
+        print("  SSE:", msg["event"], msg["data"])
+
+print(s.network_log_truncated)  # True if the 1000-entry / 1000-SSE-message cap was hit
+```
+
+Each entry carries `url`, `method`, `resource_type`, `status` (`None` if the request never
+got a response), `error` (the CDP failure reason, e.g. `"net::ERR_CONNECTION_REFUSED"`,
+`None` otherwise), `start_ms`/`duration_ms`, and `sse_messages` — a list of
+`{event, data, timestamp_ms}` for an `EventSource` request, empty for everything else.
+`data` is truncated to 2 KB per message.
+
+The same flag works on the one-shot tier: `fetch(url, render=RenderOptions(capture_network=True))`
+→ `Response.network_log` / `Response.network_log_truncated`.
+
+> **Never records request/response bodies or header values.** Nothing header-shaped is
+> read at all, so there is nothing to redact (unlike a HAR, which needs an explicit
+> `Cookie`/`Authorization` redaction story once one exists).
+>
+> **Stealth safety:** the extra CDP session sends only `Network.enable` — never
+> `Runtime.enable`/`Console.enable`/`Page.enable`, the specific leaks Patchright's own
+> stealth model patches around. Verified not to change page-visible automation signals
+> (`navigator.webdriver` and friends) and to coexist with HAR recording, `page.route`, and
+> `s.network_failures` on the same page. Detectability by anti-automation fingerprinting
+> scripts beyond the signals checked here is **unverified** — this capture opens a second
+> CDP attachment to the page, and no broader detection-suite probe (e.g. a full Brotector
+> run) has been done against it.
 
 ## HAR summary recipe
 
