@@ -116,6 +116,24 @@ class RenderOptions:
       ``_backends/patchright_backend.py``'s ``_merge_extra_headers``). These headers are sent to
       **every** origin the page contacts, so an ``Authorization`` bearer here can leak to
       third-party CDNs/analytics the page loads — prefer a narrower mechanism when that matters.
+    - ``capture_network``: collect a bounded per-request log (url/method/resource_type/status/
+      failure reason/timing) onto ``Response.network_log`` / ``RenderSession.network_log``,
+      **including SSE** (``EventSource``) message frames nested under their request's
+      ``sse_messages`` — the one gap ``capture_network_failures`` doesn't cover (that one is
+      failures-only, with a minimal ``{url, error}``/``{url, status}`` shape; keep using it when
+      all you need is "did anything fail"). Uses a *separate* CDP session sending only
+      ``Network.enable`` — never ``Runtime.enable``/``Console.enable``/``Page.enable``, the two
+      leaks Patchright's own stealth model specifically patches (its README's "Patches" section);
+      verified not to change page-visible automation signals (``navigator.webdriver`` and
+      friends) and to coexist with HAR recording, ``page.route``, and
+      ``capture_network_failures``. Off by default (zero overhead). Bounded: at most 1000
+      request entries and 1000 SSE messages (cumulative) per session — ``Response``/
+      ``RenderSession``'s ``network_log_truncated`` flips to ``True`` once either cap is hit. SSE
+      ``data`` is truncated to 2 KB per message, mirroring ``FingerprintBlock.body_excerpt``.
+      **Never records request/response bodies or header values** (nothing header-shaped is read,
+      so there's nothing to redact, unlike the HAR/diagnostics paths that explicitly redact
+      ``Set-Cookie``). Detectability by anti-automation fingerprinting scripts beyond the
+      signals checked here is UNVERIFIED.
     """
 
     wait_until: WaitUntil = "domcontentloaded"
@@ -140,3 +158,4 @@ class RenderOptions:
     storage_state: str | Path | Mapping[str, Any] | None = None
     cookies: tuple[Mapping[str, Any], ...] = ()
     extra_http_headers: Mapping[str, str] | None = None
+    capture_network: bool = False

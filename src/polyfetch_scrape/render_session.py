@@ -26,6 +26,7 @@ from patchright.sync_api import sync_playwright
 from polyfetch_scrape._backends.patchright_backend import (
     apply_cookies,
     attach_capture,
+    attach_network_capture,
     capture_screenshot,
     context_kwargs,
     validate_storage_state,
@@ -70,6 +71,7 @@ class RenderSession:
         storage_state: str | Path | Mapping[str, Any] | None = None,
         cookies: tuple[Mapping[str, Any], ...] = (),
         extra_http_headers: Mapping[str, str] | None = None,
+        capture_network: bool = False,
     ) -> None:
         self._url = url
         self._wait_until = wait_until
@@ -91,17 +93,20 @@ class RenderSession:
             storage_state=storage_state,
             cookies=cookies,
             extra_http_headers=extra_http_headers,
+            capture_network=capture_network,
         )
         self._pw: Any = None
         self._browser: Any = None
         self._context: Any = None
         self._video: Any = None
+        self._network_capture: Any = None
         self.page: Any = None
         self.video_path: Path | None = None
         self.har_path: Path | None = None
         self.screenshots: dict[str, bytes] = {}
         self.console_errors: list[str] = []
         self.network_failures: list[dict[str, object]] = []
+        self.network_log: list[dict[str, object]] = []
 
     def __enter__(self) -> "RenderSession":
         # Same platform gate as the fetch tier: no musllinux patchright wheel (#197).
@@ -120,6 +125,9 @@ class RenderSession:
         self.page.set_default_timeout(self._timeout_ms)
         self.page.set_default_navigation_timeout(self._timeout_ms)
         self.console_errors, self.network_failures = attach_capture(self.page, self._opts)
+        self._network_capture = attach_network_capture(self._context, self.page, self._opts)
+        if self._network_capture is not None:
+            self.network_log = self._network_capture.entries
         self._video = self.page.video if self._opts.record_video_dir is not None else None
         try:
             self.page.goto(self._url, wait_until=self._wait_until, timeout=self._timeout_ms)
@@ -133,6 +141,11 @@ class RenderSession:
             self._safe_shot("exception")
         self._teardown()
         return False
+
+    @property
+    def network_log_truncated(self) -> bool:
+        """``True`` once ``network_log``'s 1000-request or 1000-SSE-message cap was hit."""
+        return self._network_capture.truncated if self._network_capture is not None else False
 
     def click(self, selector: str) -> None:
         self.page.click(selector, timeout=self._timeout_ms)
@@ -226,6 +239,7 @@ def render_session(
     storage_state: str | Path | Mapping[str, Any] | None = None,
     cookies: tuple[Mapping[str, Any], ...] = (),
     extra_http_headers: Mapping[str, str] | None = None,
+    capture_network: bool = False,
 ) -> RenderSession:
     """Open a managed Patchright session for an interactive multi-step flow.
 
@@ -264,6 +278,15 @@ def render_session(
     **Security:** a storage-state file holds live session credentials — handle it like the
     HAR/video outputs above, never commit or share one uninspected.
 
+    ``capture_network=True`` additionally records a bounded per-request log onto
+    ``s.network_log`` — url/method/resource_type/status/failure reason/timing, with SSE
+    (``EventSource``) message frames nested under their request's ``sse_messages`` (the gap
+    ``network_failures`` doesn't cover; that one stays failures-only). Via a *separate* CDP
+    session sending only ``Network.enable`` — never any domain Patchright's own stealth model
+    avoids. Bounded at 1000 request entries and 1000 SSE messages (cumulative) per session;
+    ``s.network_log_truncated`` flips to ``True`` once either cap is hit. Never records request/
+    response bodies or header values. Off by default (zero overhead).
+
     Use as a context manager::
 
         with render_session(url) as s:
@@ -292,4 +315,5 @@ def render_session(
         storage_state=storage_state,
         cookies=cookies,
         extra_http_headers=extra_http_headers,
+        capture_network=capture_network,
     )

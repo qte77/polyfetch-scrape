@@ -33,6 +33,14 @@ class Response:
     # proxy) can read clean here. Force a known failure to trust it (AGENT_LEARNINGS #3).
     console_errors: list[str] = field(default_factory=list[str])
     network_failures: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
+    # Bounded per-request log (incl. nested SSE message frames) when
+    # RenderOptions.capture_network is set (browser tier, via a separate CDP Network-domain
+    # session — never Runtime/Console/Page); empty on the httpx/curl tiers and when not
+    # requested. network_log_truncated is True once the 1000-request or 1000-SSE-message cap
+    # is hit. Never carries request/response bodies or header values — see
+    # RenderOptions.capture_network's docstring for the full caveat.
+    network_log: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
+    network_log_truncated: bool = False
     # Named PNGs from RenderOptions.screenshots (patchright tier); empty otherwise.
     screenshots: dict[str, bytes] = field(default_factory=dict[str, bytes])
     # The Location target of ANY unfollowed 3xx (301/302/303/307/308), so a caller can follow
