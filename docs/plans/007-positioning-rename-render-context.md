@@ -147,4 +147,4 @@ Resolves #148/#154/#155 (emulation) + #125/#122/#155 (video). Consumers (azure-d
 ## Verify → CI-gated PR
 
 - `make validate` green each PR (pyright-strict, complexipy ≤15, cov ≥90, `filterwarnings=["error"]`). PR A live: `--tier patchright`→`backend:"patchright"`; `--tier playwright`→works+warns. PR B: `markdownlint-cli2`+`lychee`; `git grep -niE "hostile|the moat"`→none. Wave 2 e2e: `--device "iPhone 13"`, `--color-scheme dark`, real `.webm`.
-- `env -u GH_TOKEN -u GITHUB_TOKEN gh …`; squash on green CI; **check CodeQL** (no `"<url>" in x` — even in test asserts → use `==`). **GitHub Actions webhook delivery was flaky** (dropped PR/push events) — re-trigger (close/reopen or empty push) or wait; a merge conflict may also block (rebase/merge main in).
+- Squash on green CI; **check CodeQL** (no `"<url>" in x` — even in test asserts → use `==`). **GitHub Actions webhook delivery was flaky** (dropped PR/push events) — re-trigger (close/reopen or empty push) or wait; a merge conflict may also block (rebase/merge main in).

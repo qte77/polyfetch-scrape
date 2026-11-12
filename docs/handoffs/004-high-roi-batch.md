@@ -25,7 +25,7 @@ Don't re-map the codebase.
    `docs/scraping-landscape-empirical`, `docs/readme-canon`); topical commits by concern.
 2. **Strict TDD** for #84/#85 — mirror the named template tests in the Source map; assume strict
    lint + typing + security. Keep `_attempt_once` under complexity 15.
-3. `make validate` **and** `make ci` green **before** pushing. `gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN`.
+3. `make validate` **and** `make ci` green **before** pushing. `gh` needs an authenticated session with repo scope.
 4. Open a PR, then **squash-merge ONLY if all CI checks pass — never `--admin`, never bypass.** The
    `Test / ci` check (from #98) runs on the PR itself.
 5. `--delete-branch` on merge; `git fetch --prune`; keep `main` the only local branch.
