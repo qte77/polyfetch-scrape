@@ -259,6 +259,39 @@ def test_fetch_headed_flag_builds_render_options(monkeypatch: pytest.MonkeyPatch
     assert render.headless is False  # type: ignore[attr-defined]
 
 
+def test_fetch_storage_state_flag_builds_render_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#200: --storage-state mirrors the other render flags (patchright tier, file path)."""
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--storage-state", "saved-state.json"])
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.storage_state == Path("saved-state.json")  # type: ignore[attr-defined]
+
+
+def test_fetch_no_storage_state_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test"])
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.storage_state is None  # type: ignore[attr-defined]
+
+
 def test_fetch_rejects_malformed_viewport(monkeypatch: pytest.MonkeyPatch) -> None:
     called = False
 

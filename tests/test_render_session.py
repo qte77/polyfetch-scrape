@@ -305,3 +305,78 @@ def test_launches_headed_when_requested(monkeypatch: pytest.MonkeyPatch) -> None
         pass
 
     pw.chromium.launch.assert_called_once_with(headless=False)
+
+
+# --------------------------------------------------------------------------- #
+# Authenticated sessions (#200): storage_state, cookies, extra_http_headers
+# --------------------------------------------------------------------------- #
+
+
+def test_storage_state_reaches_new_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, _context, browser, _pw = _make_session_chain(monkeypatch)
+    state = {"cookies": [], "origins": []}
+
+    with render_session("https://example.com", storage_state=state):
+        pass
+
+    assert browser.new_context.call_args.kwargs["storage_state"] == state
+
+
+def test_cookies_applied_before_new_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+    order: list[str] = []
+    context.add_cookies.side_effect = lambda *_a: order.append("add_cookies")
+    context.new_page.side_effect = lambda: order.append("new_page") or context.new_page.return_value
+
+    cookie = {"name": "session", "value": "abc", "url": "https://example.com"}
+    with render_session("https://example.com", cookies=(cookie,)):
+        pass
+
+    context.add_cookies.assert_called_once_with([cookie])
+    assert order == ["add_cookies", "new_page"]
+
+
+def test_extra_http_headers_set_on_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com", extra_http_headers={"Authorization": "Bearer t"}):
+        pass
+
+    context.set_extra_http_headers.assert_called_once_with({"Authorization": "Bearer t"})
+
+
+def test_no_extra_http_headers_call_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com"):
+        pass
+
+    context.set_extra_http_headers.assert_not_called()
+
+
+def test_save_storage_state_creates_parent_dir_and_calls_context(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+    target = tmp_path / "nested" / "does" / "not" / "exist" / "state.json"
+
+    with render_session("https://example.com") as s:
+        s.save_storage_state(target)
+
+    assert target.parent.is_dir()
+    context.storage_state.assert_called_once_with(path=str(target))
+
+
+def test_save_storage_state_after_exit_raises_fetcherror(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Mirrors the #199 ordering lesson: a post-teardown call must fail loudly with a typed
+    error naming the cause, not with the driver's own dead-context error."""
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com") as s:
+        pass
+
+    with pytest.raises(FetchError, match="save_storage_state"):
+        s.save_storage_state(tmp_path / "state.json")
+    context.storage_state.assert_not_called()
