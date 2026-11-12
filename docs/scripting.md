@@ -7,7 +7,7 @@ guard; you own the app-specific steps once you have a live `Page` on `s.page`. E
 snippet below uses only the public `RenderSession` surface: `click` / `click_text` /
 `fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot` /
 `save_storage_state`, plus `.page`, `s.console_errors`, `s.network_failures`,
-`s.screenshots`, `s.video_path`, and `s.har_path`.
+`s.network_log`, `s.screenshots`, `s.video_path`, and `s.har_path`.
 
 ## DevTools capture
 
@@ -33,6 +33,66 @@ fill for the whole session (initial page load included) with no setup.
 > **Caveat:** a headless capture reflects only *this* runner's network. A cross-origin
 > failure a real user hits (CORS, a browser extension, a proxy) can succeed here and
 > read clean — treat an empty capture as "no error on this network", not "no error".
+
+## Full network log + SSE capture
+
+`s.network_failures` only sees failures. For the **full** request picture — including
+`EventSource` (SSE) message frames, which `page.on(...)` cannot see at all —
+`capture_network=True` opens a separate CDP session (sending only `Network.enable`)
+and fills `s.network_log`:
+
+```python
+from polyfetch_scrape import render_session
+
+with render_session(url, capture_network=True) as s:
+    s.wait_for_selector(".stream-done")  # let the page's EventSource messages land
+
+for entry in s.network_log:
+    print(entry["method"], entry["url"], entry["status"], entry.get("error"))
+    for msg in entry["sse_messages"]:
+        print("  SSE:", msg["event"], msg["data"])
+
+print(s.network_log_truncated)  # True if the 1000-entry / 1000-SSE-message cap was hit
+```
+
+Each entry carries `url`, `method`, `resource_type`, `status` (`None` if the request never
+got a response), `error` (the CDP failure reason, e.g. `"net::ERR_CONNECTION_REFUSED"`, or
+`"unfinished at close"` if the context closed before a response or failure arrived; `None`
+otherwise), `start_ms`/`duration_ms`, an optional `redirected_to` (the next hop's URL, set on
+a hop that redirected), and `sse_messages` — a list of `{event, data, timestamp_ms}` for an
+`EventSource` request, empty for everything else. `data` is truncated to 2 KB per message.
+
+**A redirect chain is one entry per hop, not one entry for the whole chain.** CDP reports an
+entire chain under a single internal request ID, so each hop lands as its own entry, with
+`redirected_to` on the finished hop naming the next one:
+
+```python
+for entry in s.network_log:
+    print(entry["url"], entry["status"], entry.get("redirected_to"))
+# .../start   302   .../hop2
+# .../hop2    302   .../final
+# .../final   200   None
+```
+
+The same flag works on the one-shot tier: `fetch(url, render=RenderOptions(capture_network=True))`
+→ `Response.network_log` / `Response.network_log_truncated`.
+
+> **Never records request/response bodies or header values.** Nothing header-shaped is
+> read at all, so there is nothing to redact (unlike a HAR, which needs an explicit
+> `Cookie`/`Authorization` redaction story once one exists).
+>
+> **Stealth safety — three separate checks, each guarding a different claim.** The extra CDP
+> session sends only `Network.enable` — never `Runtime.enable`/`Console.enable`/`Page.enable`,
+> the specific leaks Patchright's own stealth model patches around — and **this is guarded by
+> a unit test pinning the exact `cdp.send` calls**, not by anything in the browser. Separately,
+> a real-browser check confirms `navigator.webdriver`/`window.chrome` are unaffected by turning
+> capture on — a narrower sanity check of those two specific signals (which are actually
+> controlled by Chromium launch flags, not by which CDP domains are enabled), not a general
+> detectability guarantee. A third check confirms this coexists with HAR recording,
+> `page.route`, and `s.network_failures` on the same page. Detectability by anti-automation
+> fingerprinting scripts beyond the two signals checked is **unverified** — this capture opens
+> a second CDP attachment to the page, and no broader detection-suite probe (e.g. a full
+> Brotector run) has been done against it.
 
 ## HAR summary recipe
 

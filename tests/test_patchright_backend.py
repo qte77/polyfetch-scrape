@@ -1491,3 +1491,583 @@ def test_attempt_mapping_storage_state_skips_file_validation(
     )
 
     assert resp.status == 200
+
+
+# --------------------------------------------------------------------------- #
+# Opt-in full network capture (#182): CDP Network-domain log, incl. SSE
+# --------------------------------------------------------------------------- #
+
+
+def _cdp_handlers(cdp_mock: MagicMock) -> dict[str, Any]:
+    """Map each registered cdp.on(event) to its handler, mirroring _page_handlers."""
+    return {c.args[0]: c.args[1] for c in cdp_mock.on.call_args_list}
+
+
+def test_attach_network_capture_returns_none_when_disabled() -> None:
+    context = MagicMock(spec=pw_sync.BrowserContext)
+    page = MagicMock(spec=pw_sync.Page)
+
+    result = patchright_backend.attach_network_capture(context, page, RenderOptions())
+
+    assert result is None
+    context.new_cdp_session.assert_not_called()
+
+
+def test_attach_network_capture_sends_only_network_enable() -> None:
+    """Stealth safety (#182): the ONLY CDP command sent must be Network.enable -- never
+    Runtime.enable/Console.enable/Page.enable, the leaks Patchright's own stealth model
+    specifically patches around (see the installed patchright package's README)."""
+    context = MagicMock(spec=pw_sync.BrowserContext)
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+    page = MagicMock(spec=pw_sync.Page)
+
+    patchright_backend.attach_network_capture(context, page, RenderOptions(capture_network=True))
+
+    context.new_cdp_session.assert_called_once_with(page)
+    cdp.send.assert_called_once_with("Network.enable")
+    sent_methods = {c.args[0] for c in cdp.send.call_args_list}
+    assert sent_methods == {"Network.enable"}
+    forbidden = {"Runtime.enable", "Console.enable", "Page.enable", "Runtime.evaluate"}
+    assert not (forbidden & sent_methods)
+
+
+def test_attach_network_capture_registers_exactly_the_expected_handlers() -> None:
+    context = MagicMock(spec=pw_sync.BrowserContext)
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+    page = MagicMock(spec=pw_sync.Page)
+
+    patchright_backend.attach_network_capture(context, page, RenderOptions(capture_network=True))
+
+    registered = {c.args[0] for c in cdp.on.call_args_list}
+    assert registered == {
+        "Network.requestWillBeSent",
+        "Network.responseReceived",
+        "Network.loadingFinished",
+        "Network.loadingFailed",
+        "Network.eventSourceMessageReceived",
+    }
+
+
+def _attach(opts: RenderOptions | None = None) -> tuple[MagicMock, dict[str, Any]]:
+    """Wire attach_network_capture against mocks; return (cdp, handlers)."""
+    context = MagicMock(spec=pw_sync.BrowserContext)
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+    page = MagicMock(spec=pw_sync.Page)
+    capture = patchright_backend.attach_network_capture(
+        context, page, opts or RenderOptions(capture_network=True)
+    )
+    assert capture is not None
+    return capture, _cdp_handlers(cdp)
+
+
+def test_network_capture_records_request_fields() -> None:
+    capture, handlers = _attach()
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "type": "XHR",
+            "timestamp": 100.0,
+        }
+    )
+
+    assert capture.entries == [
+        {
+            "url": "https://x.test/a",
+            "method": "GET",
+            "resource_type": "XHR",
+            "status": None,
+            "error": None,
+            "start_ms": 100_000.0,
+            "duration_ms": None,
+            "sse_messages": [],
+        }
+    ]
+
+
+def test_network_capture_records_response_status() -> None:
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+
+    handlers["Network.responseReceived"]({"requestId": "r1", "response": {"status": 200}})
+
+    assert capture.entries[0]["status"] == 200
+
+
+def test_network_capture_records_duration_on_loading_finished() -> None:
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "timestamp": 100.0,
+        }
+    )
+
+    handlers["Network.loadingFinished"]({"requestId": "r1", "timestamp": 100.25})
+
+    assert capture.entries[0]["duration_ms"] == pytest.approx(250.0)
+
+
+def test_network_capture_records_failure_error_text() -> None:
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "timestamp": 100.0,
+        }
+    )
+
+    handlers["Network.loadingFailed"](
+        {"requestId": "r1", "timestamp": 100.05, "errorText": "net::ERR_CONNECTION_REFUSED"}
+    )
+
+    entry = capture.entries[0]
+    assert entry["error"] == "net::ERR_CONNECTION_REFUSED"
+    assert entry["duration_ms"] == pytest.approx(50.0)
+
+
+def test_network_capture_loading_failed_does_not_overwrite_existing_duration() -> None:
+    """loadingFinished can fire before loadingFailed (a late cancel) -- the first duration
+    recorded wins; loadingFailed still records the error either way."""
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "timestamp": 100.0,
+        }
+    )
+    handlers["Network.loadingFinished"]({"requestId": "r1", "timestamp": 100.1})
+
+    handlers["Network.loadingFailed"](
+        {"requestId": "r1", "timestamp": 100.9, "errorText": "net::ERR_ABORTED"}
+    )
+
+    entry = capture.entries[0]
+    assert entry["error"] == "net::ERR_ABORTED"
+    assert entry["duration_ms"] == pytest.approx(100.0)  # from loadingFinished, not overwritten
+
+
+def test_network_capture_loading_finished_ignored_for_unknown_request_id() -> None:
+    capture, handlers = _attach()
+
+    handlers["Network.loadingFinished"]({"requestId": "ghost", "timestamp": 1.0})
+
+    assert capture.entries == []
+
+
+def test_network_capture_loading_failed_ignored_for_unknown_request_id() -> None:
+    capture, handlers = _attach()
+
+    handlers["Network.loadingFailed"](
+        {"requestId": "ghost", "timestamp": 1.0, "errorText": "net::ERR_ABORTED"}
+    )
+
+    assert capture.entries == []
+
+
+def test_network_capture_ignores_response_for_unknown_request_id() -> None:
+    capture, handlers = _attach()
+
+    handlers["Network.responseReceived"]({"requestId": "ghost", "response": {"status": 200}})
+
+    assert capture.entries == []
+
+
+def test_network_capture_redirect_chain_records_one_entry_per_hop() -> None:
+    """#182 review bug fix: CDP fires requestWillBeSent once per hop, all under the SAME
+    requestId -- each later call carries redirectResponse describing the PREVIOUS hop (not a
+    duplicate to discard). The old dedup kept only the first hop's URL and then wrote the
+    FINAL hop's status onto it (a 302->302->200 run reported {url: "/start", status: 200},
+    and "/hop2"/"/final" never appeared). Verified against real Chromium: CDP really does
+    reuse one requestId across the whole chain, with responseReceived firing only once, for
+    the last hop.
+
+    Fix: on a requestWillBeSent carrying redirectResponse, finalize the hop currently tracked
+    for this requestId (status + duration from redirectResponse/timestamp, plus
+    redirected_to), then start a fresh entry for the new URL and track THAT as current.
+    """
+    capture, handlers = _attach()
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/start", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/hop2", "method": "GET"},
+            "timestamp": 1.1,
+            "redirectResponse": {"status": 302, "url": "https://x.test/start"},
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/final", "method": "GET"},
+            "timestamp": 1.2,
+            "redirectResponse": {"status": 302, "url": "https://x.test/hop2"},
+        }
+    )
+    handlers["Network.responseReceived"](
+        {"requestId": "r1", "response": {"status": 200, "url": "https://x.test/final"}}
+    )
+    handlers["Network.loadingFinished"]({"requestId": "r1", "timestamp": 1.3})
+
+    assert [e["url"] for e in capture.entries] == [
+        "https://x.test/start",
+        "https://x.test/hop2",
+        "https://x.test/final",
+    ]
+    assert [e["status"] for e in capture.entries] == [302, 302, 200]
+    assert capture.entries[0]["redirected_to"] == "https://x.test/hop2"
+    assert capture.entries[1]["redirected_to"] == "https://x.test/final"
+    assert "redirected_to" not in capture.entries[2]
+    # each hop's duration is computed from ITS OWN start to its own finalization
+    assert capture.entries[0]["duration_ms"] == pytest.approx(100.0)
+    assert capture.entries[1]["duration_ms"] == pytest.approx(100.0)
+    assert capture.entries[2]["duration_ms"] == pytest.approx(100.0)
+
+
+def test_network_capture_redirect_chain_counts_each_hop_against_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend._MAX_NETWORK_ENTRIES", 2)
+    capture, handlers = _attach()
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/start", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/hop2", "method": "GET"},
+            "timestamp": 1.1,
+            "redirectResponse": {"status": 302, "url": "https://x.test/start"},
+        }
+    )
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/final", "method": "GET"},
+            "timestamp": 1.2,
+            "redirectResponse": {"status": 302, "url": "https://x.test/hop2"},
+        }
+    )
+
+    assert len(capture.entries) == 2  # the 3rd hop was dropped by the cap
+    assert capture.truncated is True
+    # no current entry is tracked for the dropped hop -- a later responseReceived no-ops
+    handlers["Network.responseReceived"](
+        {"requestId": "r1", "response": {"status": 200, "url": "https://x.test/final"}}
+    )
+    assert capture.entries[1]["status"] == 302  # unaffected
+
+
+def test_network_capture_redirect_does_not_overwrite_an_already_set_duration() -> None:
+    """An unusual ordering (loadingFinished landing before the redirect's requestWillBeSent)
+    must not clobber a duration already computed."""
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/start", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.loadingFinished"]({"requestId": "r1", "timestamp": 1.05})
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/hop2", "method": "GET"},
+            "timestamp": 1.1,
+            "redirectResponse": {"status": 302, "url": "https://x.test/start"},
+        }
+    )
+
+    assert capture.entries[0]["duration_ms"] == pytest.approx(50.0)  # from loadingFinished
+
+
+def test_network_capture_ignores_repeat_request_will_be_sent_without_redirect_response() -> None:
+    """Defensive: a repeat requestWillBeSent for an in-flight hop that does NOT carry
+    redirectResponse is not expected from CDP, but must not create a duplicate entry."""
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "timestamp": 2.0,
+        }
+    )
+
+    assert len(capture.entries) == 1
+
+
+def test_finalize_network_capture_marks_still_open_entries_unfinished() -> None:
+    """#182 review gap: a request still in flight when the context closes must not stay
+    silently {status: None, error: None, duration_ms: None} forever -- finalize_network_capture
+    (called once, right after context.close(), since no further CDP events can fire) marks it."""
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "done",
+            "request": {"url": "https://x.test/done", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.responseReceived"]({"requestId": "done", "response": {"status": 200}})
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "open",
+            "request": {"url": "https://x.test/open", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+
+    patchright_backend.finalize_network_capture(capture)
+
+    done_entry = next(e for e in capture.entries if e["url"] == "https://x.test/done")
+    open_entry = next(e for e in capture.entries if e["url"] == "https://x.test/open")
+    assert done_entry["status"] == 200
+    assert done_entry["error"] is None  # untouched -- it finished normally
+    assert open_entry["status"] is None
+    assert open_entry["error"] == "unfinished at close"
+
+
+def test_finalize_network_capture_noop_for_none() -> None:
+    patchright_backend.finalize_network_capture(None)  # no raise
+
+
+def test_network_capture_nests_sse_messages_under_their_request() -> None:
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "sse1",
+            "request": {"url": "https://x.test/sse", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+
+    handlers["Network.eventSourceMessageReceived"](
+        {"requestId": "sse1", "eventName": "message", "data": "hello", "timestamp": 1.2}
+    )
+    handlers["Network.eventSourceMessageReceived"](
+        {"requestId": "sse1", "eventName": "message", "data": "world", "timestamp": 1.4}
+    )
+
+    sse = capture.entries[0]["sse_messages"]
+    assert sse == [
+        {"event": "message", "data": "hello", "timestamp_ms": pytest.approx(1200.0)},
+        {"event": "message", "data": "world", "timestamp_ms": pytest.approx(1400.0)},
+    ]
+
+
+def test_network_capture_ignores_sse_message_for_unknown_request_id() -> None:
+    capture, handlers = _attach()
+
+    handlers["Network.eventSourceMessageReceived"](
+        {"requestId": "ghost", "eventName": "message", "data": "x", "timestamp": 1.0}
+    )
+
+    assert capture.entries == []
+
+
+def test_network_capture_truncates_after_max_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend._MAX_NETWORK_ENTRIES", 2)
+    capture, handlers = _attach()
+
+    for i in range(3):
+        handlers["Network.requestWillBeSent"](
+            {
+                "requestId": f"r{i}",
+                "request": {"url": f"https://x.test/{i}", "method": "GET"},
+                "timestamp": float(i),
+            }
+        )
+
+    assert len(capture.entries) == 2
+    assert capture.truncated is True
+
+
+def test_network_capture_truncates_after_max_sse_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend._MAX_SSE_MESSAGES", 2)
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "sse1",
+            "request": {"url": "https://x.test/sse", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+
+    for i in range(3):
+        handlers["Network.eventSourceMessageReceived"](
+            {"requestId": "sse1", "eventName": "message", "data": f"m{i}", "timestamp": float(i)}
+        )
+
+    assert len(capture.entries[0]["sse_messages"]) == 2
+    assert capture.truncated is True
+
+
+def test_network_capture_truncates_long_sse_data() -> None:
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "sse1",
+            "request": {"url": "https://x.test/sse", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+
+    handlers["Network.eventSourceMessageReceived"](
+        {"requestId": "sse1", "eventName": "message", "data": "x" * 3000, "timestamp": 1.0}
+    )
+
+    data = capture.entries[0]["sse_messages"][0]["data"]
+    assert len(data.encode("utf-8")) <= 2048 + len("…(truncated)".encode())
+    assert data.endswith("…(truncated)")
+
+
+def test_network_capture_no_bodies_or_header_values_ever_read() -> None:
+    """A request/response with header values and no body field at all must not surface
+    either -- the handlers never read params["request"]["headers"] / params["response"]
+    ["headers"], so there is nothing to redact (unlike the HAR/diagnostics paths)."""
+    capture, handlers = _attach()
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {
+                "url": "https://x.test/a",
+                "method": "GET",
+                "headers": {"Authorization": "Bearer secret", "Cookie": "session=abc"},
+            },
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.responseReceived"](
+        {
+            "requestId": "r1",
+            "response": {"status": 200, "headers": {"Set-Cookie": "session=abc"}},
+        }
+    )
+
+    entry = capture.entries[0]
+    assert "headers" not in entry
+    assert "body" not in entry
+    assert "secret" not in str(entry)
+    assert "session=abc" not in str(entry)
+
+
+def test_patchright_backend_network_log_empty_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    page._test_browser.new_context.return_value.new_cdp_session = MagicMock()
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.network_log == []
+    assert resp.network_log_truncated is False
+    page._test_browser.new_context.return_value.new_cdp_session.assert_not_called()
+
+
+def test_patchright_backend_network_log_populated_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network=True),
+    )
+
+    handlers = _cdp_handlers(cdp)
+    handlers["Network.requestWillBeSent"](
+        {
+            "requestId": "r1",
+            "request": {"url": "https://x.test/a", "method": "GET"},
+            "timestamp": 1.0,
+        }
+    )
+    handlers["Network.responseReceived"]({"requestId": "r1", "response": {"status": 200}})
+
+    assert resp.network_log[0]["url"] == "https://x.test/a"
+    assert resp.network_log[0]["status"] == 200
+    assert resp.network_log_truncated is False
+    cdp.send.assert_called_once_with("Network.enable")
+
+
+def test_patchright_backend_marks_inflight_request_unfinished_at_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#182 review gap: a sub-request still open when context.close() runs (e.g. a slow
+    background XHR the page never awaited) must not stay silently unresolved forever."""
+    page, response = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+
+    def _goto_with_inflight_request(*_args: object, **_kwargs: object) -> MagicMock:
+        handlers = _cdp_handlers(cdp)
+        handlers["Network.requestWillBeSent"](
+            {
+                "requestId": "r1",
+                "request": {"url": "https://x.test/open", "method": "GET"},
+                "timestamp": 1.0,
+            }
+        )
+        return response
+
+    page.goto.side_effect = _goto_with_inflight_request
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(capture_network=True),
+    )
+
+    assert resp.network_log[0]["url"] == "https://x.test/open"
+    assert resp.network_log[0]["status"] is None
+    assert resp.network_log[0]["error"] == "unfinished at close"

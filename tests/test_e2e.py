@@ -7,7 +7,9 @@ Run via `make test_e2e` or `uv run pytest -m e2e`.
 import http.server
 import json
 import os
+import socket
 import threading
+import time
 from collections.abc import Iterator
 from urllib.parse import urlparse
 
@@ -424,3 +426,226 @@ def test_fetch_extra_http_headers_merge_with_fetch_headers(local_fixture_server)
     text = resp.body.decode()
     assert "X-Fetch-Only=from-fetch" in text
     assert "X-Render-Only=from-render-options" in text
+
+
+# --- Layer F: opt-in full network capture (#182) -- CDP Network-domain log + SSE, against
+# a LOCAL fixture (not a third-party site): ok / 404 / connection-refused / an SSE stream. ---
+
+
+def _find_closed_port() -> int:
+    """A port nothing is listening on, for a deterministic connection-refused target."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()  # closed immediately -- nothing listens here now
+    return port
+
+
+class _NetworkCaptureFixtureHandler(http.server.BaseHTTPRequestHandler):
+    """Local-only fixture for #182. ``/driver`` triggers one ok request (itself), one 404,
+    one connection-refused request, and a 3-message SSE stream that the PAGE's own script
+    closes once satisfied (no EventSource auto-reconnect noise, so the capture is
+    deterministic). ``/stealth-check`` is a separate, minimal page for the
+    navigator.webdriver comparison."""
+
+    closed_port = 0
+
+    def do_GET(self) -> None:
+        if self.path == "/ok":
+            self._html(200, "<html><body>ok</body></html>")
+        elif self.path == "/missing":
+            self._html(404, "<html><body>not found</body></html>")
+        elif self.path == "/sse":
+            self._sse()
+        elif self.path == "/start":
+            self._redirect("/hop2")
+        elif self.path == "/hop2":
+            self._redirect("/final")
+        elif self.path == "/final":
+            self._html(200, "<html><body>final</body></html>")
+        elif self.path == "/stealth-check":
+            self._html(
+                200,
+                "<html><body><script>"
+                "document.documentElement.setAttribute('data-webdriver', "
+                "String(navigator.webdriver));"
+                "document.documentElement.setAttribute("
+                "'data-has-chrome', String(!!window.chrome));"
+                "</script></body></html>",
+            )
+        elif self.path == "/driver":
+            self._html(
+                200,
+                f"""<html><body><script>
+fetch('/ok').catch(() => {{}});
+fetch('/missing').catch(() => {{}});
+fetch('http://127.0.0.1:{self.closed_port}/').catch(() => {{}});
+let n = 0;
+const es = new EventSource('/sse');
+es.onmessage = () => {{
+    n += 1;
+    if (n >= 3) {{
+        es.close();
+        document.documentElement.setAttribute('data-sse-done', 'true');
+    }}
+}};
+</script></body></html>""",
+            )
+        else:
+            self._html(404, "<html><body>not found</body></html>")
+
+    def _sse(self) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            for i in range(3):
+                self.wfile.write(f"data: msg-{i}\n\n".encode())
+                self.wfile.flush()
+                time.sleep(0.1)
+            time.sleep(0.5)  # give the client time to close() cleanly before we would
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the client closed its end once satisfied -- expected, not a failure
+
+    def _html(self, status: int, body: str) -> None:
+        data = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _redirect(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.end_headers()
+
+    def log_message(self, *args: object) -> None:  # silence stdout noise during the run
+        pass
+
+
+@pytest.fixture
+def network_capture_fixture_server() -> Iterator[str]:
+    _NetworkCaptureFixtureHandler.closed_port = _find_closed_port()
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), _NetworkCaptureFixtureHandler) as server:
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{port}"
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+def test_capture_network_does_not_flip_webdriver_or_chrome_signals(
+    network_capture_fixture_server,
+) -> None:
+    """#182's TRUE, narrow claim: turning capture_network on does not flip
+    navigator.webdriver / window.chrome specifically (read via a DOM attribute the fixture
+    page writes itself -- page.evaluate runs in an isolated world under Patchright and can't
+    read page-script globals back). These two signals are controlled by Chromium LAUNCH
+    FLAGS (--disable-blink-features=AutomationControlled, no --enable-automation), not by
+    which CDP domains are enabled -- so this test would still pass even if capture_network
+    sent Runtime.enable/Console.enable, and is NOT the guard against that. The actual guard
+    against ever sending those is test_attach_network_capture_sends_only_network_enable in
+    tests/test_patchright_backend.py, which pins the exact cdp.send call list. This e2e test
+    is a real-browser sanity check of these two specific signals only, not a general
+    detectability claim (see RenderOptions.capture_network's docstring for the UNVERIFIED
+    scope)."""
+    url = f"{network_capture_fixture_server}/stealth-check"
+
+    with render_session(url) as s_off:
+        off_webdriver = s_off.page.locator("html").get_attribute("data-webdriver")
+        off_chrome = s_off.page.locator("html").get_attribute("data-has-chrome")
+
+    with render_session(url, capture_network=True) as s_on:
+        on_webdriver = s_on.page.locator("html").get_attribute("data-webdriver")
+        on_chrome = s_on.page.locator("html").get_attribute("data-has-chrome")
+
+    assert off_webdriver == on_webdriver == "false"
+    assert off_chrome == on_chrome
+
+
+def test_capture_network_records_ok_404_connrefused_and_sse(
+    network_capture_fixture_server,
+) -> None:
+    """The main #182 capture: per-message SSE data and a connection-refused failure reason,
+    against a real browser and a local fixture -- not a third-party site."""
+    with render_session(
+        f"{network_capture_fixture_server}/driver", capture_network=True, timeout=10.0
+    ) as s:
+        s.wait_for_selector("html[data-sse-done='true']")
+
+    urls = [str(e["url"]) for e in s.network_log]
+    assert any(u.endswith("/driver") for u in urls)
+    assert any(u.endswith("/missing") for u in urls)
+    assert any(u.endswith("/sse") for u in urls)
+
+    missing_entry = next(e for e in s.network_log if str(e["url"]).endswith("/missing"))
+    assert missing_entry["status"] == 404
+
+    refused_entry = next(
+        e for e in s.network_log if "CONNECTION_REFUSED" in str(e.get("error") or "")
+    )
+    assert refused_entry["status"] is None
+
+    sse_entry = next(e for e in s.network_log if str(e["url"]).endswith("/sse"))
+    sse_messages = sse_entry["sse_messages"]
+    assert len(sse_messages) == 3
+    assert [m["data"] for m in sse_messages] == ["msg-0", "msg-1", "msg-2"]
+    assert s.network_log_truncated is False
+
+
+def test_capture_network_records_one_entry_per_redirect_hop(
+    network_capture_fixture_server,
+) -> None:
+    """#182 review bug fix, confirmed against a real browser: CDP reuses one requestId
+    across an entire 302->302->200 chain, so this must record THREE entries (one per hop,
+    each with its own URL and status, the finished hops naming the next via redirected_to)
+    -- not one entry stuck with the first hop's URL and the last hop's status."""
+    with render_session(f"{network_capture_fixture_server}/start", capture_network=True) as s:
+        pass
+
+    start = next(e for e in s.network_log if str(e["url"]).endswith("/start"))
+    hop2 = next(e for e in s.network_log if str(e["url"]).endswith("/hop2"))
+    final = next(e for e in s.network_log if str(e["url"]).endswith("/final"))
+
+    assert start["status"] == 302
+    assert str(start["redirected_to"]).endswith("/hop2")
+    assert hop2["status"] == 302
+    assert str(hop2["redirected_to"]).endswith("/final")
+    assert final["status"] == 200
+    assert "redirected_to" not in final
+
+
+def test_capture_network_coexists_with_har_route_and_network_failures(
+    tmp_path, network_capture_fixture_server
+) -> None:
+    """Stealth-safety condition: the extra CDP session must not break HAR recording,
+    page.route, or the existing page.on(...)-based capture_network_failures when all are
+    active together on the same page."""
+    har_path = tmp_path / "coexist.har"
+    routed_urls: list[str] = []
+
+    def _on_route(route: object) -> None:
+        routed_urls.append(route.request.url)  # type: ignore[attr-defined]
+        route.continue_()  # type: ignore[attr-defined]
+
+    with render_session(
+        f"{network_capture_fixture_server}/driver",
+        capture_network=True,
+        record_har_path=str(har_path),
+        timeout=10.0,
+    ) as s:
+        s.wait_for_selector("html[data-sse-done='true']")
+        s.page.route("**/ok", _on_route)
+        s.page.goto(f"{network_capture_fixture_server}/ok", wait_until="domcontentloaded")
+
+    assert routed_urls  # page.route still fires
+    assert any(str(e["url"]).endswith("/missing") for e in s.network_log)  # CDP capture intact
+    assert any(e.get("status") == 404 for e in s.network_failures)  # page.on(...) capture intact
+    assert har_path.exists()
+    har = json.loads(har_path.read_text())
+    assert len(har["log"]["entries"]) >= 1  # HAR recording intact

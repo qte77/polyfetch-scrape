@@ -2,7 +2,7 @@ import contextlib
 import json
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 from functools import partial
 from pathlib import Path
@@ -241,6 +241,7 @@ def _attempt_once(
         context.set_extra_http_headers(merged_headers)
     page = context.new_page()
     console_errors, network_failures = attach_capture(page, opts)
+    network_capture = attach_network_capture(context, page, opts)
     video = page.video if opts.record_video_dir is not None else None
     # A caller-supplied header override (set_extra_http_headers, above) wins on the wire;
     # otherwise the context's own user_agent (explicit --user-agent or a device preset) is
@@ -259,10 +260,12 @@ def _attempt_once(
                 policy,
                 console_errors,
                 network_failures,
+                network_capture,
                 request_user_agent,
             )
         finally:
             context.close()
+            finalize_network_capture(network_capture)
     except Exception:
         # A terminal status (raise_for_terminal_status) or any other error escaped _run_page.
         # The context is already closed, so Patchright has finalized the video/HAR on disk —
@@ -281,6 +284,7 @@ def _run_page(
     policy: RetryPolicy,
     console_errors: list[str],
     network_failures: list[dict[str, object]],
+    network_capture: "_NetworkCapture | None",
     request_user_agent: str | None,
 ) -> _Attempt:
     """Navigate, check status/retry conditions, run actions/waits, and build the ``_Attempt``."""
@@ -342,6 +346,10 @@ def _run_page(
             screenshots=screenshots,
             request_user_agent=request_user_agent,
             redirect_to=redirect_target(status, all_headers),
+            network_log=network_capture.entries if network_capture is not None else [],
+            network_log_truncated=network_capture.truncated
+            if network_capture is not None
+            else False,
         ),
         None,
         None,
@@ -457,6 +465,182 @@ def attach_capture(page: Any, opts: RenderOptions) -> tuple[list[str], list[dict
         page.on("requestfailed", partial(_record_request_failure, sink=network_failures))
         page.on("response", partial(_record_bad_response, sink=network_failures))
     return console_errors, network_failures
+
+
+# Bounds for RenderOptions.capture_network (#182): an untrusted page must not be able to grow
+# the capture without limit. 1000/1000 is generous for a single render/session while staying
+# far below anything that would matter for memory; 2 KB mirrors FingerprintBlock.body_excerpt.
+_MAX_NETWORK_ENTRIES = 1000
+_MAX_SSE_MESSAGES = 1000
+_SSE_DATA_MAX_BYTES = 2048
+
+
+@dataclass
+class _NetworkCapture:
+    """Mutable state shared by the CDP Network-domain handlers below.
+
+    ``entries`` is the SAME list object exposed as ``Response.network_log`` /
+    ``RenderSession.network_log`` — handlers append into it directly, so it fills live.
+    ``truncated`` flips to ``True`` once the request-count or SSE-message-count cap is hit;
+    callers still get everything captured up to that point, just not silently-incomplete data
+    with no indication a cap was hit.
+    """
+
+    entries: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
+    truncated: bool = False
+    by_request_id: dict[str, dict[str, object]] = field(
+        default_factory=dict[str, dict[str, object]], repr=False
+    )
+    sse_count: int = field(default=0, repr=False)
+
+
+def _cdp_on_request_will_be_sent(params: dict[str, Any], capture: _NetworkCapture) -> None:
+    """One entry per HOP, not per requestId: CDP reuses the SAME requestId across an entire
+    redirect chain, and a later call carries ``redirectResponse`` describing the hop that
+    just finished (verified against real Chromium: ``responseReceived`` fires only once, for
+    the FINAL hop). A naive "skip repeats for this requestId" dedup therefore keeps only the
+    first hop's URL and later has the final hop's status written onto it -- a 302->302->200
+    chain would misreport as one entry, ``{url: "/start", status: 200}``, with "/hop2" and
+    "/final" never appearing (#182 review).
+
+    So: a repeat carrying ``redirectResponse`` finalizes the hop currently tracked for this
+    requestId (status + duration from the redirect response, plus ``redirected_to`` naming
+    the next hop) before starting a fresh entry for the new URL -- each hop counts against
+    the entry cap on its own.
+    """
+    request_id = str(params["requestId"])
+    redirect_response = params.get("redirectResponse")
+    current = capture.by_request_id.get(request_id)
+    if redirect_response is not None and current is not None:
+        current["status"] = int(redirect_response["status"])
+        if current["duration_ms"] is None:
+            current["duration_ms"] = _network_duration_ms(current, float(params["timestamp"]))
+        current["redirected_to"] = str(params["request"]["url"])
+        del capture.by_request_id[request_id]  # this hop is done; a new one is tracked below
+    elif current is not None:
+        return  # a repeat without redirectResponse for an in-flight hop -- not expected; ignore
+    if len(capture.entries) >= _MAX_NETWORK_ENTRIES:
+        capture.truncated = True
+        return
+    entry: dict[str, object] = {
+        "url": str(params["request"]["url"]),
+        "method": str(params["request"]["method"]),
+        "resource_type": str(params.get("type", "Other")),
+        "status": None,
+        "error": None,
+        "start_ms": float(params["timestamp"]) * 1000,
+        "duration_ms": None,
+        "sse_messages": [],
+    }
+    capture.by_request_id[request_id] = entry
+    capture.entries.append(entry)
+
+
+def _cdp_on_response_received(params: dict[str, Any], capture: _NetworkCapture) -> None:
+    entry = capture.by_request_id.get(str(params["requestId"]))
+    if entry is not None:
+        entry["status"] = int(params["response"]["status"])
+
+
+def _network_duration_ms(entry: dict[str, object], end_timestamp: float) -> float:
+    return (end_timestamp * 1000) - cast(float, entry["start_ms"])
+
+
+def _cdp_on_loading_finished(params: dict[str, Any], capture: _NetworkCapture) -> None:
+    entry = capture.by_request_id.get(str(params["requestId"]))
+    if entry is not None and entry["duration_ms"] is None:
+        entry["duration_ms"] = _network_duration_ms(entry, float(params["timestamp"]))
+
+
+def _cdp_on_loading_failed(params: dict[str, Any], capture: _NetworkCapture) -> None:
+    entry = capture.by_request_id.get(str(params["requestId"]))
+    if entry is None:
+        return
+    entry["error"] = str(params.get("errorText") or "unknown error")
+    if entry["duration_ms"] is None:
+        entry["duration_ms"] = _network_duration_ms(entry, float(params["timestamp"]))
+
+
+def _cdp_on_event_source_message(params: dict[str, Any], capture: _NetworkCapture) -> None:
+    """SSE frames nest under their request's ``sse_messages`` — correlated by requestId."""
+    entry = capture.by_request_id.get(str(params["requestId"]))
+    if entry is None:
+        return
+    if capture.sse_count >= _MAX_SSE_MESSAGES:
+        capture.truncated = True
+        return
+    data = str(params.get("data", ""))
+    encoded = data.encode("utf-8")
+    if len(encoded) > _SSE_DATA_MAX_BYTES:
+        data = encoded[:_SSE_DATA_MAX_BYTES].decode("utf-8", errors="ignore") + "…(truncated)"
+    cast("list[dict[str, object]]", entry["sse_messages"]).append(
+        {
+            "event": str(params.get("eventName", "message")),
+            "data": data,
+            "timestamp_ms": float(params["timestamp"]) * 1000,
+        }
+    )
+    capture.sse_count += 1
+
+
+def attach_network_capture(context: Any, page: Any, opts: RenderOptions) -> _NetworkCapture | None:
+    """Opt-in CDP Network-domain capture (#182): a bounded per-request log, including SSE.
+
+    Returns ``None`` (no CDP session opened at all) when ``opts.capture_network`` is unset —
+    zero overhead, matching the other opt-in captures above.
+
+    Uses a SEPARATE CDP session (``context.new_cdp_session(page)``) that sends only
+    ``Network.enable`` — never ``Runtime.enable``, ``Console.enable``, or ``Page.enable``, the
+    specific leaks Patchright's own stealth model patches around (see the installed
+    ``patchright`` package's own README, "Patches" section). Three independent checks, each
+    guarding a different claim:
+
+    - the exact ``cdp.send`` calls are pinned by a unit test — this is what actually guards
+      against ``Runtime.enable``/``Console.enable``/``Page.enable`` ever being sent;
+    - a real-browser e2e confirms ``navigator.webdriver`` / ``window.chrome`` (read via a DOM
+      attribute a fixture page writes itself — ``page.evaluate`` runs in an isolated world
+      under Patchright and can't read page-script globals back) are unaffected by turning
+      capture on — a narrower, real-browser sanity check of those two specific signals, not a
+      substitute for the unit test above, and not a general detectability guarantee (see the
+      UNVERIFIED note below);
+    - a real-browser e2e confirms this coexists with HAR recording, ``page.route``, and
+      ``attach_capture``'s own ``page.on(...)`` listeners on the same page — both of those
+      already drive Playwright's own internal CDP session's Network domain, so this is a
+      second, independent attachment to the same domain, not a new category of signal.
+
+    Detectability by anti-automation fingerprinting scripts beyond the two signals checked
+    above is UNVERIFIED — no broader detection-suite probe (e.g. a full Brotector run) has
+    been done.
+    """
+    if not opts.capture_network:
+        return None
+    capture = _NetworkCapture()
+    cdp = context.new_cdp_session(page)
+    cdp.send("Network.enable")
+    cdp.on("Network.requestWillBeSent", partial(_cdp_on_request_will_be_sent, capture=capture))
+    cdp.on("Network.responseReceived", partial(_cdp_on_response_received, capture=capture))
+    cdp.on("Network.loadingFinished", partial(_cdp_on_loading_finished, capture=capture))
+    cdp.on("Network.loadingFailed", partial(_cdp_on_loading_failed, capture=capture))
+    cdp.on(
+        "Network.eventSourceMessageReceived",
+        partial(_cdp_on_event_source_message, capture=capture),
+    )
+    return capture
+
+
+def finalize_network_capture(capture: "_NetworkCapture | None") -> None:
+    """Mark any entry still open when the context closed (#182 review): no ``responseReceived``
+    or ``loadingFailed`` ever arrived for it, because the context closed mid-request. Call
+    once, right after ``context.close()`` — no further CDP events can fire after that, so this
+    is the correct, final point to resolve what's left rather than leaving it silently
+    ``{status: None, error: None, duration_ms: None}`` forever. No-op for ``None`` (capture
+    off) and for any entry that already finished normally.
+    """
+    if capture is None:
+        return
+    for entry in capture.entries:
+        if entry["status"] is None and entry["error"] is None:
+            entry["error"] = "unfinished at close"
 
 
 def _apply_actions(page: Any, actions: tuple[RenderAction, ...], timeout_ms: int) -> None:
