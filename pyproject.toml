@@ -1,7 +1,7 @@
 [project]
 name = "polyfetch-scrape"
 version = "0.10.0"
-description = "HTTP scraping toolkit: one typed fetch() over a reactive httpx → curl_cffi → Patchright fallback chain — TLS impersonation, JS rendering, typed error taxonomy"
+description = "HTTP scraping toolkit: one typed fetch() over a reactive httpx → curl_cffi → Patchright fallback chain — TLS/JA3 impersonation, JS rendering, interactive browser sessions with DevTools capture (console, network, HAR, screenshots, video), structured-source discovery, and a typed error taxonomy behind a single Response."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
