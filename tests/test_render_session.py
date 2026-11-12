@@ -416,3 +416,57 @@ def test_enter_raises_fetcherror_for_invalid_json_storage_state_file(
         pass
 
     sync_playwright_mock.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# Opt-in full network capture (#182): CDP Network-domain log, incl. SSE
+# --------------------------------------------------------------------------- #
+
+
+def test_network_log_empty_and_no_cdp_session_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+
+    with render_session("https://example.com") as s:
+        pass
+
+    assert s.network_log == []
+    assert s.network_log_truncated is False
+    context.new_cdp_session.assert_not_called()
+
+
+def test_capture_network_opens_a_cdp_session_sending_only_network_enable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+
+    with render_session("https://example.com", capture_network=True) as s:
+        assert s.network_log == []  # live list, same object the handlers would fill
+
+    sent_methods = {c.args[0] for c in cdp.send.call_args_list}
+    assert sent_methods == {"Network.enable"}
+
+
+def test_capture_network_populates_network_log_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    _page, context, _browser, _pw = _make_session_chain(monkeypatch)
+    cdp = MagicMock(spec=pw_sync.CDPSession)
+    context.new_cdp_session.return_value = cdp
+
+    with render_session("https://example.com", capture_network=True) as s:
+        handlers = {c.args[0]: c.args[1] for c in cdp.on.call_args_list}
+        handlers["Network.requestWillBeSent"](
+            {
+                "requestId": "r1",
+                "request": {"url": "https://x.test/a", "method": "GET"},
+                "timestamp": 1.0,
+            }
+        )
+        handlers["Network.eventSourceMessageReceived"](
+            {"requestId": "r1", "eventName": "message", "data": "hi", "timestamp": 1.1}
+        )
+        # s.network_log is the SAME list the handler appends to -- visible mid-session.
+        assert s.network_log[0]["url"] == "https://x.test/a"
+        assert s.network_log[0]["sse_messages"][0]["data"] == "hi"
+
+    assert s.network_log_truncated is False
