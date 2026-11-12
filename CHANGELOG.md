@@ -13,6 +13,30 @@ Per-PR changes are staged as [scriv](https://scriv.readthedocs.io/) fragments in
 
 <!-- scriv-insert-here -->
 
+## [0.11.0] - 2026-11-12
+
+### Added
+
+- `docs/scripting.md`: "Embedded video: find, download, inspect" recipe — fetch a page on the
+  patchright tier, extract candidate media URLs from the DOM (`<video src>`/`<source>`,
+  `og:video`, a `data-*` JSON-renditions attribute, HLS/DASH manifests), download with
+  `--show-body`, then get `ffprobe` metadata and capped/scaled `ffmpeg` frames. `ffmpeg`/`ffprobe`
+  stay external and optional, not a dependency. `USING.md` links to it.
+
+- Authenticated sessions (#200, #178): `RenderOptions.storage_state` / `cookies` / `extra_http_headers` resume a session on both `fetch(render=...)` and `render_session()`. `RenderSession.save_storage_state(path)` persists cookies + localStorage while the session is still live (creates parent directories; raises `FetchError` if called after the session has closed). `extra_http_headers` merges with `fetch(headers=...)` into a single `set_extra_http_headers()` call rather than one silently replacing the other. A `storage_state` path that is missing, unreadable, or not valid JSON raises `FetchError` naming it, checked before any browser work, instead of a raw `FileNotFoundError`/`json.JSONDecodeError`. `storage_state` and `cookies` compose (a different-identity cookie is additive; a same-identity one overwrites the `storage_state` value). CLI `fetch --storage-state FILE` mirrors the Python API for out-of-process consumers. Storage-state files hold live session credentials — handle them like the existing HAR/video outputs; see the new security notes in USING.md and docs/api-reference.md, and the cookbook recipe in docs/scripting.md.
+
+- Opt-in full network log + SSE capture (#182): `RenderOptions.capture_network` / `render_session(capture_network=...)` record a bounded per-request log (url, method, resource type, status, failure reason, start/duration timing) onto `Response.network_log` / `RenderSession.network_log`, including `EventSource` (SSE) message frames nested under their request — the gap `capture_network_failures` doesn't cover. A redirect chain records one entry per hop (CDP reuses one requestId across the whole chain), each finished hop naming the next via `redirected_to`; a request still open when the context closes is marked `error: "unfinished at close"` instead of staying silently unresolved. Uses a separate CDP session sending only `Network.enable`, never `Runtime.enable`/`Console.enable`/`Page.enable` (the leaks Patchright's own stealth model patches around) — guarded by a unit test pinning the exact `cdp.send` calls; separately, a real-browser check confirms `navigator.webdriver`/`window.chrome` are unaffected (a narrower sanity check of those two signals, not a general detectability guarantee — see the UNVERIFIED note in the docs), and another confirms this coexists with HAR recording, `page.route`, and the existing `capture_network_failures`. Capped at 1000 request entries (each redirect hop counts on its own) and 1000 SSE messages per session (`network_log_truncated` flips once a cap is hit); SSE `data` is truncated to 2 KB; never records request/response bodies or header values. Off by default. Python-API-only for now — no existing CLI flag shape fits a structured per-request log. Documented in USING.md, docs/api-reference.md, docs/architecture.md and a new `docs/scripting.md` recipe.
+
+### Changed
+
+- README consolidated: it now links to USING.md, docs/architecture.md and docs/api-reference.md instead of restating them (shorter CLI list, "Two layers" reduced to its conclusion), and restores the note that `contrib/` extras are unsupported. The Python and ruff badges are removed; the coverage badge now links to the Test workflow that enforces the 90 % minimum.
+
+- patchright 1.63.0 → 1.64.4, which bundles a new Chromium build (revision 1248). Run `polyfetch doctor --fix` (or `make doctor`) after updating so the browser tier finds its matching Chromium; this matters most when borrowing polyfetch's venv. All Patchright e2e tests passed on the new build, including the headed launch under `xvfb-run`. The same update moves pytest to 9.2.0, ruff, typer, complexipy and curl-cffi, plus anyio to 4.16.0, which pytest 9.2 needs.
+
+### Fixed
+
+- Docs claims corrected after a falsification pass: retries cover `429` and `500`/`502`/`503`/`504` (not every 5xx); only `Response`, `RenderOptions`, `RenderAction` and `Screenshot` are frozen+slots dataclasses (`RetryPolicy` is frozen only, `Throttle` is stateful); the WebFetch motivation no longer cites sites a re-probe showed unblocked, and states that the remaining example blocks on client fingerprint, not UA.
+
 ## [0.10.0] - 2026-11-09
 
 ### Added
