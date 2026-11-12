@@ -28,6 +28,7 @@ from polyfetch_scrape._backends.patchright_backend import (
     attach_capture,
     capture_screenshot,
     context_kwargs,
+    validate_storage_state,
 )
 from polyfetch_scrape._platform import ensure_browser_tier_supported
 from polyfetch_scrape.errors import FetchError
@@ -105,6 +106,7 @@ class RenderSession:
     def __enter__(self) -> "RenderSession":
         # Same platform gate as the fetch tier: no musllinux patchright wheel (#197).
         ensure_browser_tier_supported()
+        validate_storage_state(self._opts.storage_state)
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(headless=self._opts.headless)
         self._context = self._browser.new_context(**context_kwargs(self._pw, self._opts))

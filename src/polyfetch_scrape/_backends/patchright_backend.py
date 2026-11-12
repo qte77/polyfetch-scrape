@@ -1,4 +1,5 @@
 import contextlib
+import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -56,6 +57,7 @@ def attempt(
         raise FetchError(f"patchright backend supports GET only, not {method}")
 
     opts = render if render is not None else RenderOptions()
+    validate_storage_state(opts.storage_state)
     last = _Attempt(None, None, None)
     timeout_ms = int(timeout * 1000)
 
@@ -154,6 +156,30 @@ def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
     if opts.storage_state is not None:
         kwargs["storage_state"] = opts.storage_state
     return kwargs
+
+
+def validate_storage_state(storage_state: str | Path | Mapping[str, Any] | None) -> None:
+    """Fail fast with a named ``FetchError`` before any browser work.
+
+    Patchright's own Python layer reads a ``storage_state`` *path* and ``json.loads()`` s it
+    inside ``new_context()``, deep inside the attempt loop: a missing file raises a raw
+    ``FileNotFoundError``, bad JSON a raw ``json.JSONDecodeError`` -- neither caught
+    anywhere upstream, so either escapes ``fetch()`` / ``render_session()`` as an unhandled
+    exception (a Rich traceback from the CLI) instead of the library's own typed error.
+    Checking here, before ``sync_playwright()`` even starts, means a bad path costs nothing
+    (no driver, no browser). A ``Mapping`` is already in memory, so it needs no file check.
+    """
+    if storage_state is None or isinstance(storage_state, Mapping):
+        return
+    path = Path(storage_state)
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        raise FetchError(f"storage_state file not found or unreadable: {path}") from exc
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise FetchError(f"storage_state file is not valid JSON: {path}: {exc}") from exc
 
 
 def apply_cookies(context: Any, opts: RenderOptions) -> None:

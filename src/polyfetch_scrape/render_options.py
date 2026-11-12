@@ -96,12 +96,18 @@ class RenderOptions:
       applied at ``new_context()`` time so the session is authenticated from the **first**
       navigation. Capture one with ``RenderSession.save_storage_state(path)``, then reuse it
       non-interactively. **Security:** a storage-state file holds live session credentials —
-      handle it like the HAR/video outputs above, never commit or share one uninspected.
+      handle it like the HAR/video outputs above, never commit or share one uninspected. A
+      path that doesn't exist, can't be read, or isn't valid JSON raises ``FetchError`` naming
+      it, checked **before** any browser work (Patchright's own loader raises a raw
+      ``FileNotFoundError``/``json.JSONDecodeError`` for this, uncaught, deep inside
+      ``new_context()`` — the eager check here replaces that).
     - ``cookies``: cookie dicts (Playwright's ``add_cookies`` shape, e.g.
       ``{"name": ..., "value": ..., "url": ...}``) added to the context **before** the first
       navigation — a targeted alternative to a full ``storage_state`` when all that's on hand
-      is a session token. Sessions are per-origin: a cookie or storage state captured for one
-      origin does not authenticate a different subdomain.
+      is a session token. Composes with ``storage_state``: a cookie with a different
+      name/domain/path is additive alongside it, one with the same identity overwrites it
+      (Playwright's own ``add_cookies`` upsert semantics). Sessions are per-origin: a cookie or
+      storage state captured for one origin does not authenticate a different subdomain.
     - ``extra_http_headers``: headers sent with every request on this context (e.g. a bearer
       ``Authorization`` token), mirroring ``fetch(headers=...)`` for the browser tier. When
       ``fetch(headers=...)`` is *also* given, the two are merged — ``fetch(headers=...)`` wins
