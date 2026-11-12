@@ -27,7 +27,7 @@ Don't re-map the codebase.
 1. **One branch per unit** (`docs/using-contract` [USING.md/#41], `ci/test-workflow` [#98], `feat/tier3-actions` [#71], `feat/cli-render-flags` [#94], `feat/cli-structured-errors` [#101]); topical commits by concern.
 2. **Strict TDD** for #71 (model behavior → red → green); #98 is CI/config (no unit tests, but `make ci`
    must run green locally). Assume strict lint + typing + security always.
-3. `make validate` green **before** pushing. `gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN`.
+3. `make validate` green **before** pushing. `gh` needs an authenticated session with repo scope.
 4. Open a PR, then **squash-merge ONLY if all CI checks pass — never `--admin` / never bypass.**
 5. `--delete-branch` on merge; `git fetch --prune`; keep `main` the only local branch.
 6. Before "done": update `CHANGELOG.md [Unreleased]`, README + `USING.md` (#71/#94/#101 all touch the

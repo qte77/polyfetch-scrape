@@ -52,7 +52,7 @@ cache is a **non-goal** (skip).
 
 Two branches, two squash PRs; PR A (non-breaking) first, then PR B (breaking). TDD red→green;
 `make validate` green per PR; CI green; squash-merge; delete branches. After PR B, 0.3.x is complete
-→ ready for the **v0.4.0 release** (separate step). gh calls need `env -u GH_TOKEN -u GITHUB_TOKEN`.
+→ ready for the **v0.4.0 release** (separate step). gh calls need an authenticated session with repo scope.
 
 ## Documentation coverage
 

@@ -15,8 +15,8 @@ batch, one CI-gated PR per unit: **#84 → #85 → (#39+#36) → #55.** Each is 
 
 **Repo facts:** src layout `src/polyfetch_scrape/`; make-driven (never bare `pip`/`pytest`/`ruff`/`pyright`);
 pyright strict with `include=["src"]` (**tests are NOT type-checked**); complexipy threshold 15; coverage
-≥ 90; e2e skipped by default (`-m 'not e2e'` in `pyproject.toml`). `gh` needs `env -u GH_TOKEN -u
-GITHUB_TOKEN`. **CI is live:** `make ci` = check-only `ruff format --check .` + `ruff check .` +
+≥ 90; e2e skipped by default (`-m 'not e2e'` in `pyproject.toml`). `gh` needs an authenticated
+session with repo scope. **CI is live:** `make ci` = check-only `ruff format --check .` + `ruff check .` +
 `pyright src` + `complexipy -q .` + `pytest --cov` (the non-mutating counterpart of `make validate`), run by
 `.github/workflows/test.yml`. Local doc lint: `markdownlint-cli2 <files>` (auto-uses in-repo
 `.markdownlint.jsonc`) + `lychee --config lychee.toml <files>`.
@@ -97,6 +97,6 @@ subjective, so sequenced **last**. `Closes #55`.
 ## Git / sequencing
 
 One branch/PR per unit; topical commits by concern; `make validate` **and** `make ci` green before push
-(`gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN`); open PR (`Closes #NN`); **squash-merge only if all CI checks
+(with an authenticated `gh` session); open PR (`Closes #NN`); **squash-merge only if all CI checks
 pass — never `--admin`**; `--delete-branch` + `git fetch --prune`; keep `main` the only local branch; update
 `CHANGELOG.md [Unreleased]` and keep `USING.md` in lockstep for CLI-surface changes (#85).

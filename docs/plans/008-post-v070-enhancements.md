@@ -162,7 +162,7 @@ repo-level one; if so, set allowed-actions at the org level (stable + DRY). API-
 
 `make validate` green each PR (pyright-strict, complexipy ≤15, cov ≥90, `filterwarnings=["error"]`);
 CI green (ci + CodeQL + `lint/*` reusable workflow — **if `lint/markdown` startup-fails, re-apply the
-Actions allow-list**, see the one-liner in the handoff). `env -u GH_TOKEN -u GITHUB_TOKEN gh …`;
+Actions allow-list**, see the handoff). `gh` needs an authenticated session with repo scope;
 squash-merge on green; **main requires signed commits** (your OAuth commits auto-sign; the manual
 re-sign dance is only needed for the bot-authored bump branch). `docs/plans/` + `docs/handoffs/` are
 **markdownlint-linted** — author these lint-clean (blank lines around headings/tables/fences). For the

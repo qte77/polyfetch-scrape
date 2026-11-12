@@ -18,7 +18,7 @@ additive, CI-testable; the capture it adds is reused by the future #117 session.
 
 **Repo facts:** src layout `src/polyfetch_scrape/`; make-driven (never bare `pip`/`pytest`/`ruff`/`pyright`);
 pyright **strict**, `include=["src"]` (**tests are NOT type-checked**); complexipy threshold 15; coverage
-≥ 90; e2e skipped by default. `gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN`. `make ci` = check-only
+≥ 90; e2e skipped by default. `gh` needs an authenticated session with repo scope. `make ci` = check-only
 `ruff format --check` + `ruff check` + `pyright src` + `complexipy -q .` + `pytest --cov`.
 
 | File / anchor | What's there / what to do |
