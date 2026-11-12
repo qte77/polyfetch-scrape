@@ -109,7 +109,7 @@ with render_session(url) as s:
 
 `fetch` **patchright-tier launch flag:** `--headed` (launch Chromium headed instead of headless; default is headless). A headed launch clears some anti-bot challenges a headless launch never does (#190) — on a display-less host (e.g. CI) run it under `xvfb-run -a` to stay unattended.
 
-`fetch` **patchright-tier authenticated-session flag:** `--storage-state FILE` (resume a session from a Playwright storage-state JSON file — cookies + localStorage — e.g. one saved via `RenderSession.save_storage_state()`; see the recipe in [`docs/scripting.md`](docs/scripting.md)). `cookies=` and `extra_http_headers=` (merged with any other explicit `headers=`) are Python-API-only for now — no existing CLI flag shape fits a multi-value cookie list or a repeatable header flag, so they were not added here (#200).
+`fetch` **patchright-tier authenticated-session flag:** `--storage-state FILE` (resume a session from a Playwright storage-state JSON file — cookies + localStorage — e.g. one saved via `RenderSession.save_storage_state()`; see the recipe in [`docs/scripting.md`](docs/scripting.md)). A `FILE` that doesn't exist, can't be read, or isn't valid JSON reports the normal `FetchError` text/`--json` error shape below (exit `1`), checked before any browser work — not a raw traceback. `cookies=` and `extra_http_headers=` (merged with any other explicit `headers=`) are Python-API-only for now — no existing CLI flag shape fits a multi-value cookie list or a repeatable header flag, so they were not added here (#200).
 
 > **Security — HAR and storage-state files contain credentials.** A HAR records every
 > request/response header, including `Cookie` and `Authorization`; a storage-state file holds

@@ -104,12 +104,18 @@ RenderOptions(
 #     render_session apply these the same way ---
 # storage_state=<path|dict> → Playwright storage state (cookies + localStorage); the context
 #     is authenticated from the FIRST navigation. Capture one with
-#     RenderSession.save_storage_state(path) and reuse it non-interactively.
+#     RenderSession.save_storage_state(path) and reuse it non-interactively. A path that
+#     doesn't exist, can't be read, or isn't valid JSON raises FetchError naming it, checked
+#     before any browser work -- not the raw FileNotFoundError/json.JSONDecodeError Patchright's
+#     own loader would otherwise raise, uncaught, deep inside new_context().
 #     SECURITY: a storage-state file holds live session credentials — handle it like the
 #     HAR/video outputs above, never commit or share one uninspected.
 # cookies=({"name":..., "value":..., "url":...}, ...) → cookie dicts added to the context
 #     BEFORE the first navigation (Playwright's add_cookies shape) — a targeted alternative
-#     to storage_state when all that's on hand is a session token. Sessions are per-origin.
+#     to storage_state when all that's on hand is a session token. Composes with
+#     storage_state: a different-identity cookie is additive, a same-identity one
+#     (name/domain/path) overwrites the storage_state value (add_cookies' own upsert
+#     semantics). Sessions are per-origin.
 # extra_http_headers={"Authorization": "Bearer ..."} → sent with every request on this
 #     context, mirroring fetch(headers=...) for the browser tier. When fetch(headers=...) is
 #     ALSO given, the two are merged (fetch(headers=...) wins per key) rather than one
@@ -152,7 +158,8 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
 # auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
 #   on an exception inside the block → an "exception" screenshot is captured first;
 #   s.video_path / s.har_path are set once the context closes, when requested.
-# a navigation timeout raises FetchError.
+# a navigation timeout raises FetchError; so does a storage_state path that doesn't exist,
+#   can't be read, or isn't valid JSON — checked before the browser even launches.
 ```
 
 `device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content`/`headless`/`storage_state`/`cookies`/`extra_http_headers` mirror the same-named `RenderOptions` fields above — set at launch/`new_context()` time, same emulation/video/HAR/launch/session semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play. A `storage_state` file (passed in, or written by `save_storage_state`) holds the same kind of live session credentials — handle it identically.
