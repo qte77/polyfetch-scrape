@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -1388,3 +1389,105 @@ def test_patchright_backend_applies_cookies_before_new_page(
     )
 
     assert order == ["add_cookies", "new_page"]
+
+
+# --------------------------------------------------------------------------- #
+# storage_state validation (#200 review fix): a bad path/JSON must raise a
+# named FetchError before any browser work, not a raw FileNotFoundError /
+# json.JSONDecodeError escaping from Patchright's own new_context() internals.
+# --------------------------------------------------------------------------- #
+
+
+def test_validate_storage_state_none_is_noop() -> None:
+    patchright_backend.validate_storage_state(None)
+
+
+def test_validate_storage_state_mapping_is_noop_no_file_check() -> None:
+    patchright_backend.validate_storage_state({"cookies": [], "origins": []})
+
+
+def test_validate_storage_state_missing_file_raises_fetcherror(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist.json"
+
+    with pytest.raises(FetchError, match=re.escape(str(missing))):
+        patchright_backend.validate_storage_state(str(missing))
+
+
+def test_validate_storage_state_invalid_json_raises_fetcherror(tmp_path: Path) -> None:
+    bad = tmp_path / "bad_state.json"
+    bad.write_text("{not valid json")
+
+    with pytest.raises(FetchError, match="not valid JSON"):
+        patchright_backend.validate_storage_state(str(bad))
+
+
+def test_validate_storage_state_valid_file_passes(tmp_path: Path) -> None:
+    good = tmp_path / "good_state.json"
+    good.write_text('{"cookies": [], "origins": []}')
+
+    patchright_backend.validate_storage_state(str(good))  # no raise
+
+
+def test_attempt_raises_fetcherror_for_missing_storage_state_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bug: a bad path must not escape as a raw FileNotFoundError, and must not even
+    start the Patchright driver (sync_playwright is never called)."""
+    sync_playwright_mock = MagicMock()
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.patchright_backend.sync_playwright", sync_playwright_mock
+    )
+    missing = tmp_path / "does-not-exist.json"
+
+    with pytest.raises(FetchError, match=re.escape(str(missing))):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            render=RenderOptions(storage_state=str(missing)),
+        )
+
+    sync_playwright_mock.assert_not_called()
+
+
+def test_attempt_raises_fetcherror_for_invalid_json_storage_state_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sync_playwright_mock = MagicMock()
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.patchright_backend.sync_playwright", sync_playwright_mock
+    )
+    bad_state = tmp_path / "bad_state.json"
+    bad_state.write_text("{not valid json")
+
+    with pytest.raises(FetchError, match="not valid JSON"):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            render=RenderOptions(storage_state=str(bad_state)),
+        )
+
+    sync_playwright_mock.assert_not_called()
+
+
+def test_attempt_mapping_storage_state_skips_file_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Mapping is already in memory -- no file check, no behavior change."""
+    _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(storage_state={"cookies": [], "origins": []}),
+    )
+
+    assert resp.status == 200

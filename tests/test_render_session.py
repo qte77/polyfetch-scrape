@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -380,3 +381,38 @@ def test_save_storage_state_after_exit_raises_fetcherror(
     with pytest.raises(FetchError, match="save_storage_state"):
         s.save_storage_state(tmp_path / "state.json")
     context.storage_state.assert_not_called()
+
+
+def test_enter_raises_fetcherror_for_missing_storage_state_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """#200 review fix: a bad storage_state path must not escape as a raw FileNotFoundError,
+    and must not even start the Patchright driver."""
+    sync_playwright_mock = MagicMock()
+    monkeypatch.setattr(_RS_MOD, "sync_playwright", sync_playwright_mock)
+    missing = tmp_path / "does-not-exist.json"
+
+    with (
+        pytest.raises(FetchError, match=re.escape(str(missing))),
+        render_session("https://example.com", storage_state=str(missing)),
+    ):
+        pass
+
+    sync_playwright_mock.assert_not_called()
+
+
+def test_enter_raises_fetcherror_for_invalid_json_storage_state_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sync_playwright_mock = MagicMock()
+    monkeypatch.setattr(_RS_MOD, "sync_playwright", sync_playwright_mock)
+    bad_state = tmp_path / "bad_state.json"
+    bad_state.write_text("{not valid json")
+
+    with (
+        pytest.raises(FetchError, match="not valid JSON"),
+        render_session("https://example.com", storage_state=str(bad_state)),
+    ):
+        pass
+
+    sync_playwright_mock.assert_not_called()

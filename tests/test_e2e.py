@@ -375,6 +375,43 @@ def test_render_session_cookies_seed_a_direct_session(local_fixture_server) -> N
     assert "cookie:session=direct456" in content
 
 
+def test_fetch_storage_state_save_resume_round_trip(tmp_path, local_fixture_server) -> None:
+    """#200: the one-shot fetch(render=RenderOptions(storage_state=...)) entry point also
+    resumes a saved session -- render_session() covers the save side above; this covers the
+    OTHER consumer of a saved storage_state (fetch's single-shot render path)."""
+    state_path = tmp_path / "state.json"
+    with render_session(f"{local_fixture_server}/set-cookie") as s:
+        s.save_storage_state(state_path)
+    assert state_path.exists()
+
+    resp = fetch(
+        f"{local_fixture_server}/echo",
+        tier="patchright",
+        render=RenderOptions(storage_state=str(state_path)),
+    )
+    assert "cookie:session=abc123" in resp.body.decode()
+
+
+def test_render_session_storage_state_and_cookies_compose(tmp_path, local_fixture_server) -> None:
+    """#200: a storage_state base PLUS an explicit extra cookie -- both reach the server.
+    new_context(storage_state=...) seeds the context first; apply_cookies()'s add_cookies()
+    call runs after, before the first navigation -- a different-name cookie is additive,
+    not a replacement (Playwright's add_cookies upserts by name/domain/path)."""
+    state_path = tmp_path / "state.json"
+    with render_session(f"{local_fixture_server}/set-cookie") as s:
+        s.save_storage_state(state_path)
+
+    with render_session(
+        f"{local_fixture_server}/echo",
+        storage_state=str(state_path),
+        cookies=({"name": "extra", "value": "xyz789", "url": local_fixture_server},),
+    ) as s2:
+        content = s2.page.content()
+
+    assert "session=abc123" in content  # from storage_state
+    assert "extra=xyz789" in content  # from cookies=, additive alongside it
+
+
 def test_fetch_extra_http_headers_merge_with_fetch_headers(local_fixture_server) -> None:
     """#200: RenderOptions.extra_http_headers merges with fetch(headers=...) -- BOTH reach
     the wire, not just the fetch-level one (the clobbering bug this PR fixes)."""
