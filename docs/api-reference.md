@@ -23,7 +23,7 @@ A single call runs the three-tier fallback chain (or the pinned `tier`) and retu
 
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
-CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE] [--headed]` — the patchright-tier emulation/video/HAR/launch flags (`--headed` launches Chromium headed instead of headless; default headless — clears some anti-bot challenges a headless launch never does, #190); `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested, and `request_user_agent` (the UA actually sent, when cheaply knowable — on `fetch` and every `bulk` line; #198). `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. Full flag list: [USING.md](../USING.md).
+CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE] [--headed] [--storage-state FILE]` — the patchright-tier emulation/video/HAR/launch/session flags (`--headed` launches Chromium headed instead of headless; default headless — clears some anti-bot challenges a headless launch never does, #190; `--storage-state FILE` resumes a session from a saved Playwright storage-state JSON file, #200); `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested, and `request_user_agent` (the UA actually sent, when cheaply knowable — on `fetch` and every `bulk` line; #198). `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. `cookies=`/`extra_http_headers=` are Python-API-only (`render_session`/`RenderOptions`) — no CLI flag shape fits a cookie list or a repeatable header yet. Full flag list: [USING.md](../USING.md).
 
 ## Throttle (optional per-host rate limit)
 
@@ -61,6 +61,9 @@ RenderOptions(
     record_har_mode="minimal",
     record_har_content="omit",
     headless=True,
+    storage_state=None,
+    cookies=(),
+    extra_http_headers=None,
 )
 # patchright tier only; screenshot="viewport"|"full_page"|"<css-selector>" → Response.screenshot (PNG bytes)
 # actions=(RenderAction(...), ...) run in order BEFORE waits/capture (drive → settle → capture)
@@ -93,10 +96,27 @@ RenderOptions(
 #     Defaults: "minimal" mode, "omit" content (no response bodies).
 #     SECURITY: a HAR records every request/response header, including Cookie and
 #     Authorization — treat it as a credentials-bearing artifact once an authenticated
-#     session is in play (#200/#178), and never commit or share one uninspected.
+#     session is in play, and never commit or share one uninspected.
 # headless=True|False — launch Chromium headless (default) or headed. A headed launch is
 #     heavier but clears some anti-bot challenges a headless launch never does (#190); on a
 #     display-less host (e.g. CI) run it under `xvfb-run -a` to stay unattended.
+# --- authenticated sessions (#200): set at new_context() time, both fetch() and
+#     render_session apply these the same way ---
+# storage_state=<path|dict> → Playwright storage state (cookies + localStorage); the context
+#     is authenticated from the FIRST navigation. Capture one with
+#     RenderSession.save_storage_state(path) and reuse it non-interactively.
+#     SECURITY: a storage-state file holds live session credentials — handle it like the
+#     HAR/video outputs above, never commit or share one uninspected.
+# cookies=({"name":..., "value":..., "url":...}, ...) → cookie dicts added to the context
+#     BEFORE the first navigation (Playwright's add_cookies shape) — a targeted alternative
+#     to storage_state when all that's on hand is a session token. Sessions are per-origin.
+# extra_http_headers={"Authorization": "Bearer ..."} → sent with every request on this
+#     context, mirroring fetch(headers=...) for the browser tier. When fetch(headers=...) is
+#     ALSO given, the two are merged (fetch(headers=...) wins per key) rather than one
+#     silently replacing the other — Patchright's set_extra_http_headers() replaces the whole
+#     header set on every call, so this is sent in exactly one call per context. Sent to
+#     EVERY origin the page contacts — an Authorization bearer here can leak to third-party
+#     CDNs/analytics the page loads.
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
 # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -119,20 +139,25 @@ with render_session(url, *, wait_until="domcontentloaded", timeout=30.0,
                      device=None, viewport=None, color_scheme=None, user_agent=None,
                      locale=None, record_video_dir=None, record_video_size=None,
                      record_har_path=None, record_har_mode="minimal",
-                     record_har_content="omit", headless=True) as s:
+                     record_har_content="omit", headless=True, storage_state=None,
+                     cookies=(), extra_http_headers=None) as s:
     s.click(sel); s.click_text(text); s.fill(sel, value); s.submit()   # drive
     s.wait_for_selector(sel); s.wait_for_function(js); s.wait_ms(ms)   # settle
     s.shot(name)     # viewport PNG bytes → s.screenshots[name] (also returned)
     s.page           # the managed Patchright Page (escape hatch for structural reads)
     s.video_path     # Path to the recorded .webm once set (only after the `with` block exits)
     s.har_path       # Path to the recorded HAR once set (only after the `with` block exits)
+    s.save_storage_state(path)  # persist cookies+localStorage to path (parent dirs created);
+                                 # must be called INSIDE this block — FetchError afterwards
 # auto on exit: teardown; s.console_errors / s.network_failures collected throughout;
 #   on an exception inside the block → an "exception" screenshot is captured first;
 #   s.video_path / s.har_path are set once the context closes, when requested.
 # a navigation timeout raises FetchError.
 ```
 
-`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content`/`headless` mirror the same-named `RenderOptions` fields above — set at launch/`new_context()` time, same emulation/video/HAR/launch semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play.
+`device`/`viewport`/`color_scheme`/`user_agent`/`locale`/`record_video_dir`/`record_video_size`/`record_har_path`/`record_har_mode`/`record_har_content`/`headless`/`storage_state`/`cookies`/`extra_http_headers` mirror the same-named `RenderOptions` fields above — set at launch/`new_context()` time, same emulation/video/HAR/launch/session semantics. `viewport` and `record_video_size` are plain `(width, height)` pixel tuples (e.g. `(1280, 720)`), **not** a `RenderOptions`/dict — passing an `options=` kwarg raises `TypeError`. `submit()` presses Enter on the focused element. **Caveat:** `s.console_errors` / `s.network_failures` reflect only *this* process's network — same runner-network caveat as `Response` below. **Security:** a HAR records every request/response header, including `Cookie` and `Authorization` — treat `s.har_path`'s file as a credentials-bearing artifact once an authenticated session is in play. A `storage_state` file (passed in, or written by `save_storage_state`) holds the same kind of live session credentials — handle it identically.
+
+`save_storage_state(path)` persists the session's current cookies + localStorage to `path`, creating the parent directory first (Patchright does **not** create it for a storage-state path the way it does for `screenshot`/`pdf`/`video`). Must be called **inside** the `with` block: the context — and its storage — is gone once it exits, and a call after exit raises `FetchError` instead of a raw driver error against the already-closed context (#200; mirrors the #199 video-path-after-close ordering bug, in reverse).
 
 `timeout` (seconds, default `30.0`) applies to both the `RenderSession` convenience methods above **and** raw calls on `s.page` (`page.set_default_timeout` / `set_default_navigation_timeout` are set right after the page is created) — so e.g. `s.page.locator(sel).click()` honors the same budget instead of Playwright's own 30000ms default.
 
