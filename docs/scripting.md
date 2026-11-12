@@ -204,6 +204,121 @@ trace (e.g. `navigationStart`), never against wall-clock time.
   needs a dedicated fingerprinting test page, out of scope for this spike's benign-targets-only
   constraint, and stays **UNVERIFIED**.
 
+## Embedded video: find, download, inspect
+
+A page's own clip is not the same thing as `--video-out`'s recording — that `.webm` is a screen
+recording of **the session**, not the file the page actually serves. To get at the clip itself:
+fetch the page on the patchright tier, extract its candidate media URL(s) from the rendered DOM,
+download with `--show-body`, then ask `ffprobe`/`ffmpeg` what's in it.
+
+```bash
+polyfetch fetch <page-url> --tier patchright --wait-until networkidle --show-body > page.html
+```
+
+The patchright tier renders the page first, so `--show-body` is the **post-JS** HTML — the
+`<video>` element is there even when a script assembles the player.
+
+Candidate media URLs hide in more than one place: a `<video src>` or `<source src>` inside it, a
+`<meta property="og:video" content="...">` tag, or a `data-*` attribute holding a JSON list of
+renditions (e.g. `data-sources='[{"src": "...", "width": 1280}, ...]'`). Parse the saved HTML with
+stdlib `html.parser` — not a regex, which breaks on attribute quoting and nesting:
+
+```python
+import json
+from html.parser import HTMLParser
+
+
+class MediaURLFinder(HTMLParser):
+    """Collect candidate media URLs from a page's rendered HTML."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.candidates: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_map = dict(attrs)
+        if tag in ("video", "source") and attr_map.get("src"):
+            self.candidates.append(attr_map["src"])
+        if tag == "meta" and attr_map.get("property") == "og:video" and attr_map.get("content"):
+            self.candidates.append(attr_map["content"])
+        for name, value in attr_map.items():
+            if name.startswith("data-") and value and value.lstrip().startswith(("[", "{")):
+                try:
+                    payload = json.loads(value)
+                except ValueError:
+                    continue
+                items = payload if isinstance(payload, list) else [payload]
+                self.candidates.extend(
+                    item["src"] for item in items if isinstance(item, dict) and "src" in item
+                )
+
+
+finder = MediaURLFinder()
+with open("page.html", encoding="utf-8") as f:
+    finder.feed(f.read())
+print(finder.candidates)  # may contain duplicates/relative paths — resolve against the page URL
+```
+
+A plain file (MP4, WebM) downloads the same way as any other binary response:
+
+```bash
+polyfetch fetch "<media-url>" --show-body > video.mp4
+```
+
+An HLS (`.m3u8`) or DASH (`.mpd`) manifest is not one file — it is a playlist of segment URLs, so
+don't fetch it with `--show-body` and expect a playable result. Let `ffmpeg` resolve and stitch
+the segments itself:
+
+```bash
+ffmpeg -i "<manifest-url>" -c copy video.mp4
+```
+
+`ffprobe` answers "what's actually in this file" before anything else does — resolution, duration,
+and, critically, whether there's an audio stream at all (worth checking *before* anyone asks for a
+transcription of a silent clip):
+
+```bash
+ffprobe -v quiet -print_format json -show_format -show_streams video.mp4
+```
+
+Read `streams[].codec_type`: no `"audio"` entry means no audio track. Then pull frames — one every
+*N* seconds, capped and scaled, so an agent reads them as images instead of guessing from metadata
+alone (frames are ground truth here the same way screenshots are ground truth in the [`evaluate`
+caveat](#what-not-to-do) below):
+
+```bash
+ffmpeg -i video.mp4 -vf "fps=1/5,scale=960:-1" -frames:v 20 frame_%03d.png
+```
+
+`fps=1/5` = one frame every 5 seconds; `-frames:v 20` caps the output regardless of clip length;
+`scale=960:-1` bounds the width and keeps the aspect ratio.
+
+**Limits:**
+
+- `ffmpeg`/`ffprobe` are external, optional tools, not a polyfetch dependency — skip the metadata
+  and frame steps if they aren't installed.
+- No audio transcription: this recipe stops at "is there an audio stream", not what it says.
+- Public media only: this walks a page already reachable without authentication; it does not
+  bypass a login wall or DRM.
+- Page content and every URL extracted from it are **untrusted input**. Parse with
+  `html.parser`/`json.loads`, never a hand-rolled regex-and-`eval`. Never interpolate an extracted
+  URL into a shell string unquoted — pass it as its own `subprocess` argument, or quote it
+  explicitly, the same discipline as any other attacker-influenced string. If you fetch a derived
+  media URL through your own HTTP client instead of `polyfetch fetch`, remember polyfetch's SSRF
+  guard covers only the *discovery* paths (`discover()`, sitemap/feed resolution, `robots.txt`) —
+  see [USING.md's Gotchas](../USING.md#gotchas) — not a plain fetch, so treat a URL derived from
+  untrusted page content with the same care you'd give any other externally-sourced address.
+- A page with no extractable media URL (an opaque blob, DRM-walled, or loaded only as a network
+  request — see #182) falls back to `--video-out DIR`: a screen recording of **the session**, not
+  the source file, and only for as long as the session stays open.
+
+**Verified** (ffmpeg/ffprobe 6.1.1, patchright 1.63.0, 2026-11-12, against a local
+`python -m http.server` fixture page with a synthetic `ffmpeg -f lavfi testsrc` clip, no audio
+track): the `<video>`/`<source>`/`og:video`/`data-*` extraction above found the same URL from all
+three forms; `--show-body` downloaded the file byte-identical to the source; `ffprobe` correctly
+reported a single `video` stream and no `audio` stream; the capped/scaled `ffmpeg` frame command
+produced exactly the requested frame count.
+
 ## Accessibility snapshot
 
 ```python
