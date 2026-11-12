@@ -29,6 +29,7 @@ from polyfetch_scrape._backends.patchright_backend import (
     attach_network_capture,
     capture_screenshot,
     context_kwargs,
+    finalize_network_capture,
     validate_storage_state,
 )
 from polyfetch_scrape._platform import ensure_browser_tier_supported
@@ -202,6 +203,7 @@ class RenderSession:
             with contextlib.suppress(Exception):
                 self._context.close()
             self._context = None
+            finalize_network_capture(self._network_capture)
         # Patchright only finalizes the video/HAR once its context has closed (above). The
         # video path needs a live driver connection to resolve (video.path()), while the HAR
         # path is already known (record_har_path is the exact destination) but the file itself
@@ -281,11 +283,14 @@ def render_session(
     ``capture_network=True`` additionally records a bounded per-request log onto
     ``s.network_log`` — url/method/resource_type/status/failure reason/timing, with SSE
     (``EventSource``) message frames nested under their request's ``sse_messages`` (the gap
-    ``network_failures`` doesn't cover; that one stays failures-only). Via a *separate* CDP
-    session sending only ``Network.enable`` — never any domain Patchright's own stealth model
-    avoids. Bounded at 1000 request entries and 1000 SSE messages (cumulative) per session;
-    ``s.network_log_truncated`` flips to ``True`` once either cap is hit. Never records request/
-    response bodies or header values. Off by default (zero overhead).
+    ``network_failures`` doesn't cover; that one stays failures-only). A redirect chain
+    records one entry per hop, each naming the next hop via ``redirected_to``; a request
+    still open at teardown gets ``error: "unfinished at close"``. Via a *separate* CDP
+    session sending only ``Network.enable`` — guarded by a unit test pinning the exact
+    ``cdp.send`` calls, never any domain Patchright's own stealth model avoids. Bounded at
+    1000 request entries (each hop counts on its own) and 1000 SSE messages (cumulative) per
+    session; ``s.network_log_truncated`` flips to ``True`` once either cap is hit. Never
+    records request/response bodies or header values. Off by default (zero overhead).
 
     Use as a context manager::
 

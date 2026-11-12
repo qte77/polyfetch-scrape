@@ -265,6 +265,7 @@ def _attempt_once(
             )
         finally:
             context.close()
+            finalize_network_capture(network_capture)
     except Exception:
         # A terminal status (raise_for_terminal_status) or any other error escaped _run_page.
         # The context is already closed, so Patchright has finalized the video/HAR on disk —
@@ -494,10 +495,30 @@ class _NetworkCapture:
 
 
 def _cdp_on_request_will_be_sent(params: dict[str, Any], capture: _NetworkCapture) -> None:
-    """One entry per requestId; a redirect re-fires this for the SAME id, so skip duplicates."""
+    """One entry per HOP, not per requestId: CDP reuses the SAME requestId across an entire
+    redirect chain, and a later call carries ``redirectResponse`` describing the hop that
+    just finished (verified against real Chromium: ``responseReceived`` fires only once, for
+    the FINAL hop). A naive "skip repeats for this requestId" dedup therefore keeps only the
+    first hop's URL and later has the final hop's status written onto it -- a 302->302->200
+    chain would misreport as one entry, ``{url: "/start", status: 200}``, with "/hop2" and
+    "/final" never appearing (#182 review).
+
+    So: a repeat carrying ``redirectResponse`` finalizes the hop currently tracked for this
+    requestId (status + duration from the redirect response, plus ``redirected_to`` naming
+    the next hop) before starting a fresh entry for the new URL -- each hop counts against
+    the entry cap on its own.
+    """
     request_id = str(params["requestId"])
-    if request_id in capture.by_request_id:
-        return
+    redirect_response = params.get("redirectResponse")
+    current = capture.by_request_id.get(request_id)
+    if redirect_response is not None and current is not None:
+        current["status"] = int(redirect_response["status"])
+        if current["duration_ms"] is None:
+            current["duration_ms"] = _network_duration_ms(current, float(params["timestamp"]))
+        current["redirected_to"] = str(params["request"]["url"])
+        del capture.by_request_id[request_id]  # this hop is done; a new one is tracked below
+    elif current is not None:
+        return  # a repeat without redirectResponse for an in-flight hop -- not expected; ignore
     if len(capture.entries) >= _MAX_NETWORK_ENTRIES:
         capture.truncated = True
         return
@@ -571,13 +592,25 @@ def attach_network_capture(context: Any, page: Any, opts: RenderOptions) -> _Net
     Uses a SEPARATE CDP session (``context.new_cdp_session(page)``) that sends only
     ``Network.enable`` — never ``Runtime.enable``, ``Console.enable``, or ``Page.enable``, the
     specific leaks Patchright's own stealth model patches around (see the installed
-    ``patchright`` package's own README, "Patches" section). Verified (not assumed): this does
-    not change page-visible automation signals (``navigator.webdriver`` and friends, read via a
-    DOM attribute a fixture page writes itself — ``page.evaluate`` runs in an isolated world
-    under Patchright and can't read page-script globals back), and coexists with HAR recording,
-    ``page.route``, and ``attach_capture``'s own ``page.on(...)`` listeners on the same page —
-    both of those already drive Playwright's own internal CDP session's Network domain, so this
-    is a second, independent attachment to the same domain, not a new category of signal.
+    ``patchright`` package's own README, "Patches" section). Three independent checks, each
+    guarding a different claim:
+
+    - the exact ``cdp.send`` calls are pinned by a unit test — this is what actually guards
+      against ``Runtime.enable``/``Console.enable``/``Page.enable`` ever being sent;
+    - a real-browser e2e confirms ``navigator.webdriver`` / ``window.chrome`` (read via a DOM
+      attribute a fixture page writes itself — ``page.evaluate`` runs in an isolated world
+      under Patchright and can't read page-script globals back) are unaffected by turning
+      capture on — a narrower, real-browser sanity check of those two specific signals, not a
+      substitute for the unit test above, and not a general detectability guarantee (see the
+      UNVERIFIED note below);
+    - a real-browser e2e confirms this coexists with HAR recording, ``page.route``, and
+      ``attach_capture``'s own ``page.on(...)`` listeners on the same page — both of those
+      already drive Playwright's own internal CDP session's Network domain, so this is a
+      second, independent attachment to the same domain, not a new category of signal.
+
+    Detectability by anti-automation fingerprinting scripts beyond the two signals checked
+    above is UNVERIFIED — no broader detection-suite probe (e.g. a full Brotector run) has
+    been done.
     """
     if not opts.capture_network:
         return None
@@ -593,6 +626,21 @@ def attach_network_capture(context: Any, page: Any, opts: RenderOptions) -> _Net
         partial(_cdp_on_event_source_message, capture=capture),
     )
     return capture
+
+
+def finalize_network_capture(capture: "_NetworkCapture | None") -> None:
+    """Mark any entry still open when the context closed (#182 review): no ``responseReceived``
+    or ``loadingFailed`` ever arrived for it, because the context closed mid-request. Call
+    once, right after ``context.close()`` — no further CDP events can fire after that, so this
+    is the correct, final point to resolve what's left rather than leaving it silently
+    ``{status: None, error: None, duration_ms: None}`` forever. No-op for ``None`` (capture
+    off) and for any entry that already finished normally.
+    """
+    if capture is None:
+        return
+    for entry in capture.entries:
+        if entry["status"] is None and entry["error"] is None:
+            entry["error"] = "unfinished at close"
 
 
 def _apply_actions(page: Any, actions: tuple[RenderAction, ...], timeout_ms: int) -> None:

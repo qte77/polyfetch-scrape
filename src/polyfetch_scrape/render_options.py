@@ -121,19 +121,26 @@ class RenderOptions:
       **including SSE** (``EventSource``) message frames nested under their request's
       ``sse_messages`` — the one gap ``capture_network_failures`` doesn't cover (that one is
       failures-only, with a minimal ``{url, error}``/``{url, status}`` shape; keep using it when
-      all you need is "did anything fail"). Uses a *separate* CDP session sending only
-      ``Network.enable`` — never ``Runtime.enable``/``Console.enable``/``Page.enable``, the two
-      leaks Patchright's own stealth model specifically patches (its README's "Patches" section);
-      verified not to change page-visible automation signals (``navigator.webdriver`` and
-      friends) and to coexist with HAR recording, ``page.route``, and
+      all you need is "did anything fail"). A redirect chain records **one entry per hop**
+      (CDP reuses one requestId across the whole chain) — each finished hop gets a
+      ``redirected_to`` naming the next hop's URL; a request still open when the context
+      closes gets ``error: "unfinished at close"`` instead of staying silently unresolved.
+      Uses a *separate* CDP session sending only ``Network.enable`` — never
+      ``Runtime.enable``/``Console.enable``/``Page.enable``, the two leaks Patchright's own
+      stealth model specifically patches (its README's "Patches" section); **guarded by a unit
+      test pinning the exact ``cdp.send`` calls** — a real-browser check additionally confirms
+      ``navigator.webdriver``/``window.chrome`` are unaffected by turning this on (a narrower
+      sanity check of those two signals specifically, not a general detectability guarantee),
+      and that this coexists with HAR recording, ``page.route``, and
       ``capture_network_failures``. Off by default (zero overhead). Bounded: at most 1000
-      request entries and 1000 SSE messages (cumulative) per session — ``Response``/
-      ``RenderSession``'s ``network_log_truncated`` flips to ``True`` once either cap is hit. SSE
-      ``data`` is truncated to 2 KB per message, mirroring ``FingerprintBlock.body_excerpt``.
-      **Never records request/response bodies or header values** (nothing header-shaped is read,
-      so there's nothing to redact, unlike the HAR/diagnostics paths that explicitly redact
-      ``Set-Cookie``). Detectability by anti-automation fingerprinting scripts beyond the
-      signals checked here is UNVERIFIED.
+      request entries (each redirect hop counts on its own) and 1000 SSE messages (cumulative)
+      per session — ``Response``/``RenderSession``'s ``network_log_truncated`` flips to
+      ``True`` once either cap is hit. SSE ``data`` is truncated to 2 KB per message,
+      mirroring ``FingerprintBlock.body_excerpt``. **Never records request/response bodies or
+      header values** (nothing header-shaped is read, so there's nothing to redact, unlike the
+      HAR/diagnostics paths that explicitly redact ``Set-Cookie``). Detectability by
+      anti-automation fingerprinting scripts beyond the two signals checked above is
+      UNVERIFIED.
     """
 
     wait_until: WaitUntil = "domcontentloaded"
