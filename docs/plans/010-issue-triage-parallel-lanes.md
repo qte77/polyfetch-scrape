@@ -1,9 +1,14 @@
 # 010 — Issue triage → parallel worktree lanes (post-v0.8.0)
 
-**Status (2026-10-09): Phase A and Phase B are DONE. v0.8.1 (2026-09-30) and v0.9.0 (2026-10-09) are released.**
+**Status (2026-11-12): PAUSED by the owner on 2026-10-21.** Work moved to the downstream qte77 repos that consume polyfetch. Resume a remaining row only when a downstream need pulls it in; until then the [remaining-work table](#remaining-work) is parked, not stale.
+- **Phase C batch 1 shipped (2026-10-21):** #253 (#262), #147 (#263, which also closed tracker #153), #190 (#264), #230 (#266), and the certifi security bump #265.
+- **Shipped outside this plan's table (2026-10-31 to 2026-11-02), released in v0.10.0 (#279):** #254 login-wall status as an error (#272), #255 missing output dirs (#271), #256 client-side redirect read (#273), #260 unfollowed redirect (#274), plus the easter-hunt refactor #278 and the permission-rule fix #277.
+- **Not yet triaged into this plan:** #261 (streaming to disk). Add a row only if it is resumed.
+
+**Earlier status (2026-10-09): Phase A and Phase B are DONE. v0.8.1 (2026-09-30) and v0.9.0 (2026-10-09) are released.**
 - **Shipped:** #181, #197, #199, #216, #229, #209, #237, #214, #198, #241 (patchright 1.63 = Chromium 153), the dependency bumps (#236, #246, #222) and the tooling fix #243.
 - **Next: Phase C.** All gates are now settled (see the owner decisions under the D table), so Phase C items are **agent-runnable** except #218 (the owner edits their own comments) and #228 (deferred).
-- **Start order:**
+- **Start order (as of 2026-10-09; the first four have since shipped):**
   - **#253** docs-only (patchright console-capture caveat); runs alongside anything.
   - **#190** launch options (headed/xvfb/mobile), then #59 (human-in-the-loop CAPTCHA takeover, per D11).
   - **#200** auth sessions on WIP `c61557f` + #203's fixes, then #182.
@@ -45,7 +50,7 @@ make validate                                  # baseline must pass before any e
 ```
 
 - `UV_PROJECT_ENVIRONMENT` must be set in **every** Bash call that runs `uv` / `make` (shell state doesn't persist). Prefix it: `UV_PROJECT_ENVIRONMENT=/tmp/pf-venv-<lane> make validate`. Check `echo $UV_CACHE_DIR` shows `/tmp/uv-cache` (the profile sets it). If it's empty, also prefix `UV_CACHE_DIR=/tmp/uv-cache`, because `$HOME` (`~/.cache`) is on a ~97%-full volume too.
-- **GitHub API calls:** `api.github.com` TLS timeouts happened repeatedly on 2026-09-29. Wrap every call as `timeout 90 env -u GH_TOKEN -u GITHUB_TOKEN gh …`, retry up to 3× with a pause, and poll `gh pr checks N` (~60 s) instead of `--watch`. Confirm pushes with `git ls-remote origin <branch>`.
+- **GitHub API calls:** `api.github.com` TLS timeouts happened repeatedly on 2026-09-29. Put a timeout on every `gh` call, retry up to 3× with a pause, and poll `gh pr checks N` (~60 s) instead of `--watch`. Confirm pushes with `git ls-remote origin <branch>`.
 - **CPU:** parallel `make validate` runs plus Patchright e2e contend for CPU. Rerun a timed-out e2e once on its own before calling it a failure.
 - The Patchright Chromium lives in the shared `~/.cache/ms-playwright`, so no per-worktree browser install is needed. Run `make doctor` if an e2e says Chromium is missing.
 - Temp files go in `<worktree>/.scratch/` (gitignored), never the repo root.
@@ -80,8 +85,8 @@ Only edit files your lane owns (plan § Lanes). TDD: write the failing test firs
 Per PR: make validate green; markdownlint-cli2 + lychee --config lychee.toml on changed md; changelog fragment
 (make changelog_new, NO relative links in fragments); do NOT edit docs/plans/010 (the orchestrator strikes rows);
 commits split by topic, Conventional Commits, signed (verify with /usr/bin/git log --format=%G?);
-push with env -u GH_TOKEN -u GITHUB_TOKEN (sandbox disabled), confirm with git ls-remote; every gh call wrapped as
-timeout 90 env -u GH_TOKEN -u GITHUB_TOKEN gh ... with up to 3 retries; gh pr create with "Closes #N" and a
+push with your authenticated git/gh session, confirm with git ls-remote; every gh call gets a timeout
+and up to 3 retries; gh pr create with "Closes #N" and a
 "Verification" section. Then poll gh pr checks N every ~60s (not --watch). Report "PR #N green" or the failing
 check + log excerpt. Do NOT merge, do NOT edit rulesets, do NOT touch other lanes' files, do NOT comment on or
 close contributor PRs or issues. Credit ported contributor code with a Co-authored-by trailer whose name/email is
@@ -211,10 +216,12 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | — | ~~`SECURITY.md` (reporting path + SSRF-guard scope)~~ ✅ covered by the estate default `qte77/.github/SECURITY.md` (GitHub applies it to repos without their own; private vulnerability reporting is enabled). No repo copy, to avoid duplication; SSRF-guard scope lives in `docs/architecture.md` | A | agent | 3 | S | Resolved without a file |
 | — | ~~Heads-up comments on contributor PRs; close them after porting~~ ✅ D10: no heads-ups; #201/#202/#205/#206/#207 closed with remarks crediting @dntywntme (#203/#204 close when #200/#182 port them) | B | owner (D1, D10) | 2 | S | Done |
 | — | ~~Release **v0.9.0** at the end of Phase A~~ ✅ v0.9.0 (#251, 2026-10-09) | A (end) | agent | 3 | S | Released and marked Latest |
+| ~~282~~ | ~~Embedded-video recipe (step 1): page → media URL → file → metadata + frames~~ ✅ #284 | C | agent | 3 | S | Shipped: `docs/scripting.md` recipe (fetch on the patchright tier, extract DOM media URLs, download with `--show-body`, `ffprobe`/`ffmpeg` metadata + capped/scaled frames) and a short `USING.md` pointer; verified end to end against a local fixture |
+| 282 | Embedded-video discovery (steps 2/3, deferred by the owner): a `media`/`discover --json` subcommand listing embedded media URLs (type, source attribute, manifest flag), then `--frames-out DIR --every S` shelling out to `ffmpeg` | C | owner | 3 | M | Per #282: `polyfetch discover`/`media --json` lists the media URLs of a page with a `<video>` element and of a page whose video arrives through an HLS manifest; both covered by real-browser e2e |
 
 ## Watch-outs
 
-- **gh / git:** every `gh` and `git push` runs as `env -u GH_TOKEN -u GITHUB_TOKEN …` with the sandbox disabled. A stale token gives a 401, and a sandboxed push can silently no-op. Verify with `git ls-remote`.
+- **gh / git:** a stale token gives a 401, and a sandboxed push can silently no-op. Use your own authenticated session and verify every push with `git ls-remote`.
 - **Signed commits:** the `main` ruleset requires them. Local commits are signed by the Codespace signer, which can time out: retry, and check `/usr/bin/git log --format='%h %G?'` shows `E`/`G`, not `N`.
 - **The RTK hook rewrites `git` output.** Use `/usr/bin/git` when output is parsed. Compound Bash commands (`&&`, pipes) are often denied: one command per call.
 - **CodeQL fails on `"<url>" in x`**, even in tests. Use `==`.
@@ -223,7 +230,7 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 - **Releases:**
   - Run the Bump version workflow (`uvx bump-my-version`, #226).
   - Close and reopen the bump PR with your own token so CI runs.
-  - Admin-squash it; Tag and Release then fires.
+  - Squash-merge it once CI passes; Tag and Release then fires.
   - Test workflow changes with `gh workflow run … --ref <branch>`.
 - **Disk:** `/workspaces` is nearly full. Keep venvs on `/tmp` and remove finished worktrees promptly.
 - **Headless capture reflects this runner's network only**, and Patchright's `evaluate` runs in an isolated world (AGENT_LEARNINGS.md).

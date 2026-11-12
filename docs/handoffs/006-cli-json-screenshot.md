@@ -23,7 +23,7 @@ One **small CLI unit**. **Read the plan's "Source map" first** — it names ever
 1. **Branch** `feat/json-screenshot-b64`; topical commits (cli+tests / docs).
 2. **Strict TDD, red first** — write the 3 `test_cli.py` tests (plan §"Strict TDD"), watch them fail.
    `cli.py` is a **module** → real, non-trivial tests. **Assume strict lint + typing + security throughout.**
-3. `make validate` **and** `make ci` green **before** pushing. `gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN`.
+3. `make validate` **and** `make ci` green **before** pushing. `gh` needs an authenticated session with repo scope.
 4. **Security:** `/security-review` on the diff (expected clean — base64 of local bytes, no new sink).
 5. **Changelog:** `make changelog_new` → edit the generated `changelog.d/*.md` under `### Added` (do **not**
    touch `CHANGELOG.md` — scriv collects fragments at release). Update `USING.md` `--json` schema.

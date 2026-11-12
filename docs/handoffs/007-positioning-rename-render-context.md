@@ -11,7 +11,7 @@ Full plan + code/file/source map: **[`docs/plans/007-positioning-rename-render-c
 ## How to handle (this repo's policy)
 
 - Everything via `make`/`uv run` (never bare pip/pytest/ruff/pyright/polyfetch); `make validate` green before "done"; scriv fragment per non-trivial change (`make changelog_new`).
-- Git: branch per concern, topical commits, squash-merge on green CI, delete branch. `gh` needs `env -u GH_TOKEN -u GITHUB_TOKEN` (App token lacks repo scope; OAuth login has it).
+- Git: branch per concern, topical commits, squash-merge on green CI, delete branch. `gh` needs an authenticated session with repo scope.
 - **CodeQL is a required check** — never `"<url>" in x` (even in test asserts; use `==`); verify `gh pr checks` before merge.
 - **GitHub Actions webhook delivery was flaky** (dropped PR/push events → no runs). If checks don't appear, re-trigger (close/reopen the PR, or push an empty commit) or wait; if merge is blocked, it may be a conflict — merge `main` in and resolve.
 

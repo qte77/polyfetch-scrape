@@ -46,4 +46,4 @@ Docs: CHANGELOG Added (#48) + docs note (#35). Closes #35/#48/#42.
 
 Start PR A: branch off `main`, write the #48 test first (red), implement, add #35/#42 docs, `make
 validate`, squash PR (Closes #35 #48 #42), merge. Then PR B. After PR B → cut **v0.4.0**.
-gh needs `env -u GH_TOKEN -u GITHUB_TOKEN`.
+`gh` needs an authenticated session with repo scope.
