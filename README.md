@@ -4,17 +4,15 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.10.0-informational)](CHANGELOG.md)
-[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-blue)](pyproject.toml)
-[![Python](https://img.shields.io/badge/python-3.11+-blue)](pyproject.toml)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25%20enforced-blue)](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml)
 [![CodeQL](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/codeql.yaml)
 [![CodeFactor](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape/badge)](https://www.codefactor.io/repository/github/qte77/polyfetch-scrape)
 [![Test](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/test.yml)
 [![Lint MD and Links](https://github.com/qte77/polyfetch-scrape/actions/workflows/lint-md-links.yml/badge.svg)](https://github.com/qte77/polyfetch-scrape/actions/workflows/lint-md-links.yml)
-[![ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 ## Why
 
-Claude Code's built-in **WebFetch** exposes no header parameters in its public schema, so callers cannot set `User-Agent`, `Accept`, or `Referer` — and its default UA is empirically rejected (HTTP 403) by sites with non-trivial bot detection (`hamiltoncompany.com`, `thingiverse.com`, `web.archive.org`). Header spoofing alone often isn't enough: many blocks key on the TLS/JA3 fingerprint, not the UA string. `polyfetch-scrape` is the next rung — browser-shape headers in the cheap tier, real TLS impersonation in the middle tier, and headless Chromium with anti-detection patches as the fallback — escalating only when a tier is actually blocked.
+Claude Code's built-in **WebFetch** exposes no header parameters, so callers cannot set `User-Agent`, `Accept`, or `Referer`. And headers alone often aren't enough: on a [2026-07-06 re-probe](docs/scraping-landscape.md#empirical-findings--polyfetch-scrape-probes-2026-04), `hamiltoncompany.com` returned `403` to `curl` even with a full browser UA, but `200` to polyfetch's tiers — the block keys on the client fingerprint, not the UA string. polyfetch is the next rung — browser-shape headers in the cheap tier, real TLS impersonation in the middle, headless Chromium with anti-detection patches as the fallback — escalating only when a tier is actually blocked.
 
 ## Quickstart
 
@@ -22,34 +20,31 @@ Claude Code's built-in **WebFetch** exposes no header parameters in its public s
 
 ```bash
 uv add git+https://github.com/qte77/polyfetch-scrape   # not published to PyPI
-uv run patchright install chromium                     # one-off; required only for the patchright tier
+uv run patchright install chromium                     # one-off; only for the patchright tier
 ```
 
-Or **borrow it without installing at all** — see [`USING.md`](USING.md).
-
-**Alpine/musl**: patchright has no `musllinux` wheel, so the browser tier doesn't run there; `polyfetch doctor` reports this with the workaround (httpx/curl_cffi tiers are unaffected) — see [`docs/api-reference.md`](docs/api-reference.md#cli-only-commands).
+Or **borrow it without installing** — see [`USING.md`](USING.md). On Alpine/musl the browser tier can't run (no `musllinux` wheel); see [CLI-only commands](docs/api-reference.md#cli-only-commands).
 
 ### Library
 
 ```python
 from polyfetch_scrape import fetch
 
-r = fetch("https://nowsecure.nl/")
-print(
-    r.status, r.backend, len(r.body)
-)  # 200 httpx 179447  (the tier that answers depends on the target's current anti-bot posture)
+r = fetch("https://example.com")
+print(r.status, r.backend)  # e.g. 200 httpx — which tier answers depends on the target
 ```
 
 ## What
 
-- **One call, typed result.** `fetch(url)` returns a typed `Response` (`status`, `body`, `backend`, …) no matter which backend succeeded — you never pick a scraping tool per site.
-- **Three-tier fallback, reactive.** `httpx` → `curl_cffi` (Chrome TLS/JA3 impersonation) → Patchright (headless Chromium, anti-detection). Escalates only on a real `403` or TLS block, so the cheap tier is always tried first — or pin one tier / bound the range with `tier` / `min_tier` / `max_tier`.
-- **Handles TLS-fingerprint blocks, not just UA checks.** Real TLS/JA3 impersonation plus a headless-Chromium fallback reach sites that reject header-only spoofing ([empirical findings](docs/scraping-landscape.md)).
-- **Typed error taxonomy.** Terminal statuses (`401/407/404/410/451`) raise typed exceptions; `429/5xx` retry honouring `Retry-After`.
-- **Conditional GET + deep render controls.** `etag`/`last_modified` for `304`s; on the browser tier: waits, single + named screenshots, scripted actions, an interactive multi-step `render_session`, device/viewport/locale/colour-scheme/user-agent emulation with optional video recording (VP8 `.webm` → `Response.video_path`), and **DevTools capture** — console messages, network failures, and uncaught JS errors (opt-in on `fetch`, always-on in `render_session`, or wire your own `page.on(...)` listeners). `fetch --json` surfaces the screenshot inline as `screenshot_b64` and the recording path as `video_path` — see [USING.md](USING.md)'s Output schema.
-- **POST bodies + polite throttling.** Send `json`/`content` request bodies (httpx/curl tiers); pass a per-host `Throttle` to stay under published rate limits.
-- **Structured-first discovery.** `discover(url)` (and `polyfetch discover`) reports the cheaper-than-HTML entrypoints a site exposes — sitemaps, RSS/Atom/iCal feeds, `llms.txt`, JSON-LD `@type`s — so consumers parse structured data instead of scraping HTML.
-- **Library, CLI, or env-borrow.** `import fetch`, run `polyfetch`, or sideload from another repo/agent without installing ([USING.md](USING.md)).
+- **One call, typed result.** `fetch(url)` returns a typed `Response` whichever backend succeeded — no per-site tool picking.
+- **Reactive three-tier fallback.** `httpx` → `curl_cffi` (Chrome TLS/JA3 impersonation) → Patchright (headless Chromium), escalating only on a real block; pin or bound it with `tier` / `min_tier` / `max_tier`.
+- **Typed error taxonomy.** Terminal statuses (`401/404/407/410/451`) raise typed exceptions; `429` and `500/502/503/504` retry, honouring `Retry-After`.
+- **Browser tier with DevTools capture.** Waits, screenshots, scripted actions, device/locale/colour-scheme emulation, video and HAR recording, headed launch, and console/network/JS-error capture — opt-in on `fetch`, always on in the interactive `render_session`.
+- **Requests and politeness.** Conditional GET (`etag`/`last_modified`), `json`/`content` request bodies, a per-host `Throttle`, and an opt-in robots.txt check.
+- **Structured-first discovery.** `discover(url)` reports sitemaps, RSS/Atom/iCal feeds, `llms.txt` and JSON-LD `@type`s, so consumers parse structured data instead of HTML.
+- **Library, CLI, or env-borrow** from another repo or agent ([`USING.md`](USING.md)).
+
+Full options: [API reference](docs/api-reference.md). Empirical anti-bot findings: [scraping landscape](docs/scraping-landscape.md).
 
 <!-- markdownlint-disable MD033 -->
 <details>
@@ -66,12 +61,10 @@ Regenerate with `make screencast` ([`examples/navigate_screencast.py`](examples/
 
 ## Two layers: engine + scripting substrate
 
-polyfetch is two things behind one install:
+1. **The engine** — the stable, typed surface: `fetch`, `render_session` and `discover`. Most callers only need this.
+2. **The scripting substrate** — `render_session(url).page` hands you the live, instrumented stealth-Patchright `Page` (full DevTools/CDP surface) for app-specific flows. polyfetch owns install, launch/teardown, capture and the SSRF guard; you own the app-specific steps.
 
-1. **The engine** — the supported, stable, typed surface: `fetch(url) -> Response` (the reactive fallback chain), `render_session(url)` (managed multi-step browser sessions), and `discover(url)`. Most callers only ever touch this.
-2. **A scripting substrate** — for flows the engine does not express directly, `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page` to drive yourself, with the full Chromium **DevTools/CDP surface**: live console / network / JS-error capture (`page.on("console", …)` and friends), multi-step walks, `page.locator(...).aria_snapshot()`, post-hoc `page.set_viewport_size(...)`, ad-hoc DOM reads. polyfetch owns the browser install, launch/teardown, capture, and SSRF guard; you own the app-specific steps. The scripts under [`examples/`](examples/) show the pattern — they are examples, not part of the stable API.
-
-Which side a given knob falls on is settled by the **ownership line** in [`docs/architecture.md`](docs/architecture.md#two-layers-engine-and-scripts); worked `.page` recipes live in the [scripting cookbook](docs/scripting.md).
+Which side a knob belongs on is settled by the [ownership line](docs/architecture.md#two-layers-engine-and-scripts); worked `.page` recipes live in the [scripting cookbook](docs/scripting.md), and [`examples/`](examples/) shows the pattern (examples, not stable API).
 
 ## How
 
@@ -80,24 +73,15 @@ Which side a given knob falls on is settled by the **ownership line** in [`docs/
 ### CLI
 
 ```bash
-polyfetch fetch https://example.com
 polyfetch fetch https://example.com --json
-polyfetch fetch https://httpbin.org/user-agent --show-body   # verify the UA you send
-polyfetch fetch https://example.com --etag '"abc123"'   # conditional GET (If-None-Match → 304 on match)
-polyfetch fetch https://httpbin.org/post --method POST --json-body '{"a": 1}'   # JSON request body (or --data for raw bytes; @file/@- also work)
-polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright   # force the JS-render tier
+polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright --screenshot viewport --screenshot-out shot.png
 polyfetch fetch https://example.com --max-tier curl_cffi   # cap escalation — never launch a browser
-polyfetch fetch https://quotes.toscrape.com/js/ --tier patchright --screenshot viewport --screenshot-out shot.png   # render + screenshot
-polyfetch fetch https://example.com --tier patchright --device "iPhone 13" --video-out ./videos --json   # emulate a device + record a .webm
-polyfetch fetch https://example.com --tier patchright --device-json '{"viewport": {"width": 412, "height": 915}, "is_mobile": true}'   # a custom device bundle
-polyfetch devices   # list the device presets --device accepts
-polyfetch bulk urls.txt --workers 4 --delay 0.5   # 4 workers, ≥0.5s between same-host requests
-polyfetch discover https://example.com --json   # structured entrypoints: sitemaps/feeds/llms.txt/JSON-LD
-polyfetch doctor --fix   # verify (and install) the browser-tier Chromium
-polyfetch --help
+polyfetch bulk urls.txt --workers 4 --delay 0.5            # ≥0.5 s between same-host requests
+polyfetch discover https://example.com --json              # sitemaps / feeds / llms.txt / JSON-LD
+polyfetch doctor --fix                                     # verify (and install) the browser-tier Chromium
 ```
 
-**Consuming polyfetch from another project or an agent without installing it?** See [`USING.md`](USING.md) — the `uv run --directory` env-borrow contract (no venv poison).
+Every command and flag (request bodies, device emulation, video/HAR, `--headed`, …) and the `--json` schema: [`USING.md` → Commands](USING.md#commands).
 
 ### Fallback chain
 
@@ -107,15 +91,15 @@ polyfetch --help
 | 2 | `curl_cffi` (chrome impersonation) | tier 1 returns 403 or hits a TLS error |
 | 3 | Patchright (headless Chromium) | tier 2 also blocked |
 
-`Response.backend` reflects which tier succeeded. `make demo_tiers` drives each backend directly to show what its tier uniquely provides (a TLS/JA3 fingerprint diff + a JS render); [`examples/fallback-tier-targets.txt`](examples/fallback-tier-targets.txt) lists ToS-safe targets per tier difficulty — run the ladder with `make probe_bulk FILE=examples/fallback-tier-targets.txt`.
+`Response.backend` says which tier answered. `make demo_tiers` shows what each tier uniquely provides; details in [architecture](docs/architecture.md#data-flow).
 
 ### Public API
 
-`fetch(url, *, …) -> Response` plus `render_session(url)` (managed multi-step interactive browser sessions), `RenderOptions`, `RenderAction`, `Screenshot`, `Response`, `RetryPolicy`, and the `FetchError` exception hierarchy. **Full signatures and options: [`docs/api-reference.md`](docs/api-reference.md).**
+`fetch`, `render_session`, `RenderOptions`, `RenderAction`, `Screenshot`, `Response`, `RetryPolicy`, `Throttle` and the `FetchError` hierarchy, plus `utils.discovery.discover` and `utils.robots.is_allowed` (imported by module path) — full signatures in the [API reference](docs/api-reference.md). `_backends/` is private; `contrib/` extras (e.g. `easter_hunt`) are unsupported and never imported by core.
 
 ### Development
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full command reference, dev workflow, pre-commit checklist, and the [release pipeline](CONTRIBUTING.md#releases-and-versioning). Quick start: `make setup_dev && make validate` (plus `make audit` for the dependency scan). For AI-agent behavioural rules, see [`AGENTS.md`](AGENTS.md); for release notes, [`CHANGELOG.md`](CHANGELOG.md).
+`make setup_dev && make validate` (plus `make audit`). Full workflow, command reference and release pipeline: [`CONTRIBUTING.md`](CONTRIBUTING.md); agent rules: [`AGENTS.md`](AGENTS.md).
 
 ## How it compares
 
@@ -130,10 +114,8 @@ Each row is a trade-off, not a claim of superiority. See the [scraping landscape
 
 ## What it does not do
 
-Two kinds of "no":
-
-- **Out of scope** (use a dedicated tool): proxy / residential-IP rotation, LLM-ready HTML→markdown extraction, a hosted/managed scraping service, and domain API wrappers (arXiv, patents, …) — those belong in downstream packages that consume `fetch()`.
-- **Not in the engine, but scriptable today** on `render_session().page`: accessibility snapshots (`aria_snapshot`), multi-step interactive walks, ad-hoc element screenshots, and live `set_viewport_size` — a few lines on the `.page` hatch rather than a core knob (see [Two layers](#two-layers-engine--scripting-substrate)).
+- **Out of scope** (use a dedicated tool): proxy / residential-IP rotation, LLM-ready HTML→markdown extraction, a hosted scraping service, automated CAPTCHA solving, and domain API wrappers (arXiv, patents, …) — those belong in downstream packages that consume `fetch()`.
+- **Not in the engine, but scriptable** on `render_session().page`: accessibility snapshots, multi-step walks, ad-hoc element screenshots, live viewport changes — see [Two layers](#two-layers-engine--scripting-substrate).
 
 ## References
 
@@ -145,10 +127,10 @@ Two kinds of "no":
 - [Roadmap](docs/roadmap.md) — delivery history + core directions ahead
 - [User stories](docs/userstory.md) — who it serves and what each need maps to
 - [Scraping landscape](docs/scraping-landscape.md) — tool comparison + empirical findings
-- [web-recon-kit](https://github.com/qte77/web-recon-kit) — reusable web/API recon & attack-surface assessment harness (endpoint enumeration, auth-posture matrix, cross-tenant BOLA/BFLA, cron/secret checks, gate classification). Its browser tier builds on `render_session()` for JS-bundle mining + screenshots; its API tier is plain `httpx`. Depends on polyfetch as an optional `browser` extra (git dependency), not an env-borrowed checkout
+- [web-recon-kit](https://github.com/qte77/web-recon-kit) — web/API recon harness; its browser tier builds on `render_session()` (optional git-dependency extra)
 - [gha-rxiv-feed-action](https://github.com/qte77/gha-rxiv-feed-action) — fetch arXiv/bioRxiv/medRxiv feeds (open APIs; polyfetch's fallback chain isn't needed for these)
 - [Changelog](CHANGELOG.md) — release notes (Keep a Changelog format)
-- [Codespaces — qte77/polyforge-orchestrator/docs/codespaces.md](https://github.com/qte77/polyforge-orchestrator/blob/main/docs/codespaces.md) — canonical cross-qte77 reference for Codespaces auth, token precedence, GPG signing, devcontainer lifecycle
+- [Codespaces reference](https://github.com/qte77/polyforge-orchestrator/blob/main/docs/codespaces.md) — cross-qte77 Codespaces auth, signing and devcontainer setup
 
 ## License
 

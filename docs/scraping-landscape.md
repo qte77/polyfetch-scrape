@@ -2,7 +2,7 @@
 title: Web Scraping and Data Extraction — Tool Landscape
 description: Pointer to the scraping/extraction catalog SSOT in ai-agents-research; retains only polyfetch-scrape's own fallback-chain probe findings
 created: 2026-04-23
-updated: 2026-07-06
+updated: 2026-11-12
 urls_validated: 2026-07-06
 ---
 
@@ -26,7 +26,7 @@ How `fetch()` maps HTTP status codes to behaviour and exception types (RFC 9110 
 | 401 / 407 | Unauthorized / Proxy Auth Required | terminal — raises, not retried/escalated | `AuthRequired` |
 | 403 | Forbidden | fingerprint signal — escalates to the next tier | `FingerprintBlock` (internal) |
 | 404 / 410 | Not Found / Gone | terminal — raises, not retried/escalated | `GoneError` |
-| 429 / 5xx | Rate-limit / server errors | retried (honouring `Retry-After`), then raises after exhaustion | `FetchError` |
+| 429 / 500 / 502 / 503 / 504 | Rate-limit / server errors (`RetryPolicy.retry_on_status` default) | retried (honouring `Retry-After`), then raises after exhaustion | `FetchError` |
 | 451 | Unavailable For Legal Reasons | terminal — raises, never escalated to fingerprint tiers | `LegalBlock` |
 
 ## Empirical findings — polyfetch-scrape probes (2026-04)
@@ -75,4 +75,4 @@ Both 403 rows carry a *browser* User-Agent, so the block does not key on the UA 
 - Patchright's main detection patches are **CDP-layer**: `Runtime.enable` leak (the biggest), `Console.enable` leak, and command-flag leaks like `--enable-automation` and the `navigator.webdriver` flag ([Patchright README → Patches](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#patches)). Chromium-only by design ([README](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#usage)).
 - **Caveat on the g2.com result**: my probe used the default `chromium.launch(headless=True)` config. Patchright's README claims it passes Cloudflare ✅ ([README → Stealth](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#stealth)) **but only with the recommended setup**: `launch_persistent_context(channel="chrome", headless=False, no_viewport=True)` and real Chrome rather than Chromium ([README → Best Practice](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#best-practice---use-chrome-without-fingerprint-injection)). Headless + Chromium leaves residual fingerprints (window dimensions, GPU strings, headless-shell binary) that Cloudflare Enterprise can still read. So the g2.com failure is **a config-tier limitation, not a Patchright capability ceiling** — but the recommended config (headed, real Chrome) is incompatible with most CI/server environments, which is the actually-load-bearing constraint.
 - Patchright tracks upstream Playwright closely: at probe time, upstream Playwright is `v1.59.1` ([microsoft/playwright releases](https://github.com/microsoft/playwright/releases)) and Patchright is `v1.58.2` ([Patchright PyPI](https://pypi.org/project/patchright/)) — typically <1 minor version of lag. Patchright README notes: *"bugs due to Playwright codebase changes may occur. Fixes for these bugs might take a few days to be released"* ([README → Development](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#development)).
-- "Stars aren't a quality signal" applies here — Patchright's small star count (~1.8k vs Playwright's 78k+) reflects niche audience, not maturity. Better signals: upstream-tracking releases, listed in active anti-detect comparisons (this doc), and the explicit list of bot-detection products it claims to pass ([README → Stealth](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#stealth): Brotector, Cloudflare, Kasada, Akamai, Shape/F5, Datadome, Fingerprint.com, CreepJS, Sannysoft, Incolumitas, IPHey, Browserscan, Pixelscan).
+- "Stars aren't a quality signal" applies here — Patchright's star count, a small fraction of Playwright's, reflects niche audience, not maturity. Better signals: upstream-tracking releases, listed in active anti-detect comparisons (this doc), and the explicit list of bot-detection products it claims to pass ([README → Stealth](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python#stealth): Brotector, Cloudflare, Kasada, Akamai, Shape/F5, Datadome, Fingerprint.com, CreepJS, Sannysoft, Incolumitas, IPHey, Browserscan, Pixelscan).

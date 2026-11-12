@@ -13,8 +13,8 @@ README's [Two layers](../README.md#two-layers-engine--scripting-substrate)).
 > can't set headers or impersonate a browser, I want a drop-in `fetch(url)` that escalates through
 > browser-shaped headers → TLS impersonation → headless Chromium until something works.
 
-Covered by: the three-tier fallback chain (`httpx` → `curl_cffi` → Patchright); README "When to reach
-for this".
+Covered by: the three-tier fallback chain (`httpx` → `curl_cffi` → Patchright); README
+["Why"](../README.md#why).
 
 ## Polling caller re-checking a board on a schedule
 

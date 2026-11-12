@@ -26,16 +26,8 @@ consumer's lockfile.
 ## The ownership line (who owns what)
 
 The decidable test lives in [`architecture.md`](architecture.md#two-layers-engine-and-scripts)
-and is the single source of truth. In short:
-
-- **polyfetch owns X** iff X is **(a) generic** — true for any target site, not tied to
-  one app's DOM/flow — **and (b) construction-time or shared plumbing** — set at
-  browser/`new_context()` time, or boilerplate every consumer re-implements identically
-  (install, teardown, capture, SSRF guard).
-- **The consumer owns X** otherwise — app-specific walks, selectors, and assertions, or a
-  few lines on the `render_session().page` escape hatch.
-
-Applied: device/locale/viewport/user-agent/video emulation → engine (`new_context()`-time);
+and is the single source of truth: generic, construction-time plumbing belongs to polyfetch;
+app-specific flows belong to the consumer. Applied: device/locale/viewport/user-agent/video emulation → engine (`new_context()`-time);
 `aria_snapshot`, multi-step interactive walks, per-app screenshots → scripted `.page`
 recipes in the consumer.
 
