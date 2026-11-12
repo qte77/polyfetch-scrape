@@ -56,10 +56,23 @@ print(s.network_log_truncated)  # True if the 1000-entry / 1000-SSE-message cap 
 ```
 
 Each entry carries `url`, `method`, `resource_type`, `status` (`None` if the request never
-got a response), `error` (the CDP failure reason, e.g. `"net::ERR_CONNECTION_REFUSED"`,
-`None` otherwise), `start_ms`/`duration_ms`, and `sse_messages` — a list of
-`{event, data, timestamp_ms}` for an `EventSource` request, empty for everything else.
-`data` is truncated to 2 KB per message.
+got a response), `error` (the CDP failure reason, e.g. `"net::ERR_CONNECTION_REFUSED"`, or
+`"unfinished at close"` if the context closed before a response or failure arrived; `None`
+otherwise), `start_ms`/`duration_ms`, an optional `redirected_to` (the next hop's URL, set on
+a hop that redirected), and `sse_messages` — a list of `{event, data, timestamp_ms}` for an
+`EventSource` request, empty for everything else. `data` is truncated to 2 KB per message.
+
+**A redirect chain is one entry per hop, not one entry for the whole chain.** CDP reports an
+entire chain under a single internal request ID, so each hop lands as its own entry, with
+`redirected_to` on the finished hop naming the next one:
+
+```python
+for entry in s.network_log:
+    print(entry["url"], entry["status"], entry.get("redirected_to"))
+# .../start   302   .../hop2
+# .../hop2    302   .../final
+# .../final   200   None
+```
 
 The same flag works on the one-shot tier: `fetch(url, render=RenderOptions(capture_network=True))`
 → `Response.network_log` / `Response.network_log_truncated`.
@@ -68,14 +81,18 @@ The same flag works on the one-shot tier: `fetch(url, render=RenderOptions(captu
 > read at all, so there is nothing to redact (unlike a HAR, which needs an explicit
 > `Cookie`/`Authorization` redaction story once one exists).
 >
-> **Stealth safety:** the extra CDP session sends only `Network.enable` — never
-> `Runtime.enable`/`Console.enable`/`Page.enable`, the specific leaks Patchright's own
-> stealth model patches around. Verified not to change page-visible automation signals
-> (`navigator.webdriver` and friends) and to coexist with HAR recording, `page.route`, and
-> `s.network_failures` on the same page. Detectability by anti-automation fingerprinting
-> scripts beyond the signals checked here is **unverified** — this capture opens a second
-> CDP attachment to the page, and no broader detection-suite probe (e.g. a full Brotector
-> run) has been done against it.
+> **Stealth safety — three separate checks, each guarding a different claim.** The extra CDP
+> session sends only `Network.enable` — never `Runtime.enable`/`Console.enable`/`Page.enable`,
+> the specific leaks Patchright's own stealth model patches around — and **this is guarded by
+> a unit test pinning the exact `cdp.send` calls**, not by anything in the browser. Separately,
+> a real-browser check confirms `navigator.webdriver`/`window.chrome` are unaffected by turning
+> capture on — a narrower sanity check of those two specific signals (which are actually
+> controlled by Chromium launch flags, not by which CDP domains are enabled), not a general
+> detectability guarantee. A third check confirms this coexists with HAR recording,
+> `page.route`, and `s.network_failures` on the same page. Detectability by anti-automation
+> fingerprinting scripts beyond the two signals checked is **unverified** — this capture opens
+> a second CDP attachment to the page, and no broader detection-suite probe (e.g. a full
+> Brotector run) has been done against it.
 
 ## HAR summary recipe
 

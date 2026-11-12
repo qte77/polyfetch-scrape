@@ -129,17 +129,23 @@ RenderOptions(
 #     (EventSource) message frames nested under their request's sse_messages (event, data,
 #     timestamp_ms) — the gap capture_network_failures doesn't cover (that one stays a cheap
 #     failures-only {url,error}/{url,status} subset; keep using it when all you need is "did
-#     anything fail"). Uses a SEPARATE CDP session sending only Network.enable — never
-#     Runtime.enable/Console.enable/Page.enable, the leaks Patchright's own stealth model
-#     specifically patches (its README's "Patches" section); verified not to change
-#     page-visible automation signals (navigator.webdriver and friends) and to coexist with
-#     HAR recording, page.route, and capture_network_failures. Off by default (zero overhead).
-#     BOUNDED: at most 1000 request entries and 1000 SSE messages (cumulative) per session —
-#     Response.network_log_truncated / RenderSession.network_log_truncated flips to True once
-#     either cap is hit. SSE data is truncated to 2 KB per message (mirrors
-#     FingerprintBlock.body_excerpt). NEVER records request/response bodies or header values
-#     (nothing header-shaped is read, so there is nothing to redact). Detectability by
-#     anti-automation fingerprinting scripts beyond the signals checked above is UNVERIFIED.
+#     anything fail"). A redirect chain records ONE ENTRY PER HOP (CDP reuses one requestId
+#     across the whole chain) -- each finished hop gets redirected_to naming the next hop's
+#     URL. A request still open when the context closes gets error: "unfinished at close"
+#     instead of staying silently unresolved. Uses a SEPARATE CDP session sending only
+#     Network.enable — never Runtime.enable/Console.enable/Page.enable, the leaks
+#     Patchright's own stealth model specifically patches (its README's "Patches" section) —
+#     GUARDED BY A UNIT TEST pinning the exact cdp.send calls. A real-browser check separately
+#     confirms navigator.webdriver/window.chrome are unaffected by turning this on (a narrower
+#     sanity check of those two signals, not a general detectability guarantee) and that this
+#     coexists with HAR recording, page.route, and capture_network_failures. Off by default
+#     (zero overhead). BOUNDED: at most 1000 request entries (each redirect hop counts on its
+#     own) and 1000 SSE messages (cumulative) per session — Response.network_log_truncated /
+#     RenderSession.network_log_truncated flips to True once either cap is hit. SSE data is
+#     truncated to 2 KB per message (mirrors FingerprintBlock.body_excerpt). NEVER records
+#     request/response bodies or header values (nothing header-shaped is read, so there is
+#     nothing to redact). Detectability by anti-automation fingerprinting scripts beyond the
+#     two signals checked above is UNVERIFIED.
 
 RenderAction(verb, selector=None, text=None, value=None, ms=None)
 # verb: "click"(selector) | "click_text"(text) | "fill"(selector,value)
@@ -233,13 +239,16 @@ Response(
 #   the Console API and avoids Runtime.enable). See USING.md § DevTools capture for the verified
 #   source and a DOM-attribute + screenshot alternative.
 # network_log: bounded per-request list — url, method, resource_type, status, error
-#   (failure errorText, e.g. "net::ERR_CONNECTION_REFUSED"), start_ms, duration_ms, and
-#   sse_messages (a list of {event, data, timestamp_ms} for an EventSource request) — opt-in
-#   via RenderOptions.capture_network (#182). Via a SEPARATE CDP session sending only
-#   Network.enable (never Runtime/Console/Page) — see RenderOptions.capture_network's
-#   docstring for the full stealth-safety verification. Capped at 1000 entries and 1000 SSE
-#   messages (cumulative) per session; network_log_truncated is True once either cap is hit.
-#   Never carries request/response bodies or header values.
+#   (failure errorText, e.g. "net::ERR_CONNECTION_REFUSED"; "unfinished at close" if the
+#   context closed before a response or failure arrived), start_ms, duration_ms, an optional
+#   redirected_to (the next hop's URL, on a hop that redirected — a chain is one entry PER
+#   HOP, not per request), and sse_messages (a list of {event, data, timestamp_ms} for an
+#   EventSource request) — opt-in via RenderOptions.capture_network (#182). Via a SEPARATE
+#   CDP session sending only Network.enable (never Runtime/Console/Page, guarded by a unit
+#   test pinning the exact cdp.send calls) — see RenderOptions.capture_network's docstring
+#   for the full verification breakdown. Capped at 1000 entries (each redirect hop counts on
+#   its own) and 1000 SSE messages (cumulative) per session; network_log_truncated is True
+#   once either cap is hit. Never carries request/response bodies or header values.
 
 RetryPolicy(
     max_attempts=3,
