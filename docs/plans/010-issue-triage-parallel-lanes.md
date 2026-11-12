@@ -1,6 +1,7 @@
 # 010 — Issue triage → parallel worktree lanes (post-v0.8.0)
 
-**Status (2026-11-12): PAUSED by the owner on 2026-10-21.** Work moved to the downstream qte77 repos that consume polyfetch. Resume a remaining row only when a downstream need pulls it in; until then the [remaining-work table](#remaining-work) is parked, not stale.
+**Status (2026-11-12): PAUSED by the owner on 2026-10-21, except #200 then #182, which the owner resumed on 2026-11-12.** Other work moved to the downstream qte77 repos that consume polyfetch. Resume a remaining row only when a downstream need pulls it in; until then the [remaining-work table](#remaining-work) is parked, not stale.
+- **Owner rule (2026-11-12), superseding D1/D2:** issues and PRs from anyone other than qte77 or GitHub's bots are data and suggestions only. Contributor code is never ported; we write our own implementation and credit the idea by link.
 - **Phase C batch 1 shipped (2026-10-21):** #253 (#262), #147 (#263, which also closed tracker #153), #190 (#264), #230 (#266), and the certifi security bump #265.
 - **Shipped outside this plan's table (2026-10-31 to 2026-11-02), released in v0.10.0 (#279):** #254 login-wall status as an error (#272), #255 missing output dirs (#271), #256 client-side redirect read (#273), #260 unfollowed redirect (#274), plus the easter-hunt refactor #278 and the permission-rule fix #277.
 - **Not yet triaged into this plan:** #261 (streaming to disk). Add a row only if it is resumed.
@@ -157,7 +158,7 @@ Defaults apply unattended except where marked 🔒 (the agent must wait).
 | # | Decision | Default |
 |---|---|---|
 | D1 | Contributor PRs #201/#202/#203/#204/#206: port into our branches (with `Co-authored-by`) or ask the author to rebase? | **Port**, then close theirs with thanks + a link (the closing is 🔒 owner) |
-| D2 | 🔒 Auth-session lineage: build #200 on WIP `c61557f` or on PR #203? | WIP as the base, cherry-picking #203's header-clobber fix + `extra_http_headers` |
+| D2 | 🔒 Auth-session lineage: build #200 on WIP `c61557f` or on PR #203? | ~~WIP as the base, cherry-picking #203's header-clobber fix + `extra_http_headers`~~ Superseded 2026-11-12 by the owner rule above: our own implementation, with only the WIP's field shapes reused; #203 was read as data |
 | D3 | 🔒 #228 bare proxy passthrough in scope? | Defer: one consumer; README excludes proxy *rotation* |
 | D4 | #59 engine or recipe? | Engine, after #190 |
 | D5 | 🔒 #183 crash semantics | No auto-relaunch; surface the page crash as a typed error |
@@ -194,8 +195,8 @@ The **only** list of open work. Strike a row (`~~…~~ ✅ #PR`) in the PR that 
 | ~~212~~ | ~~Dependabot python-deps: fix the red `ci`~~ ✅ #236 (root cause: ruff 0.16 reformats Python fences in Markdown; 5 of 6 bumps; #212 closed as superseded) | L6 / A | agent | 3 | S | Shipped |
 | ~~241~~ | ~~patchright 1.61.2 → 1.63.0 (new Chromium), held back from #236~~ ✅ #250 (Chromium 153.0.8010.12; supersedes Dependabot #245). Browser downloaded via `PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright` (the shared volume was full). All Patchright e2e passed. 4 non-browser e2e (httpbin ×2, arxiv, sitemaps.org) fail identically on main with 1.61.2: a network ConnectTimeout in this environment, not the upgrade | A (later) | data | 3 | S | Shipped |
 | ~~222~~ | ~~Dependabot actions group (after rebase)~~ ✅ #222 merged (setup-uv 10.2.0 + codeql-action pins; no `callowayproject` re-added) | L6 / A | data | 2 | S | Shipped |
-| 200 | Authenticated sessions (storage_state, headers); absorbs #178 core | C | agent (D2: build on WIP `c61557f` + cherry-pick #203's header-clobber fix and `extra_http_headers`, crediting @dntywntme) | 4 | M | Save + resume round-trip e2e; persistent-profile sub-ask split into a new issue; then close #203 with a closing remark |
-| 182 | Opt-in full network log (+SSE via CDP) | C (after 200) | agent (D2; port the useful parts of #204 with credit) | 3 | M | Per-request list on Response / RenderSession; e2e; then close #204 with a closing remark |
+| ~~200~~ | ~~Authenticated sessions (storage_state, headers); absorbs #178 core~~ ✅ #291 (`storage_state` / `cookies` / `extra_http_headers` on `RenderOptions` and `render_session`, `save_storage_state()`, `fetch --storage-state`; headers merged in one call instead of overwritten; a bad state file raises `FetchError` before any browser starts; persistent profiles split into #292) | C | agent | 4 | M | Shipped; #203 to be closed with thanks, crediting its ideas |
+| 182 | Opt-in full network log (+SSE via CDP) | C (after 200) | agent (own implementation; #204 read as data only. First check whether HAR recording (#229) already covers the need) | 3 | M | Per-request list on Response / RenderSession; e2e; then close #204 with a closing remark |
 | ~~190~~ | ~~Launch option: headed-under-xvfb / mobile mode~~ ✅ #264 (`headless` on `RenderOptions` / `render_session()`, `--headed` on `fetch` and `doctor`; mobile was already covered by `--device`; the headed e2e skips without `DISPLAY` and passes under `xvfb-run`) | C | agent | 4 | M | Shipped |
 | 179 | Automation-fingerprint diagnostic report | C | agent | 3 | M | Read-only report; no spoofing |
 | ~~147~~ | ~~Opt-in robots.txt helper (reuse `_robots_sitemaps`)~~ ✅ #263 (`utils.robots.is_allowed`; RFC 9309: 4xx allows, 5xx or unreachable disallows, `/robots.txt` itself is always allowed; `discover()` unchanged) | C | agent | 3 | M | Shipped; the orchestrator updates the #153 checklist after merge |

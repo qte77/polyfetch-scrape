@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -1243,3 +1244,250 @@ def test_patchright_backend_launches_headed_when_requested(
     )
 
     page._test_chromium.launch.assert_called_once_with(headless=False)
+
+
+# --------------------------------------------------------------------------- #
+# Authenticated sessions (#200): storage_state, cookies, extra_http_headers
+# --------------------------------------------------------------------------- #
+
+
+def test_context_kwargs_storage_state_passthrough() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+    state = {"cookies": [{"name": "session", "value": "abc"}], "origins": []}
+
+    kwargs = patchright_backend.context_kwargs(pw, RenderOptions(storage_state=state))
+
+    assert kwargs["storage_state"] == state
+
+
+def test_context_kwargs_storage_state_omitted_when_none() -> None:
+    pw = MagicMock()
+    pw.devices = {}
+
+    kwargs = patchright_backend.context_kwargs(pw, RenderOptions())
+
+    assert "storage_state" not in kwargs
+
+
+def test_apply_cookies_adds_cookies_to_context() -> None:
+    context = MagicMock(spec=pw_sync.BrowserContext)
+    cookie = {"name": "session", "value": "abc", "url": "https://example.com"}
+
+    patchright_backend.apply_cookies(context, RenderOptions(cookies=(cookie,)))
+
+    context.add_cookies.assert_called_once_with([cookie])
+
+
+def test_apply_cookies_noop_when_empty() -> None:
+    context = MagicMock(spec=pw_sync.BrowserContext)
+
+    patchright_backend.apply_cookies(context, RenderOptions())
+
+    context.add_cookies.assert_not_called()
+
+
+def test_merge_extra_headers_returns_none_when_both_empty() -> None:
+    assert patchright_backend._merge_extra_headers(None, None) is None
+
+
+def test_merge_extra_headers_render_only() -> None:
+    merged = patchright_backend._merge_extra_headers({"X-Render": "r"}, None)
+    assert merged == {"X-Render": "r"}
+
+
+def test_merge_extra_headers_fetch_only() -> None:
+    merged = patchright_backend._merge_extra_headers(None, {"X-Fetch": "f"})
+    assert merged == {"X-Fetch": "f"}
+
+
+def test_merge_extra_headers_fetch_wins_on_key_collision() -> None:
+    merged = patchright_backend._merge_extra_headers(
+        {"X-Common": "render-value", "X-Render": "r"},
+        {"X-Common": "fetch-value", "X-Fetch": "f"},
+    )
+    assert merged == {"X-Common": "fetch-value", "X-Render": "r", "X-Fetch": "f"}
+
+
+def test_patchright_backend_merges_render_and_fetch_extra_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#200: RenderOptions.extra_http_headers merges with fetch(headers=...) -- a single
+    context.set_extra_http_headers() call carrying the union, fetch(headers=...) winning per
+    key, instead of a second call silently replacing the first's headers (empirically
+    verified against Chromium in .scratch/probe_headers.py during Phase 1 falsification)."""
+    page, _ = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers={"X-Fetch": "from-fetch", "X-Common": "fetch-wins"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(
+            extra_http_headers={"X-Render": "from-render", "X-Common": "render-loses"}
+        ),
+    )
+
+    context.set_extra_http_headers.assert_called_once_with(
+        {"X-Render": "from-render", "X-Common": "fetch-wins", "X-Fetch": "from-fetch"}
+    )
+
+
+def test_patchright_backend_extra_headers_render_only_single_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(extra_http_headers={"X-Render": "from-render"}),
+    )
+
+    context.set_extra_http_headers.assert_called_once_with({"X-Render": "from-render"})
+
+
+def test_patchright_backend_no_extra_headers_call_when_neither_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    context.set_extra_http_headers.assert_not_called()
+
+
+def test_patchright_backend_applies_cookies_before_new_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page, _ = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+    order: list[str] = []
+    context.add_cookies.side_effect = lambda *_a: order.append("add_cookies")
+    context.new_page.side_effect = lambda *_a: order.append("new_page") or page
+
+    patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(cookies=({"name": "session", "value": "abc", "url": "https://x"},)),
+    )
+
+    assert order == ["add_cookies", "new_page"]
+
+
+# --------------------------------------------------------------------------- #
+# storage_state validation (#200 review fix): a bad path/JSON must raise a
+# named FetchError before any browser work, not a raw FileNotFoundError /
+# json.JSONDecodeError escaping from Patchright's own new_context() internals.
+# --------------------------------------------------------------------------- #
+
+
+def test_validate_storage_state_none_is_noop() -> None:
+    patchright_backend.validate_storage_state(None)
+
+
+def test_validate_storage_state_mapping_is_noop_no_file_check() -> None:
+    patchright_backend.validate_storage_state({"cookies": [], "origins": []})
+
+
+def test_validate_storage_state_missing_file_raises_fetcherror(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist.json"
+
+    with pytest.raises(FetchError, match=re.escape(str(missing))):
+        patchright_backend.validate_storage_state(str(missing))
+
+
+def test_validate_storage_state_invalid_json_raises_fetcherror(tmp_path: Path) -> None:
+    bad = tmp_path / "bad_state.json"
+    bad.write_text("{not valid json")
+
+    with pytest.raises(FetchError, match="not valid JSON"):
+        patchright_backend.validate_storage_state(str(bad))
+
+
+def test_validate_storage_state_valid_file_passes(tmp_path: Path) -> None:
+    good = tmp_path / "good_state.json"
+    good.write_text('{"cookies": [], "origins": []}')
+
+    patchright_backend.validate_storage_state(str(good))  # no raise
+
+
+def test_attempt_raises_fetcherror_for_missing_storage_state_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The bug: a bad path must not escape as a raw FileNotFoundError, and must not even
+    start the Patchright driver (sync_playwright is never called)."""
+    sync_playwright_mock = MagicMock()
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.patchright_backend.sync_playwright", sync_playwright_mock
+    )
+    missing = tmp_path / "does-not-exist.json"
+
+    with pytest.raises(FetchError, match=re.escape(str(missing))):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            render=RenderOptions(storage_state=str(missing)),
+        )
+
+    sync_playwright_mock.assert_not_called()
+
+
+def test_attempt_raises_fetcherror_for_invalid_json_storage_state_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    sync_playwright_mock = MagicMock()
+    monkeypatch.setattr(
+        "polyfetch_scrape._backends.patchright_backend.sync_playwright", sync_playwright_mock
+    )
+    bad_state = tmp_path / "bad_state.json"
+    bad_state.write_text("{not valid json")
+
+    with pytest.raises(FetchError, match="not valid JSON"):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            render=RenderOptions(storage_state=str(bad_state)),
+        )
+
+    sync_playwright_mock.assert_not_called()
+
+
+def test_attempt_mapping_storage_state_skips_file_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Mapping is already in memory -- no file check, no behavior change."""
+    _make_pw_chain(monkeypatch)
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        render=RenderOptions(storage_state={"cookies": [], "origins": []}),
+    )
+
+    assert resp.status == 200

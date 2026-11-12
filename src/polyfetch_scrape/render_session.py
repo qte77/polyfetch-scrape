@@ -16,6 +16,7 @@ reflect only THIS process's network — a cross-origin failure a real user hits
 """
 
 import contextlib
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +24,11 @@ from patchright.sync_api import TimeoutError as PwTimeoutError
 from patchright.sync_api import sync_playwright
 
 from polyfetch_scrape._backends.patchright_backend import (
+    apply_cookies,
     attach_capture,
     capture_screenshot,
     context_kwargs,
+    validate_storage_state,
 )
 from polyfetch_scrape._platform import ensure_browser_tier_supported
 from polyfetch_scrape.errors import FetchError
@@ -64,6 +67,9 @@ class RenderSession:
         record_har_mode: HarMode = "minimal",
         record_har_content: HarContent = "omit",
         headless: bool = True,
+        storage_state: str | Path | Mapping[str, Any] | None = None,
+        cookies: tuple[Mapping[str, Any], ...] = (),
+        extra_http_headers: Mapping[str, str] | None = None,
     ) -> None:
         self._url = url
         self._wait_until = wait_until
@@ -82,6 +88,9 @@ class RenderSession:
             record_har_mode=record_har_mode,
             record_har_content=record_har_content,
             headless=headless,
+            storage_state=storage_state,
+            cookies=cookies,
+            extra_http_headers=extra_http_headers,
         )
         self._pw: Any = None
         self._browser: Any = None
@@ -97,9 +106,13 @@ class RenderSession:
     def __enter__(self) -> "RenderSession":
         # Same platform gate as the fetch tier: no musllinux patchright wheel (#197).
         ensure_browser_tier_supported()
+        validate_storage_state(self._opts.storage_state)
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(headless=self._opts.headless)
         self._context = self._browser.new_context(**context_kwargs(self._pw, self._opts))
+        apply_cookies(self._context, self._opts)
+        if self._opts.extra_http_headers:
+            self._context.set_extra_http_headers(dict(self._opts.extra_http_headers))
         self.page = self._context.new_page()
         # Raw `s.page` calls (e.g. `.locator(...).click()`) otherwise fall back to Playwright's
         # own 30000ms default regardless of this session's `timeout=` (#216) — align both page-
@@ -149,6 +162,24 @@ class RenderSession:
         self.screenshots[name] = data
         return data
 
+    def save_storage_state(self, path: str | Path) -> None:
+        """Persist the session's cookies + localStorage to ``path`` (parent dirs created).
+
+        Must be called INSIDE the ``with`` block: the context (and its storage) is gone once
+        it exits, and ``storage_state()`` raises against an already-closed context rather
+        than against a live one (verified: Patchright's own error is ``TargetClosedError``,
+        a dead-driver error with no useful detail for a caller) -- this raises a clear
+        ``FetchError`` instead, the mirror image of the video-path-after-close bug (#199).
+        Unlike ``screenshot``/``pdf``/``video``, Patchright does **not** create the parent
+        directory for a storage-state path itself (verified: a missing parent raises
+        ``FileNotFoundError``), so this creates it first.
+        """
+        if self._context is None:
+            raise FetchError("render_session: save_storage_state() called after the session closed")
+        resolved = Path(path)
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        self._context.storage_state(path=str(resolved))
+
     def _safe_shot(self, name: str) -> None:
         with contextlib.suppress(Exception):
             self.screenshots[name] = capture_screenshot(self.page, "viewport") or b""
@@ -157,6 +188,7 @@ class RenderSession:
         if self._context is not None:
             with contextlib.suppress(Exception):
                 self._context.close()
+            self._context = None
         # Patchright only finalizes the video/HAR once its context has closed (above). The
         # video path needs a live driver connection to resolve (video.path()), while the HAR
         # path is already known (record_har_path is the exact destination) but the file itself
@@ -191,6 +223,9 @@ def render_session(
     record_har_mode: HarMode = "minimal",
     record_har_content: HarContent = "omit",
     headless: bool = True,
+    storage_state: str | Path | Mapping[str, Any] | None = None,
+    cookies: tuple[Mapping[str, Any], ...] = (),
+    extra_http_headers: Mapping[str, str] | None = None,
 ) -> RenderSession:
     """Open a managed Patchright session for an interactive multi-step flow.
 
@@ -219,6 +254,16 @@ def render_session(
     headed, which clears some anti-bot challenges a headless launch never does (#190) — on a
     display-less host (e.g. CI) run it under ``xvfb-run -a`` to stay unattended.
 
+    ``storage_state`` / ``cookies`` resume a session **authenticated from the first
+    navigation** — capture one out of band with ``RenderSession.save_storage_state(path)``,
+    then reuse it non-interactively instead of logging in again every run. Sessions are
+    per-origin: a cookie or storage state captured for one origin does not authenticate a
+    different subdomain. ``extra_http_headers`` sends headers (e.g. a bearer token) with
+    every request on this context; it is sent to **every** origin the page contacts, so an
+    ``Authorization`` bearer here can leak to third-party CDNs/analytics the page loads.
+    **Security:** a storage-state file holds live session credentials — handle it like the
+    HAR/video outputs above, never commit or share one uninspected.
+
     Use as a context manager::
 
         with render_session(url) as s:
@@ -244,4 +289,7 @@ def render_session(
         record_har_mode=record_har_mode,
         record_har_content=record_har_content,
         headless=headless,
+        storage_state=storage_state,
+        cookies=cookies,
+        extra_http_headers=extra_http_headers,
     )

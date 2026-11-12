@@ -1,4 +1,5 @@
 import contextlib
+import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -56,6 +57,7 @@ def attempt(
         raise FetchError(f"patchright backend supports GET only, not {method}")
 
     opts = render if render is not None else RenderOptions()
+    validate_storage_state(opts.storage_state)
     last = _Attempt(None, None, None)
     timeout_ms = int(timeout * 1000)
 
@@ -151,7 +153,65 @@ def context_kwargs(pw: Any, opts: RenderOptions) -> dict[str, Any]:
         kwargs["record_har_path"] = str(opts.record_har_path)
         kwargs["record_har_mode"] = opts.record_har_mode
         kwargs["record_har_content"] = opts.record_har_content
+    if opts.storage_state is not None:
+        kwargs["storage_state"] = opts.storage_state
     return kwargs
+
+
+def validate_storage_state(storage_state: str | Path | Mapping[str, Any] | None) -> None:
+    """Fail fast with a named ``FetchError`` before any browser work.
+
+    Patchright's own Python layer reads a ``storage_state`` *path* and ``json.loads()`` s it
+    inside ``new_context()``, deep inside the attempt loop: a missing file raises a raw
+    ``FileNotFoundError``, bad JSON a raw ``json.JSONDecodeError`` -- neither caught
+    anywhere upstream, so either escapes ``fetch()`` / ``render_session()`` as an unhandled
+    exception (a Rich traceback from the CLI) instead of the library's own typed error.
+    Checking here, before ``sync_playwright()`` even starts, means a bad path costs nothing
+    (no driver, no browser). A ``Mapping`` is already in memory, so it needs no file check.
+    """
+    if storage_state is None or isinstance(storage_state, Mapping):
+        return
+    path = Path(storage_state)
+    try:
+        text = path.read_text()
+    except OSError as exc:
+        raise FetchError(f"storage_state file not found or unreadable: {path}") from exc
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise FetchError(f"storage_state file is not valid JSON: {path}: {exc}") from exc
+
+
+def apply_cookies(context: Any, opts: RenderOptions) -> None:
+    """Seed ``opts.cookies`` on ``context`` BEFORE the first navigation.
+
+    A targeted alternative to ``storage_state`` (context_kwargs, above) when all that's on
+    hand is a session token rather than a full cookie/localStorage snapshot. No-op when empty.
+    """
+    if opts.cookies:
+        context.add_cookies([dict(cookie) for cookie in opts.cookies])
+
+
+def _merge_extra_headers(
+    render_headers: Mapping[str, str] | None, fetch_headers: Mapping[str, str] | None
+) -> dict[str, str] | None:
+    """Union ``RenderOptions.extra_http_headers`` with ``fetch(headers=...)``.
+
+    ``context.set_extra_http_headers()`` REPLACES the context's whole extra-header set on
+    every call -- confirmed against a real Chromium request: a header set via
+    ``new_context(extra_http_headers=...)`` did not reach the wire once a second
+    ``set_extra_http_headers()`` call followed it. So this must be called **at most once**
+    per context, with the full union computed here, rather than one caller's headers quietly
+    replacing another's. ``fetch_headers`` wins on a key collision -- it is the more specific,
+    per-call override. Returns ``None`` when neither side has anything to send (zero overhead,
+    matching the no-headers default).
+    """
+    if not render_headers and not fetch_headers:
+        return None
+    merged = dict(render_headers) if render_headers else {}
+    if fetch_headers:
+        merged.update(fetch_headers)
+    return merged
 
 
 def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
@@ -175,8 +235,10 @@ def _attempt_once(
     policy: RetryPolicy,
 ) -> _Attempt:
     context = browser.new_context(**context_kwargs)
-    if headers:
-        context.set_extra_http_headers(dict(headers))
+    apply_cookies(context, opts)
+    merged_headers = _merge_extra_headers(opts.extra_http_headers, headers)
+    if merged_headers:
+        context.set_extra_http_headers(merged_headers)
     page = context.new_page()
     console_errors, network_failures = attach_capture(page, opts)
     video = page.video if opts.record_video_dir is not None else None

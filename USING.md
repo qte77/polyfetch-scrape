@@ -24,7 +24,7 @@ uv run --directory <polyfetch> polyfetch fetch <url> --json
 
 Beyond the CLI, polyfetch is a **substrate you script against**: `render_session(url)` hands you the live, instrumented stealth-Patchright `Page` as `.page`, with the **full Chromium DevTools / CDP surface** — for flows the CLI doesn't cover.
 
-`render_session(url, *, wait_until=..., timeout=30.0, device=None, viewport=None, color_scheme=None, user_agent=None, locale=None, record_video_dir=None, record_video_size=None, record_har_path=None, record_har_mode="minimal", record_har_content="omit", headless=True) -> RenderSession` — `viewport`/`record_video_size` are plain `(width, height)` pixel tuples, **not** a `RenderOptions`/dict. `record_har_path` records a HAR 1.2 file of every request — **contains every request/response header, including cookies**; see the security note below. `headless=False` launches Chromium headed instead (clears some anti-bot challenges a headless launch never does, #190) — on a display-less host run it under `xvfb-run -a` to stay unattended. Full signature + semantics: [`docs/api-reference.md` § Render session](docs/api-reference.md#render-session-interactive-patchright-tier).
+`render_session(url, *, wait_until=..., timeout=30.0, device=None, viewport=None, color_scheme=None, user_agent=None, locale=None, record_video_dir=None, record_video_size=None, record_har_path=None, record_har_mode="minimal", record_har_content="omit", headless=True, storage_state=None, cookies=(), extra_http_headers=None) -> RenderSession` — `viewport`/`record_video_size` are plain `(width, height)` pixel tuples, **not** a `RenderOptions`/dict. `record_har_path` records a HAR 1.2 file of every request — **contains every request/response header, including cookies**; see the security note below. `headless=False` launches Chromium headed instead (clears some anti-bot challenges a headless launch never does, #190) — on a display-less host run it under `xvfb-run -a` to stay unattended. `storage_state`/`cookies` resume an authenticated session from the first navigation; `RenderSession.save_storage_state(path)` captures one (creates parent dirs) — see the authenticated-sessions recipe in [`docs/scripting.md`](docs/scripting.md). `extra_http_headers` sends headers (e.g. a bearer token) with every request on the context; it merges with `fetch(headers=...)` on the one-shot tier rather than one replacing the other. Full signature + semantics: [`docs/api-reference.md` § Render session](docs/api-reference.md#render-session-interactive-patchright-tier).
 
 ### DevTools capture (console, network, JS errors)
 
@@ -109,12 +109,13 @@ with render_session(url) as s:
 
 `fetch` **patchright-tier launch flag:** `--headed` (launch Chromium headed instead of headless; default is headless). A headed launch clears some anti-bot challenges a headless launch never does (#190) — on a display-less host (e.g. CI) run it under `xvfb-run -a` to stay unattended.
 
-> **Security — HAR files contain credentials.** A HAR records every request/response header,
-> including `Cookie` and `Authorization`. It is safe today because polyfetch has no
-> authenticated-session support yet, but once one lands (#200/#178) a HAR taken during a
-> logged-in session **will** contain live credentials. Never commit, upload, or share a `--har-out`
-> file uninspected — treat it like a secret. Bodies are omitted by default; headers are not
-> redacted (tracked as a follow-up).
+`fetch` **patchright-tier authenticated-session flag:** `--storage-state FILE` (resume a session from a Playwright storage-state JSON file — cookies + localStorage — e.g. one saved via `RenderSession.save_storage_state()`; see the recipe in [`docs/scripting.md`](docs/scripting.md)). A `FILE` that doesn't exist, can't be read, or isn't valid JSON reports the normal `FetchError` text/`--json` error shape below (exit `1`), checked before any browser work — not a raw traceback. `cookies=` and `extra_http_headers=` (merged with any other explicit `headers=`) are Python-API-only for now — no existing CLI flag shape fits a multi-value cookie list or a repeatable header flag, so they were not added here (#200).
+
+> **Security — HAR and storage-state files contain credentials.** A HAR records every
+> request/response header, including `Cookie` and `Authorization`; a storage-state file holds
+> live session cookies and localStorage. Never commit, upload, or share a `--har-out` or
+> `--storage-state` file uninspected — treat each like a secret. HAR bodies are omitted by
+> default; headers are not redacted in either file (tracked as a follow-up).
 
 `bulk` flags: `--workers N` (concurrency), `--delay S` (per-host polite spacing — min seconds between same-host requests, shared across workers), `--timeout S`, `--max-attempts N`, `--json`/`--text` (default `--json`, JSON-lines).
 

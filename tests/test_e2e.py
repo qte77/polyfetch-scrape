@@ -4,8 +4,11 @@ Skipped by default (see `addopts = "-m 'not e2e'"` in pyproject.toml).
 Run via `make test_e2e` or `uv run pytest -m e2e`.
 """
 
+import http.server
 import json
 import os
+import threading
+from collections.abc import Iterator
 from urllib.parse import urlparse
 
 import pytest
@@ -296,3 +299,128 @@ def test_scrapingcourse_cloudflare_challenge_is_ceiling() -> None:
         "https://www.scrapingcourse.com/cloudflare-challenge", retry=RetryPolicy(max_attempts=1)
     )
     assert resp.status == 200
+
+
+# --- Layer E: authenticated sessions (#200) — a LOCAL fixture, not a third-party site:
+# sets a cookie, then echoes back the cookies/headers a later request actually carried. ---
+
+
+class _SessionFixtureHandler(http.server.BaseHTTPRequestHandler):
+    """Local-only fixture for the #200 save→resume round trip: ``/set-cookie`` sets a
+    cookie; ``/echo`` reports the ``Cookie`` header and any custom ``X-*`` headers it
+    received, as plain visible text (not JSON) so a rendered ``page.content()`` needs no
+    JSON-viewer interpretation to assert against."""
+
+    def do_GET(self) -> None:
+        if self.path == "/set-cookie":
+            self._respond(
+                "<html><body>cookie set</body></html>", set_cookie="session=abc123; Path=/"
+            )
+            return
+        cookie_header = self.headers.get("Cookie", "(none)")
+        extra = ";".join(f"{k}={v}" for k, v in self.headers.items() if k.lower().startswith("x-"))
+        body = f"<html><body>cookie:{cookie_header}|headers:{extra}</body></html>"
+        self._respond(body)
+
+    def _respond(self, body: str, set_cookie: str | None = None) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        if set_cookie is not None:
+            self.send_header("Set-Cookie", set_cookie)
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
+    def log_message(self, *args: object) -> None:  # silence stdout noise during the run
+        pass
+
+
+@pytest.fixture
+def local_fixture_server() -> Iterator[str]:
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), _SessionFixtureHandler) as server:
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{port}"
+        finally:
+            # shutdown() alone stops serve_forever() but leaves the listening socket open
+            # (HTTPServer.__exit__ / server_close() closes it) -- an unclosed socket raises
+            # a ResourceWarning that pytest's unraisableexception plugin turns into a hard
+            # teardown error, even though the test itself passed.
+            server.shutdown()
+            thread.join()
+
+
+def test_render_session_storage_state_save_resume_round_trip(
+    tmp_path, local_fixture_server
+) -> None:
+    """#200: save a session's storage_state, then resume it — no re-login required."""
+    state_path = tmp_path / "state.json"
+    with render_session(f"{local_fixture_server}/set-cookie") as s:
+        s.save_storage_state(state_path)
+    assert state_path.exists()
+
+    with render_session(f"{local_fixture_server}/echo", storage_state=str(state_path)) as s2:
+        content = s2.page.content()
+    assert "cookie:session=abc123" in content
+
+
+def test_render_session_cookies_seed_a_direct_session(local_fixture_server) -> None:
+    """RenderOptions.cookies (#200): a targeted cookie, no full storage_state round trip."""
+    with render_session(
+        f"{local_fixture_server}/echo",
+        cookies=({"name": "session", "value": "direct456", "url": local_fixture_server},),
+    ) as s:
+        content = s.page.content()
+    assert "cookie:session=direct456" in content
+
+
+def test_fetch_storage_state_save_resume_round_trip(tmp_path, local_fixture_server) -> None:
+    """#200: the one-shot fetch(render=RenderOptions(storage_state=...)) entry point also
+    resumes a saved session -- render_session() covers the save side above; this covers the
+    OTHER consumer of a saved storage_state (fetch's single-shot render path)."""
+    state_path = tmp_path / "state.json"
+    with render_session(f"{local_fixture_server}/set-cookie") as s:
+        s.save_storage_state(state_path)
+    assert state_path.exists()
+
+    resp = fetch(
+        f"{local_fixture_server}/echo",
+        tier="patchright",
+        render=RenderOptions(storage_state=str(state_path)),
+    )
+    assert "cookie:session=abc123" in resp.body.decode()
+
+
+def test_render_session_storage_state_and_cookies_compose(tmp_path, local_fixture_server) -> None:
+    """#200: a storage_state base PLUS an explicit extra cookie -- both reach the server.
+    new_context(storage_state=...) seeds the context first; apply_cookies()'s add_cookies()
+    call runs after, before the first navigation -- a different-name cookie is additive,
+    not a replacement (Playwright's add_cookies upserts by name/domain/path)."""
+    state_path = tmp_path / "state.json"
+    with render_session(f"{local_fixture_server}/set-cookie") as s:
+        s.save_storage_state(state_path)
+
+    with render_session(
+        f"{local_fixture_server}/echo",
+        storage_state=str(state_path),
+        cookies=({"name": "extra", "value": "xyz789", "url": local_fixture_server},),
+    ) as s2:
+        content = s2.page.content()
+
+    assert "session=abc123" in content  # from storage_state
+    assert "extra=xyz789" in content  # from cookies=, additive alongside it
+
+
+def test_fetch_extra_http_headers_merge_with_fetch_headers(local_fixture_server) -> None:
+    """#200: RenderOptions.extra_http_headers merges with fetch(headers=...) -- BOTH reach
+    the wire, not just the fetch-level one (the clobbering bug this PR fixes)."""
+    resp = fetch(
+        f"{local_fixture_server}/echo",
+        tier="patchright",
+        headers={"X-Fetch-Only": "from-fetch"},
+        render=RenderOptions(extra_http_headers={"X-Render-Only": "from-render-options"}),
+    )
+    text = resp.body.decode()
+    assert "X-Fetch-Only=from-fetch" in text
+    assert "X-Render-Only=from-render-options" in text

@@ -259,6 +259,91 @@ def test_fetch_headed_flag_builds_render_options(monkeypatch: pytest.MonkeyPatch
     assert render.headless is False  # type: ignore[attr-defined]
 
 
+def test_fetch_storage_state_flag_builds_render_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#200: --storage-state mirrors the other render flags (patchright tier, file path)."""
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test", "--storage-state", "saved-state.json"])
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.storage_state == Path("saved-state.json")  # type: ignore[attr-defined]
+
+
+def test_fetch_no_storage_state_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake(url: str, **kwargs: object) -> Response:
+        captured.update(kwargs)
+        return _ok(url=url)
+
+    monkeypatch.setattr("polyfetch_scrape.cli.fetch", fake)
+
+    result = runner.invoke(app, ["fetch", "https://x.test"])
+
+    assert result.exit_code == 0
+    render = captured["render"]
+    assert render.storage_state is None  # type: ignore[attr-defined]
+
+
+def test_fetch_storage_state_missing_file_reports_fetcherror_text(tmp_path: Path) -> None:
+    """#200 review fix: a bad --storage-state path must report FetchError text/exit 1, like
+    any other FetchError, not a raw traceback. Not mocked -- validation happens before any
+    browser/network work, so this stays offline."""
+    missing = tmp_path / "does-not-exist.json"
+
+    result = runner.invoke(
+        app,
+        ["fetch", "https://example.com", "--tier", "patchright", "--storage-state", str(missing)],
+    )
+
+    assert result.exit_code == 1
+    assert "FetchError" in result.stderr
+    assert str(missing) in result.stderr
+
+
+def test_fetch_storage_state_missing_file_reports_fetcherror_json(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "https://example.com",
+            "--tier",
+            "patchright",
+            "--storage-state",
+            str(missing),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "FetchError"
+    assert str(missing) in payload["message"]
+
+
+def test_fetch_storage_state_invalid_json_reports_fetcherror(tmp_path: Path) -> None:
+    bad_state = tmp_path / "bad_state.json"
+    bad_state.write_text("{not valid json")
+
+    result = runner.invoke(
+        app,
+        ["fetch", "https://example.com", "--tier", "patchright", "--storage-state", str(bad_state)],
+    )
+
+    assert result.exit_code == 1
+    assert "FetchError" in result.stderr
+    assert "not valid JSON" in result.stderr
+
+
 def test_fetch_rejects_malformed_viewport(monkeypatch: pytest.MonkeyPatch) -> None:
     called = False
 

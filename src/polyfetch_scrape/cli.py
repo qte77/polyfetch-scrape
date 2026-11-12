@@ -242,6 +242,7 @@ def _build_render_options(
     video_out: Path | None,
     har_out: Path | None,
     headless: bool,
+    storage_state: Path | None,
 ) -> RenderOptions:
     return RenderOptions(
         wait_until=wait_until,  # type: ignore[arg-type]
@@ -256,6 +257,7 @@ def _build_render_options(
         record_video_dir=video_out,
         record_har_path=har_out,
         headless=headless,
+        storage_state=storage_state,
     )
 
 
@@ -352,6 +354,16 @@ def fetch_cmd(
             "(e.g. CI) run it under `xvfb-run -a` to stay unattended.",
         ),
     ] = False,
+    storage_state: Annotated[
+        Path | None,
+        typer.Option(
+            "--storage-state",
+            help="Browser tier: resume a session from a Playwright storage_state JSON file "
+            "(cookies + localStorage), e.g. one saved via render_session's "
+            "save_storage_state(). Contains live session credentials — handle it like the "
+            "HAR/video outputs, never commit or share one uninspected.",
+        ),
+    ] = None,
     tier: Annotated[
         _TierChoice | None,
         typer.Option(
@@ -425,6 +437,7 @@ def fetch_cmd(
         video_out=video_out,
         har_out=har_out,
         headless=not headed,
+        storage_state=storage_state,
     )
     try:
         resp = fetch(

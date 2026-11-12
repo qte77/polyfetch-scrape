@@ -5,9 +5,9 @@ layers](../README.md#two-layers-engine--scripting-substrate). `render_session(ur
 owns the browser install, launch/teardown, console/network capture, and the SSRF
 guard; you own the app-specific steps once you have a live `Page` on `s.page`. Every
 snippet below uses only the public `RenderSession` surface: `click` / `click_text` /
-`fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot`,
-plus `.page`, `s.console_errors`, `s.network_failures`, `s.screenshots`, `s.video_path`,
-and `s.har_path`.
+`fill` / `submit` / `wait_for_selector` / `wait_for_function` / `wait_ms` / `shot` /
+`save_storage_state`, plus `.page`, `s.console_errors`, `s.network_failures`,
+`s.screenshots`, `s.video_path`, and `s.har_path`.
 
 ## DevTools capture
 
@@ -375,6 +375,62 @@ with render_session(url) as s:
 Keep `s.fill()` for plain/uncontrolled forms — it is faster and perfectly correct there.
 Like the `evaluate` gotcha below, this one fails *silently*: nothing raises, you just get
 the wrong data submitted.
+
+## Authenticated sessions — save once, resume non-interactively
+
+Logging in interactively on every run is slow, and brittle for anything using
+single-use/rotating refresh tokens. Log in once, save the session's `storage_state`
+(cookies + localStorage), then resume it on later runs without touching the login form
+again:
+
+```python
+from polyfetch_scrape import render_session
+
+# Run once, interactively or scripted — save the authenticated session.
+with render_session(login_url) as s:
+    s.page.locator("#email").press_sequentially(user, delay=25)
+    s.page.locator("#password").press_sequentially(pw, delay=25)
+    s.submit()
+    s.wait_for_selector(".dashboard")
+    s.save_storage_state("session_state.json")  # creates parent dirs; call INSIDE the `with`
+```
+
+```python
+# Later runs — resume the session; no login form involved.
+with render_session(dashboard_url, storage_state="session_state.json") as s:
+    s.wait_for_selector(".dashboard")
+    s.shot("dashboard")
+```
+
+The same `storage_state=` (a path **or** a Playwright storage-state mapping) also works
+on the one-shot tier: `fetch(url, render=RenderOptions(storage_state="session_state.json"))`.
+
+**Targeted cookie, no full snapshot:** when all you have is a session token rather than a
+full storage-state capture, seed just that cookie instead:
+
+```python
+with render_session(
+    url, cookies=({"name": "session", "value": token, "url": "https://app.example.com"},)
+) as s:
+    ...
+```
+
+**Bearer-token API headers:** `extra_http_headers=` sends headers (e.g. `Authorization`)
+with every request on the context — the browser-tier mirror of `fetch(headers=...)`.
+Passing both (`fetch(headers=..., render=RenderOptions(extra_http_headers=...))`) merges
+them into one `Authorization`-safe union, `fetch(headers=...)` winning per key, rather
+than one silently replacing the other. `extra_http_headers` is sent to **every** origin
+the page contacts — don't put a bearer token there if the page also loads third-party
+CDNs/analytics you don't want it leaked to.
+
+> **Caveat (per-origin sessions):** a `storage_state`/cookie captured against one origin
+> does not authenticate a different subdomain — `cloud.example.com` and `app.example.com`
+> need their own captures even behind the same OAuth client. Think "one profile per
+> origin", not "one logged-in browser".
+>
+> **Security:** a `storage_state` file holds live session credentials — cookies and
+> localStorage that can impersonate the authenticated user. Handle it exactly like a HAR
+> recording: never commit, upload, or share one uninspected, and don't log its contents.
 
 ## Live emulation on `.page`
 
