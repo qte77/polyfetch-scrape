@@ -68,7 +68,7 @@ cap escalation (`max_tier="curl_cffi"` never launches Chromium) or force a tier 
 
 Covered by: a shared `Throttle(min_interval=...)` via `fetch(url, throttle=...)`, and
 `polyfetch bulk --delay SECONDS` (one throttle across the worker pool → per-host spacing under
-concurrency) (#49).
+concurrency) (#49). To honour a site's robots.txt as well, call `utils.robots.is_allowed(url, user_agent)` before fetching; it is opt-in and follows RFC 9309 (a 5xx or unreachable robots.txt means disallow) (#147).
 
 ## Caller who'd rather parse structured data than scrape HTML
 
