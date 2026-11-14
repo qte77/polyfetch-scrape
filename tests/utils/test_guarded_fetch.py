@@ -292,6 +292,34 @@ def test_guarded_fetch_rewrites_a_unicode_host_to_ascii_and_pins_that_exact_host
     assert captured["pinned_ip"] == "93.184.216.34"
 
 
+def test_guarded_fetch_lowercases_a_mixed_case_ascii_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression guard, not a reproduction of a live bug: urlsplit().hostname already
+    # lowercases (verified empirically against this Python's urllib.parse), so this
+    # passes even without _ascii_pin_url's explicit `.lower()`. But str.encode("idna")
+    # preserves the case of ASCII input — if a caller or a future urlsplit change ever
+    # let a mixed-case host through unlowered, the RESOLVE key built from it would
+    # silently diverge from the host used for the URL and pinned_host. The explicit
+    # `.lower()` in _ascii_pin_url (#295 round 4) is defensive hardening against that,
+    # not a fix for a reachable mismatch in the current code.
+    monkeypatch.setattr(_RESOLVER, lambda _h: ["93.184.216.34"])
+
+    captured: dict[str, object] = {}
+
+    def _fetch_stub(url: str, **kwargs: object) -> Response:
+        captured["url_host"] = urlsplit(url).hostname
+        captured["pinned_host"] = kwargs.get("pinned_host")
+        return _resp(url)
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    guarded_fetch("https://PuBLiC.TesT/x", seed_is_internal=False)
+
+    assert captured["url_host"] == "public.test"
+    assert captured["pinned_host"] == "public.test"
+
+
 def test_guarded_fetch_pins_a_host_with_an_explicit_port(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_RESOLVER, lambda _h: ["93.184.216.34"])
 

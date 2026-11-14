@@ -310,6 +310,11 @@ def _ascii_pin_url(url: str) -> str:
     host = parts.hostname
     if host is None:
         raise FetchError(f"SSRF guard: no host to pin: {url!r}")
+    # urlsplit().hostname already lowercases, so this is a construction guarantee
+    # (not a fix for a reachable mismatch) — defensive: .encode("idna") preserves the
+    # case of its ASCII input, so an already-mixed-case host would otherwise produce
+    # a RESOLVE key that doesn't match what urlsplit reports elsewhere.
+    host = host.lower()
     literal = _parse_ip(host)
     if literal is not None:
         netloc_host = f"[{host}]" if isinstance(literal, ipaddress.IPv6Address) else host
