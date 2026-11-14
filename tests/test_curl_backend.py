@@ -22,12 +22,14 @@ def _fake_response(
     body: bytes = b"",
     headers: Mapping[str, str] | None = None,
     url: str = "https://example.com",
+    primary_ip: str = "",
 ) -> MagicMock:
     resp = MagicMock(spec=curl_requests.Response)
     resp.status_code = status
     resp.content = body
     resp.headers = dict(headers or {})
     resp.url = url
+    resp.primary_ip = primary_ip
     return resp
 
 
@@ -416,7 +418,7 @@ def test_curl_backend_pins_via_curl_options_resolve_and_disables_redirects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """#240 scope (a): CurlOpt.RESOLVE + allow_redirects=False when a pin is given."""
-    fake = _fake_response(status=200, body=b"ok")
+    fake = _fake_response(status=200, body=b"ok", primary_ip="93.184.216.34")
     session_cls = _install_session(monkeypatch, return_value=fake)
 
     curl_backend.attempt(
@@ -437,7 +439,7 @@ def test_curl_backend_pins_via_curl_options_resolve_and_disables_redirects(
 def test_curl_backend_pin_resolve_uses_the_urls_own_port_when_explicit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake = _fake_response(status=200, body=b"ok")
+    fake = _fake_response(status=200, body=b"ok", primary_ip="93.184.216.34")
     session_cls = _install_session(monkeypatch, return_value=fake)
 
     curl_backend.attempt(
@@ -471,6 +473,135 @@ def test_curl_backend_unpinned_path_omits_resolve_and_redirect_kwargs(
     kwargs = session_cls.return_value.request.call_args.kwargs
     assert "curl_options" not in kwargs
     assert "allow_redirects" not in kwargs
+
+
+def test_curl_backend_resolve_entry_brackets_an_ipv6_pinned_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # curl.se CURLOPT_RESOLVE: an IPv6 ADDRESS needs [brackets]; the HOST part doesn't.
+    ipv6 = "2606:2800:220:1:248:1893:25c8:1946"
+    fake = _fake_response(status=200, body=b"ok", primary_ip=ipv6)
+    session_cls = _install_session(monkeypatch, return_value=fake)
+
+    curl_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip=ipv6,
+        pinned_host="public.test",
+    )
+
+    kwargs = session_cls.return_value.request.call_args.kwargs
+    assert kwargs["curl_options"] == {CurlOpt.RESOLVE: [f"public.test:443:[{ipv6}]"]}
+
+
+def test_curl_backend_resolve_entry_idna_encodes_a_unicode_pinned_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # pinned_host arrives as the raw (possibly unicode) hostname from urlsplit; curl
+    # itself will look it up as the ASCII/punycode form, so the RESOLVE entry's HOST
+    # part must match that, not the unicode original.
+    fake = _fake_response(status=200, body=b"ok", primary_ip="93.184.216.34")
+    session_cls = _install_session(monkeypatch, return_value=fake)
+    unicode_host = "тест.test"
+    ascii_host = unicode_host.encode("idna").decode("ascii")
+
+    curl_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="93.184.216.34",
+        pinned_host=unicode_host,
+    )
+
+    kwargs = session_cls.return_value.request.call_args.kwargs
+    assert kwargs["curl_options"] == {CurlOpt.RESOLVE: [f"{ascii_host}:443:93.184.216.34"]}
+
+
+def test_curl_backend_raises_when_primary_ip_does_not_match_the_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Catches any parser differential between urlsplit (what the SSRF guard checked)
+    # and curl's own parsing, and any RESOLVE miss — the pin can't be silently bypassed.
+    fake = _fake_response(status=200, body=b"ok", primary_ip="127.0.0.1")
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FetchError) as excinfo:
+        curl_backend.attempt(
+            method="GET",
+            url="https://public.test/x",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            pinned_ip="93.184.216.34",
+            pinned_host="public.test",
+        )
+
+    assert "93.184.216.34" in str(excinfo.value)
+    assert "127.0.0.1" in str(excinfo.value)
+
+
+def test_curl_backend_primary_ip_check_normalizes_an_ipv4_mapped_ipv6_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _fake_response(status=200, body=b"ok", primary_ip="::ffff:93.184.216.34")
+    _install_session(monkeypatch, return_value=fake)
+
+    # must not raise — the IPv4-mapped IPv6 form curl reported is the same address
+    # as the plain IPv4 pin
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="93.184.216.34",
+        pinned_host="public.test",
+    )
+
+    assert resp.status == 200
+
+
+def test_curl_backend_raises_when_primary_ip_is_unparseable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # curl reported no usable primary_ip at all (empty/garbage) — refuse rather
+    # than assume the connection landed on the pinned address.
+    fake = _fake_response(status=200, body=b"ok", primary_ip="")
+    _install_session(monkeypatch, return_value=fake)
+
+    with pytest.raises(FetchError, match=r"93\.184\.216\.34"):
+        curl_backend.attempt(
+            method="GET",
+            url="https://public.test/x",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=1),
+            pinned_ip="93.184.216.34",
+            pinned_host="public.test",
+        )
+
+
+def test_curl_backend_unpinned_path_skips_the_primary_ip_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No pin → no primary_ip verification; an empty/garbage primary_ip must not raise.
+    fake = _fake_response(status=200, body=b"ok", primary_ip="")
+    _install_session(monkeypatch, return_value=fake)
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert resp.status == 200
 
 
 def test_curl_backend_forwards_json_body(monkeypatch: pytest.MonkeyPatch) -> None:

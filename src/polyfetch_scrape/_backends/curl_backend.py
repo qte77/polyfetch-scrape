@@ -1,3 +1,4 @@
+import ipaddress
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -120,6 +121,9 @@ def _attempt_once(
     except Exception as exc:  # curl_cffi raises a wide error hierarchy
         return _Attempt(None, None, exc)
 
+    if pinned_ip is not None:
+        _verify_connected_to_pin(http_resp, pinned_ip, url)
+
     status = int(http_resp.status_code)
     if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
         retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
@@ -151,14 +155,61 @@ def _pin_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) -> dic
     following instead of libcurl auto-following onto an unchecked address. The URL
     itself is unchanged: curl resolves the given host internally, so Host/SNI/cert
     verification are unaffected (they already use the URL's own host).
+
+    The RESOLVE entry's HOST part is IDNA-encoded (``pinned_host`` arrives as the raw,
+    possibly-unicode hostname ``urlsplit`` gave the caller; curl looks the entry up by
+    the ASCII/punycode form it resolves internally, so the two must match or the
+    override silently misses and curl falls back to its own DNS). The ADDRESS part is
+    bracketed for IPv6, per curl.se's ``CURLOPT_RESOLVE`` (``[+]HOST:PORT:ADDRESS``) —
+    only the address, never the host, needs brackets.
     """
     if pinned_ip is None or pinned_host is None:
         return {}
     port = urlsplit(url).port or (443 if url.startswith("https") else 80)
+    ascii_host = pinned_host.encode("idna").decode("ascii")
+    address = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
     return {
-        "curl_options": {CurlOpt.RESOLVE: [f"{pinned_host}:{port}:{pinned_ip}"]},
+        "curl_options": {CurlOpt.RESOLVE: [f"{ascii_host}:{port}:{address}"]},
         "allow_redirects": False,
     }
+
+
+def _unmap(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Any:
+    """The embedded IPv4 address of an IPv4-mapped IPv6 literal, else ``addr`` unchanged.
+
+    Local to this module (not imported from ``utils._ssrf``, which imports
+    ``client`` → this module — importing back would cycle).
+    """
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped
+    return addr
+
+
+def _verify_connected_to_pin(http_resp: Any, pinned_ip: str, url: str) -> None:
+    """Refuse the response if curl did not actually connect to the pinned address.
+
+    ``CurlOpt.RESOLVE`` can silently miss (a parser differential between ``urlsplit``
+    — what the SSRF guard checked — and curl's own URL/host parsing: a backslash,
+    userinfo, or percent-encoding quirk), in which case curl falls back to its own
+    DNS for the real request. Comparing curl's own ``primary_ip`` (the address it
+    actually connected to, ``curl_cffi.requests.Response.primary_ip``) against the
+    pin — both normalised through :mod:`ipaddress` so an IPv4-mapped IPv6 form still
+    matches its plain-IPv4 pin — means the pin can never be silently bypassed (#240).
+    """
+    reported = str(getattr(http_resp, "primary_ip", "") or "").strip("[]")
+    try:
+        actual = _unmap(ipaddress.ip_address(reported))
+        expected = _unmap(ipaddress.ip_address(pinned_ip))
+    except ValueError:
+        raise FetchError(
+            f"SSRF guard: could not verify the connected address for {url!r} "
+            f"(pinned {pinned_ip!r}, curl reported {reported!r})"
+        ) from None
+    if actual != expected:
+        raise FetchError(
+            f"SSRF guard: curl connected to {reported!r} but {pinned_ip!r} was pinned "
+            f"for {url!r} — refusing the response"
+        )
 
 
 def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
