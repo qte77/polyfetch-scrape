@@ -171,11 +171,14 @@ def _pinned_connect(
     No pin → ``url``/``request_headers`` unchanged, no ``extensions`` — byte-for-byte
     the unpinned path (#240 scope a). With a pin: the connect URL's host becomes the
     pinned IP (bracketed for IPv6) so the TCP connect dials that exact
-    externally-verified address; ``extensions={"sni_hostname": pinned_host}`` keeps
+    externally-verified address; ``extensions={"sni_hostname": ascii_host}`` keeps
     SNI + certificate-hostname verification on the original name (httpcore forwards
     ``server_hostname`` from it, not from the connect host); a ``Host`` header is
     added only when the caller didn't already set one (case-insensitive), so the
-    origin server still sees the original name.
+    origin server still sees the original name. ``pinned_host`` arrives as the raw,
+    possibly-unicode hostname ``urlsplit`` gave the caller; both the ``Host`` header
+    and ``sni_hostname`` use its IDNA/ASCII form instead — the form a real client
+    (and an HTTP header, which must be ASCII) actually sends on the wire.
     """
     if pinned_ip is None or pinned_host is None:
         return url, request_headers, {}
@@ -183,9 +186,10 @@ def _pinned_connect(
     host_literal = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
     netloc = host_literal if parts.port is None else f"{host_literal}:{parts.port}"
     connect_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    ascii_host = pinned_host.encode("idna").decode("ascii")
     if not any(k.lower() == "host" for k in request_headers):
-        request_headers = {**request_headers, "Host": pinned_host}
-    return connect_url, request_headers, {"sni_hostname": pinned_host}
+        request_headers = {**request_headers, "Host": ascii_host}
+    return connect_url, request_headers, {"sni_hostname": ascii_host}
 
 
 def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:

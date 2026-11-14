@@ -524,6 +524,49 @@ def test_httpx_backend_unpinned_path_connects_to_the_original_host() -> None:
 
 
 @respx.mock
+def test_httpx_backend_pin_idna_encodes_a_unicode_pinned_host() -> None:
+    # pinned_host arrives as the raw (possibly unicode) hostname from urlsplit; the
+    # Host header and sni_hostname extension must use the ASCII form a real client
+    # (and the origin server's SNI/cert check) would actually use on the wire.
+    respx.get("https://93.184.216.34/x").mock(return_value=httpx.Response(200, content=b"ok"))
+    unicode_host = "тест.test"
+    ascii_host = unicode_host.encode("idna").decode("ascii")
+
+    httpx_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="93.184.216.34",
+        pinned_host=unicode_host,
+    )
+
+    sent = respx.calls.last.request
+    assert sent.extensions.get("sni_hostname") == ascii_host
+    assert sent.headers["host"] == ascii_host
+
+
+@respx.mock
+def test_httpx_backend_pin_brackets_an_ipv6_connect_address() -> None:
+    ipv6 = "2606:2800:220:1:248:1893:25c8:1946"
+    respx.get(f"https://[{ipv6}]/x").mock(return_value=httpx.Response(200, content=b"ok"))
+
+    resp = httpx_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip=ipv6,
+        pinned_host="public.test",
+    )
+
+    assert len(respx.calls) == 1
+    assert resp.url == "https://public.test/x"  # not the IP-rewritten connect URL
+
+
+@respx.mock
 def test_httpx_backend_forwards_raw_content_body() -> None:
     url = "https://example.com/raw"
     route = respx.post(url).mock(return_value=httpx.Response(200, content=b"ok"))
