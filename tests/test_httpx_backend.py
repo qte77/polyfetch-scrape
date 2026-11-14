@@ -465,6 +465,65 @@ def test_httpx_backend_forwards_json_body() -> None:
 
 
 @respx.mock
+def test_httpx_backend_pins_connect_to_the_verified_ip() -> None:
+    """#240 scope (a): connect to the pinned IP, keep SNI + Host + Response.url on the
+    original host (the sni_hostname extension + an explicit Host header)."""
+    respx.get("https://93.184.216.34/x").mock(return_value=httpx.Response(200, content=b"ok"))
+
+    resp = httpx_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="93.184.216.34",
+        pinned_host="public.test",
+    )
+
+    assert len(respx.calls) == 1
+    sent = respx.calls.last.request
+    assert sent.extensions.get("sni_hostname") == "public.test"
+    assert sent.headers["host"] == "public.test"
+    assert resp.url == "https://public.test/x"  # not the IP-rewritten connect URL
+
+
+@respx.mock
+def test_httpx_backend_pin_does_not_override_a_caller_supplied_host_header() -> None:
+    respx.get("https://93.184.216.34/x").mock(return_value=httpx.Response(200, content=b"ok"))
+
+    httpx_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers={"Host": "caller-chosen.test"},
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="93.184.216.34",
+        pinned_host="public.test",
+    )
+
+    sent = respx.calls.last.request
+    assert sent.headers["host"] == "caller-chosen.test"
+
+
+@respx.mock
+def test_httpx_backend_unpinned_path_connects_to_the_original_host() -> None:
+    """No pin → no behaviour change: the connect URL and respx route key off the hostname."""
+    route = respx.get("https://public.test/x").mock(return_value=httpx.Response(200, content=b"ok"))
+
+    resp = httpx_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert route.call_count == 1
+    assert "sni_hostname" not in respx.calls.last.request.extensions
+    assert resp.url == "https://public.test/x"
+
+
+@respx.mock
 def test_httpx_backend_forwards_raw_content_body() -> None:
     url = "https://example.com/raw"
     route = respx.post(url).mock(return_value=httpx.Response(200, content=b"ok"))

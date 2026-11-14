@@ -46,25 +46,36 @@ Two limits are deliberate, not oversights:
   connect to an address that doesn't exist either, so refusing it here would
   only turn every offline/DNS-flaky run into a hard error for no security gain.
 - **`check_redirect` is preventive on `httpx`, post-hoc on `curl_cffi` and the
-  browser tier.** `httpx` does not follow redirects itself, so the unfollowed
-  ``Location`` is checked *before* any connection is made. `curl_cffi`
-  (``allow_redirects`` defaults to ``True``) and Patchright (``page.goto``
-  always follows) have already connected to the redirect target by the time
-  this check runs on the landed response — it still stops the response body
-  from reaching the caller/detectors, but it does not prevent that one request.
+  browser tier — unless the caller goes through :func:`guarded_fetch`.**
+  `httpx` does not follow redirects itself, so the unfollowed ``Location`` is
+  checked *before* any connection is made. `curl_cffi` (``allow_redirects``
+  defaults to ``True``) and Patchright (``page.goto`` always follows) have
+  already connected to the redirect target by the time this check runs on the
+  landed response — it still stops the response body from reaching the
+  caller/detectors, but it does not prevent that one request. The three call
+  sites capped at ``max_tier="curl_cffi"`` (``utils.sitemap``,
+  ``utils.discovery``) now go through :func:`guarded_fetch` instead, which
+  re-checks and pins *before every hop*, so the connect itself is prevented on
+  both tiers it drives, not just httpx. Patchright has no equivalent per-hop
+  pin (closest primitive, ``--host-resolver-rules``, is launch-time-static) so
+  it stays post-hoc — see ``contrib/easter_hunt/orchestrator.py``'s docstring.
 
-Out of scope: **DNS rebinding** — the resolver's answer can change between this
-check and the connection. Closing that needs connecting to a pinned IP, which
-none of ``httpx``, ``curl_cffi``, nor Patchright expose (tracked as a follow-up
-issue). Obfuscated literal encodings (decimal/hex/octal) are unchanged: they are
-not valid hosts for :func:`ipaddress.ip_address`, so they take the resolver path
-and are judged on what they actually resolve to.
+Out of scope: **DNS rebinding** for any caller still using the bare
+`check_ssrf`/`check_redirect` pair (the resolver's answer can change between
+that check and the connection) — closing it needs connecting to a pinned IP,
+which :func:`guarded_fetch` now does for the httpx/curl_cffi tiers (#240 scope
+a; Patchright still lacks a per-hop pin, see above). Obfuscated literal
+encodings (decimal/hex/octal) are unchanged: they are not valid hosts for
+:func:`ipaddress.ip_address`, so they take the resolver path and are judged on
+what they actually resolve to.
 """
 
 import ipaddress
 import socket
 from urllib.parse import urljoin, urlsplit
 
+from polyfetch_scrape.client import Tier, fetch
+from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 
 _IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
@@ -98,6 +109,38 @@ def is_seed_internal(seed: str) -> bool:
     )
 
 
+def resolve_pinned(url: str, *, seed_is_internal: bool) -> str | None:
+    """Like :func:`check_ssrf`, but returns the externally-verified address to
+    CONNECT to, instead of only a pass/raise verdict.
+
+    ``None`` means "nothing to pin" — ``seed_is_internal``, a hostless ``url``,
+    or an unresolvable hostname (fail-open, same cases as ``check_ssrf``).
+    Otherwise the literal IP, or the FIRST resolved address: the exact one just
+    verified external, so the caller connects to the address THIS check
+    examined and never re-resolves (closes the DNS-rebinding TOCTOU — #240
+    gap 1). Still raises ``ValueError`` for an internal literal or an internal
+    resolved answer, same as ``check_ssrf``.
+    """
+    if seed_is_internal:
+        return None
+    host = urlsplit(url).hostname
+    if host is None:
+        return None
+    literal = _parse_ip(host)
+    if literal is not None:
+        if _is_internal(literal):
+            raise ValueError(_LITERAL_MSG.format(addr=host))
+        return host
+    verified: list[str] = []
+    for address in _resolve(host):
+        resolved = _parse_ip(address)
+        if resolved is not None:
+            if _is_internal(resolved):
+                raise ValueError(_RESOLVED_MSG.format(host=host, addr=address))
+            verified.append(address)
+    return verified[0] if verified else None
+
+
 def check_ssrf(url: str, *, seed_is_internal: bool) -> None:
     """Block a *derived* ``url`` when the seed is external and ``url`` is internal.
 
@@ -108,22 +151,10 @@ def check_ssrf(url: str, *, seed_is_internal: bool) -> None:
     raises ``ValueError`` before any connection is made for a literal IP, and
     before the caller's own connection for a resolved hostname. A hostless URL
     and a name that does not resolve pass through either way (fail-open, see
-    the module docstring).
+    the module docstring). A thin wrapper over :func:`resolve_pinned`, kept so
+    existing callers/signature stay unchanged.
     """
-    if seed_is_internal:
-        return
-    host = urlsplit(url).hostname
-    if host is None:
-        return
-    literal = _parse_ip(host)
-    if literal is not None:
-        if _is_internal(literal):
-            raise ValueError(_LITERAL_MSG.format(addr=host))
-        return
-    for address in _resolve(host):
-        resolved = _parse_ip(address)
-        if resolved is not None and _is_internal(resolved):
-            raise ValueError(_RESOLVED_MSG.format(host=host, addr=address))
+    resolve_pinned(url, seed_is_internal=seed_is_internal)
 
 
 def check_redirect(requested_url: str, response: Response, *, seed_is_internal: bool) -> None:
@@ -148,6 +179,46 @@ def check_redirect(requested_url: str, response: Response, *, seed_is_internal: 
         absolute = urljoin(requested_url, target)
         if absolute != requested_url:
             check_ssrf(absolute, seed_is_internal=False)
+
+
+def guarded_fetch(
+    url: str,
+    *,
+    seed_is_internal: bool,
+    max_tier: Tier = "curl_cffi",
+    timeout: float = 30.0,
+    max_redirects: int = 10,
+) -> Response:
+    """``check_ssrf`` + ``fetch`` + ``check_redirect``, replaced by one call that
+    pins and re-checks EVERY hop *before* it is fetched.
+
+    Unlike the bare ``check_ssrf``/``fetch``/``check_redirect`` sequence (preventive
+    on httpx, post-hoc on curl_cffi — see the module docstring), each hop's address
+    is verified via :func:`resolve_pinned` and threaded straight into that hop's
+    ``fetch()`` call as ``pinned_ip``/``pinned_host`` — closing both the DNS-rebinding
+    TOCTOU (gap 1) and the post-hoc-only redirect check on curl_cffi (gap 2). Follows
+    up to ``max_redirects`` hops (``Response.redirect_to`` — any unfollowed 3xx, a
+    superset of ``permanent_redirect_to``, #260); raises ``FetchError`` past that — a
+    hop-count overrun is a different failure class than a block (the chain never left
+    verified-external addresses), so it is swallowable the same way a 404 is by the
+    existing ``except FetchError: return None`` call sites, unlike the ``ValueError``
+    a block raises.
+    """
+    current = url
+    for _ in range(max_redirects + 1):
+        pin = resolve_pinned(current, seed_is_internal=seed_is_internal)
+        resp = fetch(
+            current,
+            max_tier=max_tier,
+            timeout=timeout,
+            pinned_ip=pin,
+            pinned_host=urlsplit(current).hostname if pin else None,
+        )
+        target = resp.redirect_to
+        if not target:
+            return resp
+        current = urljoin(current, target)
+    raise FetchError(f"too many redirects ({max_redirects} hops): {url}")
 
 
 def _parse_ip(value: str) -> _IPAddress | None:

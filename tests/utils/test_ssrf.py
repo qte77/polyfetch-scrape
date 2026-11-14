@@ -21,7 +21,13 @@ from collections.abc import Mapping, Sequence
 import pytest
 
 from polyfetch_scrape.response import Response
-from polyfetch_scrape.utils._ssrf import _resolve, check_redirect, check_ssrf, is_seed_internal
+from polyfetch_scrape.utils._ssrf import (
+    _resolve,
+    check_redirect,
+    check_ssrf,
+    is_seed_internal,
+    resolve_pinned,
+)
 
 _RESOLVER = "polyfetch_scrape.utils._ssrf._resolve"
 _GETADDRINFO = "polyfetch_scrape.utils._ssrf.socket.getaddrinfo"
@@ -276,6 +282,61 @@ def test_credentials_in_url_do_not_hide_an_internal_name(
 
     with pytest.raises(ValueError, match="SSRF"):
         check_ssrf("http://user:pass@db.internal/", seed_is_internal=False)
+
+
+# --------------------------------------------------------------------------- #
+# resolve_pinned — the externally-verified address to CONNECT to (#240 scope a)
+# --------------------------------------------------------------------------- #
+
+
+def test_resolve_pinned_returns_the_first_resolved_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The exact address just verified external — the caller connects to THIS
+    # one and never re-resolves (closes the DNS-rebinding TOCTOU).
+    _pin(monkeypatch, {"ok.test": ["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"]})
+
+    assert resolve_pinned("http://ok.test/", seed_is_internal=False) == "93.184.216.34"
+
+
+def test_resolve_pinned_returns_a_literal_ip_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    _never_resolve(monkeypatch)
+
+    assert resolve_pinned("http://93.184.216.34/", seed_is_internal=False) == "93.184.216.34"
+
+
+def test_resolve_pinned_none_for_internal_seed(monkeypatch: pytest.MonkeyPatch) -> None:
+    _never_resolve(monkeypatch)
+
+    assert resolve_pinned("http://169.254.169.254/latest/meta-data/", seed_is_internal=True) is None
+
+
+def test_resolve_pinned_none_for_hostless_url() -> None:
+    assert resolve_pinned("/relative/path", seed_is_internal=False) is None
+
+
+def test_resolve_pinned_none_for_unresolvable_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    _pin(monkeypatch, {})
+
+    assert resolve_pinned("http://nope.invalid/", seed_is_internal=False) is None
+
+
+def test_resolve_pinned_still_raises_for_an_internal_literal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _never_resolve(monkeypatch)
+
+    with pytest.raises(ValueError, match="SSRF"):
+        resolve_pinned("http://169.254.169.254/", seed_is_internal=False)
+
+
+def test_resolve_pinned_still_raises_when_an_answer_is_internal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _pin(monkeypatch, {"sneaky.test": ["169.254.169.254"]})
+
+    with pytest.raises(ValueError, match="SSRF"):
+        resolve_pinned("http://sneaky.test/", seed_is_internal=False)
 
 
 # --------------------------------------------------------------------------- #

@@ -37,6 +37,14 @@ _BODY_ON_PATCHRIGHT_MSG = (
     "body requests are limited to the httpx/curl_cffi tiers: {url}"
 )
 
+# Patchright has no per-hop pinning primitive (#240 scope a is httpx/curl_cffi only;
+# see utils/_ssrf.py's module docstring) — a pin passed with tier="patchright" (or a
+# tier range that resolves to it) must fail loudly, not silently drop the pin.
+_PIN_ON_PATCHRIGHT_MSG = (
+    "pinned_ip/pinned_host are not supported on the patchright tier (no per-hop "
+    "pinning primitive): {url}"
+)
+
 # Cheapest → most capable. The auto chain escalates left-to-right; min_tier/max_tier
 # select a contiguous slice of this order (see #80).
 _TIER_ORDER: tuple[Tier, ...] = ("httpx", "curl_cffi", "patchright")
@@ -64,9 +72,13 @@ def fetch(
     content: bytes | None = None,
     throttle: Throttle | None = None,
     render: RenderOptions | None = None,
+    pinned_ip: str | None = None,
+    pinned_host: str | None = None,
 ) -> Response:
     if json is not None and content is not None:
         raise FetchError("provide either json or content, not both")
+    if (pinned_ip is None) != (pinned_host is None):
+        raise FetchError("pass both pinned_ip and pinned_host, or neither")
     lo, hi = _resolve_tier_range(tier, min_tier, max_tier)
     policy = retry if retry is not None else RetryPolicy()
     headers = _with_conditional_headers(headers, etag, last_modified)
@@ -78,7 +90,20 @@ def fetch(
     # retries/tier-escalation within one call already honor Retry-After / backoff).
     if throttle is not None:
         throttle.acquire(url)
-    return _run_chain(active, method, url, headers, timeout, policy, browser, render, json, content)
+    return _run_chain(
+        active,
+        method,
+        url,
+        headers,
+        timeout,
+        policy,
+        browser,
+        render,
+        json,
+        content,
+        pinned_ip,
+        pinned_host,
+    )
 
 
 def _with_conditional_headers(
@@ -128,18 +153,44 @@ def _run_chain(
     render: RenderOptions,
     json: Any | None,
     content: bytes | None,
+    pinned_ip: str | None,
+    pinned_host: str | None,
 ) -> Response:
     """Walk the active tier range: escalate on FingerprintBlock; the last tier's error surfaces."""
     *escalating, final = active
     for i, current in enumerate(escalating):
         try:
             return _dispatch(
-                current, method, url, headers, timeout, policy, browser, render, json, content
+                current,
+                method,
+                url,
+                headers,
+                timeout,
+                policy,
+                browser,
+                render,
+                json,
+                content,
+                pinned_ip,
+                pinned_host,
             )
         except FingerprintBlock:
             nxt = escalating[i + 1] if i + 1 < len(escalating) else final
             _log.info("tier escalation: %s blocked, trying %s: %s", current, nxt, url)
-    return _dispatch(final, method, url, headers, timeout, policy, browser, render, json, content)
+    return _dispatch(
+        final,
+        method,
+        url,
+        headers,
+        timeout,
+        policy,
+        browser,
+        render,
+        json,
+        content,
+        pinned_ip,
+        pinned_host,
+    )
 
 
 def _dispatch(
@@ -153,16 +204,38 @@ def _dispatch(
     render: RenderOptions,
     json: Any | None,
     content: bytes | None,
+    pinned_ip: str | None,
+    pinned_host: str | None,
 ) -> Response:
-    """Call one backend. Patchright is GET-only and cannot carry a request body."""
+    """Call one backend. Patchright is GET-only and cannot carry a request body or a pin
+    (no per-hop pinning primitive — see utils/_ssrf.py's module docstring)."""
     if tier == "httpx":
         return httpx_backend.attempt(
-            method, url, headers, timeout, policy, json=json, content=content
+            method,
+            url,
+            headers,
+            timeout,
+            policy,
+            json=json,
+            content=content,
+            pinned_ip=pinned_ip,
+            pinned_host=pinned_host,
         )
     if tier == "curl_cffi":
         return curl_backend.attempt(
-            method, url, headers, timeout, policy, browser=browser, json=json, content=content
+            method,
+            url,
+            headers,
+            timeout,
+            policy,
+            browser=browser,
+            json=json,
+            content=content,
+            pinned_ip=pinned_ip,
+            pinned_host=pinned_host,
         )
     if json is not None or content is not None:
         raise FetchError(_BODY_ON_PATCHRIGHT_MSG.format(url=url))
+    if pinned_ip is not None:
+        raise FetchError(_PIN_ON_PATCHRIGHT_MSG.format(url=url))
     return patchright_backend.attempt(method, url, headers, timeout, policy, render=render)

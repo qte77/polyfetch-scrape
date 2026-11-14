@@ -2,8 +2,10 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
+from urllib.parse import urlsplit
 
 from curl_cffi import requests as curl_requests
+from curl_cffi.const import CurlOpt
 
 from polyfetch_scrape._backends import (
     FingerprintBlock,
@@ -45,13 +47,26 @@ def attempt(
     *,
     json: Any | None = None,
     content: bytes | None = None,
+    pinned_ip: str | None = None,
+    pinned_host: str | None = None,
 ) -> Response:
     last = _Attempt(None, None, None)
     session_cls = cast(Any, curl_requests).Session
 
     with session_cls(impersonate=browser) as session:
         for attempt_idx in range(policy.max_attempts):
-            last = _attempt_once(session, method, url, headers, timeout, policy, json, content)
+            last = _attempt_once(
+                session,
+                method,
+                url,
+                headers,
+                timeout,
+                policy,
+                json,
+                content,
+                pinned_ip,
+                pinned_host,
+            )
             if last.response is not None:
                 return last.response
             if last.soft_block:
@@ -88,7 +103,10 @@ def _attempt_once(
     policy: RetryPolicy,
     json: Any | None = None,
     content: bytes | None = None,
+    pinned_ip: str | None = None,
+    pinned_host: str | None = None,
 ) -> _Attempt:
+    pin_kwargs = _pin_kwargs(url, pinned_ip, pinned_host)
     try:
         http_resp = session.request(
             method,
@@ -97,6 +115,7 @@ def _attempt_once(
             timeout=timeout,
             json=json,
             data=content,
+            **pin_kwargs,
         )
     except Exception as exc:  # curl_cffi raises a wide error hierarchy
         return _Attempt(None, None, exc)
@@ -119,6 +138,27 @@ def _attempt_once(
         resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
         return _Attempt(None, status, None, None, resp_headers, None, soft_block=True)
     return _Attempt(resp, None, None)
+
+
+def _pin_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) -> dict[str, Any]:
+    """Extra ``session.request(...)`` kwargs for an optionally-pinned request.
+
+    No pin → ``{}``, so the unpinned path is byte-for-byte unchanged (the session's
+    own ``allow_redirects=True`` default still applies). With a pin: ``CurlOpt.RESOLVE``
+    (#240 scope a) makes curl's own resolver answer ``pinned_host:port`` with
+    ``pinned_ip`` — cleared after every ``perform()``, so this never leaks into another
+    request — and ``allow_redirects=False`` returns the raw 3xx for manual hop-by-hop
+    following instead of libcurl auto-following onto an unchecked address. The URL
+    itself is unchanged: curl resolves the given host internally, so Host/SNI/cert
+    verification are unaffected (they already use the URL's own host).
+    """
+    if pinned_ip is None or pinned_host is None:
+        return {}
+    port = urlsplit(url).port or (443 if url.startswith("https") else 80)
+    return {
+        "curl_options": {CurlOpt.RESOLVE: [f"{pinned_host}:{port}:{pinned_ip}"]},
+        "allow_redirects": False,
+    }
 
 
 def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
