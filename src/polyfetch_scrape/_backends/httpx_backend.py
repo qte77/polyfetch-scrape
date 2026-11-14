@@ -53,8 +53,17 @@ def attempt(
     pinned_host: str | None = None,
 ) -> Response:
     last = _Attempt(None, None, None)
+    client_kwargs: dict[str, Any] = {"timeout": timeout}
+    if pinned_ip is not None:
+        # A pin that still honours a configured proxy is no pin at all — the
+        # connection would go to the proxy, not the verified address. This also
+        # drops SSL_CERT_FILE/SSL_CERT_DIR/netrc for the pinned hop (httpx's
+        # trust_env controls all of those, not just proxies) — a custom CA bundle
+        # or netrc-based auth won't apply to a pinned HTTPS request. See the
+        # equivalent decision for curl in curl_backend._session_kwargs.
+        client_kwargs["trust_env"] = False
 
-    with httpx.Client(timeout=timeout) as client:
+    with httpx.Client(**client_kwargs) as client:
         for attempt_idx in range(policy.max_attempts):
             last = _attempt_once(
                 client, method, url, headers, policy, json, content, pinned_ip, pinned_host

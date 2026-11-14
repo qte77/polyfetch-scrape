@@ -1,3 +1,5 @@
+import socket
+
 import httpx
 import pytest
 import respx
@@ -6,6 +8,7 @@ from polyfetch_scrape._backends import FingerprintBlock, httpx_backend
 from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.retry import RETRY_AFTER_CAP_S, RetryPolicy
 from polyfetch_scrape.utils.http_ua import STABLE_USER_AGENT
+from tests.conftest import REAL_GETADDRINFO
 
 
 @pytest.fixture(autouse=True)
@@ -506,6 +509,62 @@ def test_httpx_backend_pin_does_not_override_a_caller_supplied_host_header() -> 
 
 
 @respx.mock
+def test_httpx_backend_pin_disables_trust_env_so_a_proxy_cannot_intercept_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pin that still honours http_proxy/https_proxy is no pin at all — the
+    connection would go to the configured proxy instead of the verified address
+    (#295 round 4). ``httpx.Client.__init__`` is wrapped, not replaced: the real
+    constructor still runs, so respx's transport mocking is unaffected."""
+    captured: dict[str, object] = {}
+    real_init = httpx.Client.__init__
+
+    def _capturing_init(self: httpx.Client, *args: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "__init__", _capturing_init)
+    respx.get("https://93.184.216.34/x").mock(return_value=httpx.Response(200, content=b"ok"))
+
+    httpx_backend.attempt(
+        method="GET",
+        url="https://public.test/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="93.184.216.34",
+        pinned_host="public.test",
+    )
+
+    assert captured["trust_env"] is False
+
+
+@respx.mock
+def test_httpx_backend_unpinned_path_leaves_trust_env_at_its_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    real_init = httpx.Client.__init__
+
+    def _capturing_init(self: httpx.Client, *args: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "__init__", _capturing_init)
+    respx.get("https://example.com/x").mock(return_value=httpx.Response(200, content=b"ok"))
+
+    httpx_backend.attempt(
+        method="GET",
+        url="https://example.com/x",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+    )
+
+    assert "trust_env" not in captured
+
+
+@respx.mock
 def test_httpx_backend_unpinned_path_connects_to_the_original_host() -> None:
     """No pin → no behaviour change: the connect URL and respx route key off the hostname."""
     route = respx.get("https://public.test/x").mock(return_value=httpx.Response(200, content=b"ok"))
@@ -564,6 +623,40 @@ def test_httpx_backend_pin_brackets_an_ipv6_connect_address() -> None:
 
     assert len(respx.calls) == 1
     assert resp.url == "https://public.test/x"  # not the IP-rewritten connect URL
+
+
+def test_httpx_backend_pin_really_connects_to_the_pinned_address(
+    monkeypatch: pytest.MonkeyPatch, loopback_server: int
+) -> None:
+    """Real proof, no mocks, no respx (#295 round 4): httpcore's sync transport calls
+    ``socket.getaddrinfo`` even for an already-IP-literal connect host (via
+    ``socket.create_connection``), so the suite's autouse DNS stub — which answers
+    EVERY lookup with a fixed public address, see ``tests/conftest.py`` — would
+    otherwise redirect this real connection away from the loopback server.
+    Restoring the real resolver for just this test is what makes it a genuine proof
+    rather than an artifact of that stub.
+
+    ``pin-test-httpx.invalid`` is RFC 2606-reserved and never reaches any resolver
+    here anyway: ``_pinned_connect`` rewrites the connect URL's host to the literal
+    pinned IP before httpx ever sees the original hostname — exactly the mechanism
+    this test proves works for real, against a real socket.
+    """
+    monkeypatch.setattr(socket, "getaddrinfo", REAL_GETADDRINFO)
+    host = "pin-test-httpx.invalid"
+
+    resp = httpx_backend.attempt(
+        method="GET",
+        url=f"http://{host}:{loopback_server}/",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="127.0.0.1",
+        pinned_host=host,
+    )
+
+    assert resp.status == 200
+    assert resp.body == b"ok-from-loopback"
+    assert resp.url == f"http://{host}:{loopback_server}/"
 
 
 @respx.mock
