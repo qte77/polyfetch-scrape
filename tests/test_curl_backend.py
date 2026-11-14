@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 from curl_cffi import requests as curl_requests
@@ -39,19 +39,27 @@ def _install_session(
     side_effect: Any = None,
     return_value: Any = None,
 ) -> MagicMock:
-    """Replace curl_cffi.requests.Session with a context-manager mock."""
-    request_mock = MagicMock()
-    if side_effect is not None:
-        request_mock.side_effect = side_effect
-    else:
-        request_mock.return_value = return_value
+    """Replace curl_cffi.requests.Session with a signature-checked mock.
 
-    session_instance = MagicMock(spec=curl_requests.Session)
-    session_instance.request = request_mock
+    ``create_autospec(curl_requests.Session)`` (the class, not an ``instance=True``
+    object) makes every ``.request(...)`` call validated against curl_cffi 0.17.0's
+    real ``Session.request`` signature — a bad kwarg (e.g. ``curl_options=``, which
+    ``.request`` does not accept; it's a ``Session``-constructor-only parameter)
+    raises ``TypeError`` instead of silently succeeding. A bare ``MagicMock`` here
+    previously masked exactly that bug (#295 round 4): every pinned curl request
+    raised ``TypeError`` in production, caught by ``_attempt_once``'s broad
+    ``except Exception`` and surfaced as an ordinary ``FetchError``, while the
+    mocked ``.request`` accepted the invalid kwarg without complaint.
+    """
+    session_cls = create_autospec(curl_requests.Session)
+    session_instance = session_cls.return_value
+    if side_effect is not None:
+        session_instance.request.side_effect = side_effect
+    else:
+        session_instance.request.return_value = return_value
     session_instance.__enter__ = MagicMock(return_value=session_instance)
     session_instance.__exit__ = MagicMock(return_value=False)
 
-    session_cls = MagicMock(return_value=session_instance)
     monkeypatch.setattr(
         "polyfetch_scrape._backends.curl_backend.curl_requests.Session",
         session_cls,
@@ -417,7 +425,9 @@ def test_curl_backend_does_not_soft_block_exempt_cases(
 def test_curl_backend_pins_via_curl_options_resolve_and_disables_redirects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#240 scope (a): CurlOpt.RESOLVE + allow_redirects=False when a pin is given."""
+    """#240 scope (a): CurlOpt.RESOLVE is a Session-CONSTRUCTOR kwarg (curl_cffi
+    0.17.0's ``Session.request`` has no ``curl_options`` param); ``allow_redirects``
+    stays a ``.request()`` kwarg."""
     fake = _fake_response(status=200, body=b"ok", primary_ip="93.184.216.34")
     session_cls = _install_session(monkeypatch, return_value=fake)
 
@@ -431,9 +441,12 @@ def test_curl_backend_pins_via_curl_options_resolve_and_disables_redirects(
         pinned_host="public.test",
     )
 
-    kwargs = session_cls.return_value.request.call_args.kwargs
-    assert kwargs["curl_options"] == {CurlOpt.RESOLVE: ["public.test:443:93.184.216.34"]}
-    assert kwargs["allow_redirects"] is False
+    session_kwargs = session_cls.call_args.kwargs
+    assert session_kwargs["curl_options"] == {CurlOpt.RESOLVE: ["public.test:443:93.184.216.34"]}
+    assert session_kwargs["trust_env"] is False
+    request_kwargs = session_cls.return_value.request.call_args.kwargs
+    assert request_kwargs["allow_redirects"] is False
+    assert "curl_options" not in request_kwargs
 
 
 def test_curl_backend_pin_resolve_uses_the_urls_own_port_when_explicit(
@@ -452,8 +465,8 @@ def test_curl_backend_pin_resolve_uses_the_urls_own_port_when_explicit(
         pinned_host="public.test",
     )
 
-    kwargs = session_cls.return_value.request.call_args.kwargs
-    assert kwargs["curl_options"] == {CurlOpt.RESOLVE: ["public.test:8080:93.184.216.34"]}
+    session_kwargs = session_cls.call_args.kwargs
+    assert session_kwargs["curl_options"] == {CurlOpt.RESOLVE: ["public.test:8080:93.184.216.34"]}
 
 
 def test_curl_backend_unpinned_path_omits_resolve_and_redirect_kwargs(
@@ -470,9 +483,11 @@ def test_curl_backend_unpinned_path_omits_resolve_and_redirect_kwargs(
         policy=RetryPolicy(max_attempts=1),
     )
 
-    kwargs = session_cls.return_value.request.call_args.kwargs
-    assert "curl_options" not in kwargs
-    assert "allow_redirects" not in kwargs
+    session_kwargs = session_cls.call_args.kwargs
+    assert "curl_options" not in session_kwargs
+    assert "trust_env" not in session_kwargs
+    request_kwargs = session_cls.return_value.request.call_args.kwargs
+    assert "allow_redirects" not in request_kwargs
 
 
 def test_curl_backend_resolve_entry_brackets_an_ipv6_pinned_address(
@@ -493,8 +508,8 @@ def test_curl_backend_resolve_entry_brackets_an_ipv6_pinned_address(
         pinned_host="public.test",
     )
 
-    kwargs = session_cls.return_value.request.call_args.kwargs
-    assert kwargs["curl_options"] == {CurlOpt.RESOLVE: [f"public.test:443:[{ipv6}]"]}
+    session_kwargs = session_cls.call_args.kwargs
+    assert session_kwargs["curl_options"] == {CurlOpt.RESOLVE: [f"public.test:443:[{ipv6}]"]}
 
 
 def test_curl_backend_resolve_entry_idna_encodes_a_unicode_pinned_host(
@@ -518,8 +533,8 @@ def test_curl_backend_resolve_entry_idna_encodes_a_unicode_pinned_host(
         pinned_host=unicode_host,
     )
 
-    kwargs = session_cls.return_value.request.call_args.kwargs
-    assert kwargs["curl_options"] == {CurlOpt.RESOLVE: [f"{ascii_host}:443:93.184.216.34"]}
+    session_kwargs = session_cls.call_args.kwargs
+    assert session_kwargs["curl_options"] == {CurlOpt.RESOLVE: [f"{ascii_host}:443:93.184.216.34"]}
 
 
 def test_curl_backend_raises_when_primary_ip_does_not_match_the_pin(
@@ -584,6 +599,38 @@ def test_curl_backend_raises_when_primary_ip_is_unparseable(
             pinned_ip="93.184.216.34",
             pinned_host="public.test",
         )
+
+
+def test_curl_backend_pin_really_connects_to_the_pinned_address(loopback_server: int) -> None:
+    """Real proof, no mocks (#295 round 4): a prior version of this fix spread
+    ``curl_options`` into ``.request(...)``, which curl_cffi 0.17.0 silently rejects
+    — every pinned request failed in production while the suite's bare-MagicMock
+    ``.request`` stayed green. No ``Session``/``.request`` replacement here at all;
+    this is the real ``curl_cffi.requests.Session`` talking to a real socket. libcurl
+    resolves DNS in C, bypassing Python's ``socket`` module entirely, so the suite's
+    autouse DNS stub (``tests/conftest.py``) has no effect on it either way.
+
+    ``pin-test-curl.invalid`` is RFC 2606-reserved (guaranteed to never resolve in
+    any real DNS), so a genuine response with this exact body can only mean curl
+    actually used the ``CurlOpt.RESOLVE`` override to reach 127.0.0.1 — not its own
+    DNS, which has nothing to find for this host. This also exercises
+    ``_verify_connected_to_pin`` for real: it must see ``primary_ip == "127.0.0.1"``
+    and not raise.
+    """
+    host = "pin-test-curl.invalid"
+
+    resp = curl_backend.attempt(
+        method="GET",
+        url=f"http://{host}:{loopback_server}/",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=1),
+        pinned_ip="127.0.0.1",
+        pinned_host=host,
+    )
+
+    assert resp.status == 200
+    assert resp.body == b"ok-from-loopback"
 
 
 def test_curl_backend_unpinned_path_skips_the_primary_ip_check(

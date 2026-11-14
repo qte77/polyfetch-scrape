@@ -53,8 +53,9 @@ def attempt(
 ) -> Response:
     last = _Attempt(None, None, None)
     session_cls = cast(Any, curl_requests).Session
+    session_kwargs = _session_kwargs(url, pinned_ip, pinned_host)
 
-    with session_cls(impersonate=browser) as session:
+    with session_cls(impersonate=browser, **session_kwargs) as session:
         for attempt_idx in range(policy.max_attempts):
             last = _attempt_once(
                 session,
@@ -66,7 +67,6 @@ def attempt(
                 json,
                 content,
                 pinned_ip,
-                pinned_host,
             )
             if last.response is not None:
                 return last.response
@@ -105,9 +105,11 @@ def _attempt_once(
     json: Any | None = None,
     content: bytes | None = None,
     pinned_ip: str | None = None,
-    pinned_host: str | None = None,
 ) -> _Attempt:
-    pin_kwargs = _pin_kwargs(url, pinned_ip, pinned_host)
+    # allow_redirects IS a .request() parameter (unlike curl_options, see
+    # _session_kwargs) — False returns the raw 3xx for manual hop-by-hop following
+    # instead of libcurl auto-following onto an unchecked address.
+    request_kwargs: dict[str, Any] = {"allow_redirects": False} if pinned_ip is not None else {}
     try:
         http_resp = session.request(
             method,
@@ -116,7 +118,7 @@ def _attempt_once(
             timeout=timeout,
             json=json,
             data=content,
-            **pin_kwargs,
+            **request_kwargs,
         )
     except Exception as exc:  # curl_cffi raises a wide error hierarchy
         return _Attempt(None, None, exc)
@@ -144,17 +146,34 @@ def _attempt_once(
     return _Attempt(resp, None, None)
 
 
-def _pin_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) -> dict[str, Any]:
-    """Extra ``session.request(...)`` kwargs for an optionally-pinned request.
+def _session_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) -> dict[str, Any]:
+    """``Session(...)`` CONSTRUCTOR kwargs for an optionally-pinned request.
 
-    No pin → ``{}``, so the unpinned path is byte-for-byte unchanged (the session's
-    own ``allow_redirects=True`` default still applies). With a pin: ``CurlOpt.RESOLVE``
-    (#240 scope a) makes curl's own resolver answer ``pinned_host:port`` with
-    ``pinned_ip`` — cleared after every ``perform()``, so this never leaks into another
-    request — and ``allow_redirects=False`` returns the raw 3xx for manual hop-by-hop
-    following instead of libcurl auto-following onto an unchecked address. The URL
-    itself is unchanged: curl resolves the given host internally, so Host/SNI/cert
-    verification are unaffected (they already use the URL's own host).
+    curl_cffi 0.17.0's ``Session.request()`` has no ``curl_options`` parameter and no
+    ``**kwargs`` (confirmed via ``inspect.signature``) — only ``BaseSession.__init__``
+    (the constructor) accepts it. An earlier version of this fix spread
+    ``curl_options=...`` into ``.request(...)`` instead: every pinned request raised
+    ``TypeError``, silently caught by ``_attempt_once``'s broad ``except Exception``
+    and surfaced as an ordinary ``FetchError`` — the pin never actually took effect.
+    One ``Session`` is already created per ``attempt()`` call (one per hop, since
+    ``guarded_fetch`` calls ``attempt`` fresh for each redirect), so building the
+    RESOLVE override here (not per-retry) is correct and cheap.
+
+    No pin → ``{}``, so the unpinned path's session construction is byte-for-byte
+    unchanged. With a pin:
+
+    - ``CurlOpt.RESOLVE`` (#240 scope a) makes curl's own resolver answer
+      ``pinned_host:port`` with ``pinned_ip`` for this session's lifetime. The URL
+      itself is unchanged: curl resolves the given host internally via this override,
+      so Host/SNI/cert verification are unaffected (they already use the URL's own
+      host). ``allow_redirects=False`` (a ``.request()``-level kwarg; see
+      ``_attempt_once``) returns the raw 3xx for manual hop-by-hop following instead
+      of libcurl auto-following onto an unchecked address.
+    - ``trust_env=False`` disables curl's own ``http_proxy``/``https_proxy``
+      environment lookup for this session. A pin that still honours a configured
+      proxy is no pin at all — the connection would go to the proxy, not the
+      verified address — so the pinned path never trusts the environment for
+      routing.
 
     The RESOLVE entry's HOST part is IDNA-encoded (``pinned_host`` arrives as the raw,
     possibly-unicode hostname ``urlsplit`` gave the caller; curl looks the entry up by
@@ -170,7 +189,7 @@ def _pin_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) -> dic
     address = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
     return {
         "curl_options": {CurlOpt.RESOLVE: [f"{ascii_host}:{port}:{address}"]},
-        "allow_redirects": False,
+        "trust_env": False,
     }
 
 
