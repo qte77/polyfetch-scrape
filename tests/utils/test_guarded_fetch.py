@@ -10,7 +10,7 @@ Both the fetch seam (``..._ssrf.fetch``) and the resolver seam
 convention as ``tests/utils/test_ssrf.py``.
 """
 
-import contextlib
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -194,29 +194,147 @@ def test_guarded_fetch_internal_seed_with_unresolvable_host_still_fetches_unpinn
 @pytest.mark.parametrize(
     "url",
     [
-        "http://user:pass@public.test/",  # userinfo — urlsplit strips it from .hostname
-        "http://public.test\\@evil.test/",  # backslash-before-@ — Python parses host as evil.test
-        "http://%70ublic.test/",  # percent-encoded host char — urlsplit does not decode it
+        "http://user:pass@public.test/",  # userinfo
+        "http://public.test\\evil.test/",  # backslash
+        "http://%70ublic.test/",  # percent-encoding
+        "http://pub lic.test/",  # whitespace
+        "http://public.test\x01/",  # control character
     ],
 )
-def test_guarded_fetch_never_calls_fetch_unpinned_for_tricky_url_forms(
+def test_guarded_fetch_rejects_unsafe_netloc_forms_before_any_fetch_or_resolve(
     monkeypatch: pytest.MonkeyPatch, url: str
 ) -> None:
-    # Whatever host urlsplit extracts for these parser-edge-case forms, guarded_fetch
-    # must either fetch it PINNED or refuse outright — never fall through unpinned.
-    answers = {"public.test": ["93.184.216.34"], "evil.test": ["127.0.0.1"]}
-    monkeypatch.setattr(_RESOLVER, lambda h: list(answers.get(h, ())))
+    # A userinfo, backslash, percent-encoding, whitespace, or control character in the
+    # netloc is exactly the kind of form urlsplit and curl could parse differently —
+    # refuse outright, before ever resolving or fetching, rather than relying on
+    # urlsplit's own (possibly curl-incompatible) idea of what the host is (#240
+    # follow-up).
+    def _never_resolve(_h: str) -> list[str]:
+        raise AssertionError("the resolver must not be reached for a rejected netloc")
 
-    def _fetch_stub(fetched_url: str, **kwargs: object) -> Response:
-        assert kwargs.get("pinned_ip") is not None, f"fetch called unpinned for {fetched_url!r}"
-        return _resp(fetched_url)
+    monkeypatch.setattr(_RESOLVER, _never_resolve)
+
+    def _never_fetch(fetched_url: str, **_kwargs: object) -> Response:
+        raise AssertionError(f"must not fetch a rejected netloc: {fetched_url!r}")
+
+    monkeypatch.setattr(_FETCH, _never_fetch)
+
+    with pytest.raises(FetchError):
+        guarded_fetch(url, seed_is_internal=False)
+
+
+def test_guarded_fetch_rejects_a_host_too_long_to_idna_encode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A label over 63 chars raises UnicodeError from the idna codec itself — must
+    # refuse, not propagate the raw encoding error or fetch unpinned.
+    def _never_resolve(_h: str) -> list[str]:
+        raise AssertionError("the resolver must not be reached for an unencodable host")
+
+    monkeypatch.setattr(_RESOLVER, _never_resolve)
+
+    def _never_fetch(fetched_url: str, **_kwargs: object) -> Response:
+        raise AssertionError(f"must not fetch an unencodable host: {fetched_url!r}")
+
+    monkeypatch.setattr(_FETCH, _never_fetch)
+
+    with pytest.raises(FetchError):
+        guarded_fetch(f"https://{'a' * 64}.test/", seed_is_internal=False)
+
+
+def test_guarded_fetch_rejects_an_ascii_host_that_is_not_hostname_shaped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # "exa_mple.test" IDNA-encodes to itself unchanged (already ASCII) but an
+    # underscore is not a valid hostname character — must still be refused.
+    def _never_resolve(_h: str) -> list[str]:
+        raise AssertionError("the resolver must not be reached for a non-hostname host")
+
+    monkeypatch.setattr(_RESOLVER, _never_resolve)
+
+    def _never_fetch(fetched_url: str, **_kwargs: object) -> Response:
+        raise AssertionError(f"must not fetch a non-hostname host: {fetched_url!r}")
+
+    monkeypatch.setattr(_FETCH, _never_fetch)
+
+    with pytest.raises(FetchError):
+        guarded_fetch("https://exa_mple.test/", seed_is_internal=False)
+
+
+def test_guarded_fetch_rewrites_a_unicode_host_to_ascii_and_pins_that_exact_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Python's stdlib "idna" codec (IDNA2003) is the SAME conversion socket.getaddrinfo
+    # uses internally — rewriting the URL's host to that exact ASCII/punycode form,
+    # once, before resolving AND before fetching, means the host resolve_pinned
+    # resolves, the host in the URL fetch() receives, and the host used for the
+    # curl_cffi RESOLVE key are all the identical string. (#240 follow-up: relying on
+    # two independent IDNA conversions — Python's IDNA2003 here, libcurl's own
+    # IDNA2008 — to agree let a mismatch fall through to curl's own unchecked DNS.)
+    unicode_host = "тест.test"
+    ascii_host = unicode_host.encode("idna").decode("ascii")
+    monkeypatch.setattr(_RESOLVER, lambda h: ["93.184.216.34"] if h == ascii_host else [])
+
+    captured: dict[str, object] = {}
+
+    def _fetch_stub(url: str, **kwargs: object) -> Response:
+        captured["url_host"] = urlsplit(url).hostname
+        captured["pinned_host"] = kwargs.get("pinned_host")
+        captured["pinned_ip"] = kwargs.get("pinned_ip")
+        return _resp(url)
 
     monkeypatch.setattr(_FETCH, _fetch_stub)
 
-    # Either it fetches pinned (asserted inside the stub above), or it refuses
-    # outright before ever calling fetch — both are acceptable.
-    with contextlib.suppress(ValueError, FetchError):
-        guarded_fetch(url, seed_is_internal=False)
+    guarded_fetch(f"https://{unicode_host}/x", seed_is_internal=False)
+
+    assert captured["url_host"] == ascii_host
+    assert captured["pinned_host"] == ascii_host
+    assert captured["pinned_ip"] == "93.184.216.34"
+
+
+def test_guarded_fetch_pins_a_host_with_an_explicit_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_RESOLVER, lambda _h: ["93.184.216.34"])
+
+    captured: dict[str, object] = {}
+
+    def _fetch_stub(url: str, **kwargs: object) -> Response:
+        captured["url"] = url
+        captured["pinned_host"] = kwargs.get("pinned_host")
+        captured["pinned_ip"] = kwargs.get("pinned_ip")
+        return _resp(url)
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    guarded_fetch("https://public.test:8443/x", seed_is_internal=False)
+
+    assert captured["url"] == "https://public.test:8443/x"
+    assert captured["pinned_host"] == "public.test"
+    assert captured["pinned_ip"] == "93.184.216.34"
+
+
+def test_guarded_fetch_pins_an_ipv6_literal_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    ipv6 = "2606:2800:220:1:248:1893:25c8:1946"
+
+    def _never_resolve(_h: str) -> list[str]:
+        raise AssertionError("a literal IP must not reach the resolver")
+
+    monkeypatch.setattr(_RESOLVER, _never_resolve)
+
+    captured: dict[str, object] = {}
+
+    def _fetch_stub(url: str, **kwargs: object) -> Response:
+        captured["url"] = url
+        captured["pinned_host"] = kwargs.get("pinned_host")
+        captured["pinned_ip"] = kwargs.get("pinned_ip")
+        return _resp(url)
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    guarded_fetch(f"https://[{ipv6}]/x", seed_is_internal=False)
+
+    assert captured["url"] == f"https://[{ipv6}]/x"
+    assert captured["pinned_host"] == ipv6
+    assert captured["pinned_ip"] == ipv6
 
 
 # --------------------------------------------------------------------------- #

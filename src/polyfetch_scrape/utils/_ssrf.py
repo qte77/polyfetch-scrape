@@ -75,8 +75,9 @@ what they actually resolve to.
 """
 
 import ipaddress
+import re
 import socket
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from polyfetch_scrape.client import Tier, fetch
 from polyfetch_scrape.errors import FetchError
@@ -86,6 +87,21 @@ _IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
 _LITERAL_MSG = "SSRF guard: blocked internal address {addr!r}"
 _RESOLVED_MSG = "SSRF guard: blocked host {host!r} resolving to internal address {addr!r}"
+
+# A userinfo ("@"), backslash, percent-encoding, whitespace, or control character in
+# the netloc is exactly the kind of form urlsplit and curl could parse differently —
+# guarded_fetch refuses any of these outright rather than relying on urlsplit's own
+# (possibly curl-incompatible) idea of what the host is (#240 follow-up).
+_UNSAFE_NETLOC_RE = re.compile(r"[@\\%\s\x00-\x1f\x7f]")
+
+# RFC-1035-shaped hostname: dot-separated labels, 1-63 chars each, alphanumeric with
+# interior hyphens, optional trailing dot. Matches a plain ASCII host AND an
+# IDNA/punycode one ("xn--..." labels are alphanumeric-plus-hyphen); never an IP
+# literal, which is checked separately via :func:`_parse_ip` first.
+_ASCII_HOSTNAME_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?)*\.?$"
+)
 
 
 def is_seed_internal(seed: str) -> bool:
@@ -219,29 +235,38 @@ def guarded_fetch(
     module docstring's escalation-only model) — ``check_ssrf``/``resolve_pinned``
     themselves are unaffected either way.
 
-    **Defence in depth.** Even though the fetch itself is pinned (and, on curl_cffi,
-    cross-checked against the address actually connected to — see
-    ``_backends/curl_backend.py``), :func:`check_redirect` is still applied to the
-    landed response on every hop: re-checking ``Response.url`` and any unfollowed
-    301/308 ``Location`` guards against a pin bypass — a parser differential between
-    this guard's view of the URL and a backend's own, or any other path that reaches
-    a ``Response`` without going through this function's own redirect-hop check —
-    actually landing somewhere internal.
+    **Defence in depth, three layers for an external seed.** (1) :func:`_ascii_pin_url`
+    rewrites the hop's URL so its host is the exact ASCII/IDNA form that will also be
+    resolved and pinned — see its own docstring for why a *single* IDNA conversion,
+    shared with resolution, closes a curl-specific gap a naive pin does not. (2) The
+    resulting pin is threaded straight into that hop's ``fetch()`` call. (3)
+    :func:`check_redirect` is still applied to the landed response on every hop —
+    re-checking ``Response.url`` and any unfollowed 301/308 ``Location`` guards
+    against a pin bypass (on curl_cffi, there's a fourth and final layer: the
+    connected-to address is cross-checked against the pin — see
+    ``_backends/curl_backend.py``) actually landing somewhere internal. ``Response.url``
+    itself reflects the ASCII-rewritten URL that was actually fetched, not necessarily
+    the original (possibly-unicode) one passed in.
     """
     current = url
     for _ in range(max_redirects + 1):
-        pin = resolve_pinned(current, seed_is_internal=seed_is_internal)
-        if pin is None and not seed_is_internal:
-            raise FetchError(
-                f"SSRF guard: no verified address to pin for {current!r} "
-                "(hostless URL or unresolvable host) — refusing to fetch unpinned"
-            )
+        pin: str | None = None
+        pinned_host: str | None = None
+        if not seed_is_internal:
+            current = _ascii_pin_url(current)
+            pin = resolve_pinned(current, seed_is_internal=False)
+            if pin is None:
+                raise FetchError(
+                    f"SSRF guard: no verified address to pin for {current!r} "
+                    "(unresolvable host) — refusing to fetch unpinned"
+                )
+            pinned_host = urlsplit(current).hostname
         resp = fetch(
             current,
             max_tier=max_tier,
             timeout=timeout,
             pinned_ip=pin,
-            pinned_host=urlsplit(current).hostname if pin else None,
+            pinned_host=pinned_host,
         )
         check_redirect(current, resp, seed_is_internal=seed_is_internal)
         target = resp.redirect_to
@@ -249,6 +274,55 @@ def guarded_fetch(
             return resp
         current = urljoin(current, target)
     raise FetchError(f"too many redirects ({max_redirects} hops): {url}")
+
+
+def _ascii_pin_url(url: str) -> str:
+    """Rewrite ``url``'s netloc to the ASCII/IDNA form that will be both resolved and
+    pinned, raising ``FetchError`` before any resolution or fetch if that can't be
+    done safely.
+
+    **Why this exists (#240 follow-up).** Pinning a non-ASCII host used to rely on
+    two *independent* IDNA conversions landing on the same string: Python's stdlib
+    ``str.encode("idna")`` codec (IDNA2003) for the ``CurlOpt.RESOLVE`` key, vs.
+    libcurl's own internal conversion (IDNA2008) for the actual DNS lookup it performs
+    on the connect URL. When those two disagree, the RESOLVE override silently misses
+    and curl falls back to its own (unchecked) DNS — the real request then reaches an
+    address nothing here ever verified, before ``curl_backend.py``'s post-request
+    ``primary_ip`` check even runs. Converting the host to ASCII exactly ONCE, here,
+    with the same codec :func:`socket.getaddrinfo` uses for :func:`_resolve` (so this
+    is the identical conversion :func:`resolve_pinned` already resolves against),
+    and rewriting the URL itself to that ASCII form before anything downstream sees
+    it, means there is only ever one IDNA conversion in the whole pinning path — curl
+    receives a pure-ASCII host and does no IDNA conversion of its own, so the RESOLVE
+    key matches by construction, not by two codecs agreeing.
+
+    **The strict host gate.** A userinfo (``@``), backslash, percent-encoding,
+    whitespace, or control character in the netloc is refused outright — any of these
+    is exactly the kind of form ``urlsplit`` (what this guard inspects) and curl's own
+    URL/host parser could disagree about. The resulting ASCII host must then be either
+    an IP literal or match :data:`_ASCII_HOSTNAME_RE` (RFC-1035-shaped); anything else
+    is refused too. This removes the ``urlsplit``-vs-curl parser-differential surface
+    at the root, rather than trying to enumerate every way the two could disagree.
+    """
+    parts = urlsplit(url)
+    if _UNSAFE_NETLOC_RE.search(parts.netloc):
+        raise FetchError(f"SSRF guard: refusing an unsafe URL form: {url!r}")
+    host = parts.hostname
+    if host is None:
+        raise FetchError(f"SSRF guard: no host to pin: {url!r}")
+    literal = _parse_ip(host)
+    if literal is not None:
+        netloc_host = f"[{host}]" if isinstance(literal, ipaddress.IPv6Address) else host
+    else:
+        try:
+            ascii_host = host.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise FetchError(f"SSRF guard: could not encode host {host!r}: {url!r}") from exc
+        if not _ASCII_HOSTNAME_RE.match(ascii_host):
+            raise FetchError(f"SSRF guard: refusing non-hostname host {ascii_host!r}: {url!r}")
+        netloc_host = ascii_host
+    netloc = netloc_host if parts.port is None else f"{netloc_host}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
 def _parse_ip(value: str) -> _IPAddress | None:
