@@ -9,7 +9,8 @@ The complete public surface of `polyfetch_scrape`. Everything under `_backends/`
 fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
       min_tier=None, max_tier=None, etag=None, last_modified=None,
-      json=None, content=None, throttle=None, render=None) -> Response
+      json=None, content=None, throttle=None, render=None,
+      pinned_ip=None, pinned_host=None) -> Response
       # tier pins one backend: "httpx"|"curl_cffi"|"patchright" (≡ min_tier==max_tier)
       # min_tier / max_tier → bound the fallback range: max_tier="curl_cffi" caps escalation
       #   (never launches the browser); min_tier="patchright" forces the JS tier
@@ -17,11 +18,15 @@ fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       # json=<obj> / content=<bytes> → POST/PUT request body (mutually exclusive)
       # throttle=Throttle(min_interval=…) → proactive per-host spacing (share one across calls)
       # render=RenderOptions(...) → patchright-tier wait/screenshot controls
+      # pinned_ip / pinned_host → connect to pinned_ip, keep SNI/Host/Response.url on
+      #   pinned_host (httpx/curl_cffi only; both-or-neither; #240)
 ```
 
 A single call runs the three-tier fallback chain (or the pinned `tier`) and returns a typed `Response` regardless of which backend succeeded.
 
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
+
+**`pinned_ip`/`pinned_host` are opt-in, never a default** (#240): plain `fetch(url)` is unguarded, unchanged. They connect to the externally-verified `pinned_ip` while keeping SNI, the `Host` header, and `Response.url` on `pinned_host` — supported on the httpx and curl_cffi tiers only; passing either without the other, or either with `tier="patchright"` (or a tier range resolving to it), raises `FetchError`. `polyfetch_scrape.utils._ssrf.guarded_fetch` (internal) is the caller that computes and threads these per hop — see `docs/architecture.md`'s `utils/_ssrf.py` entry.
 
 CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE] [--headed] [--storage-state FILE]` — the patchright-tier emulation/video/HAR/launch/session flags (`--headed` launches Chromium headed instead of headless; default headless — clears some anti-bot challenges a headless launch never does, #190; `--storage-state FILE` resumes a session from a saved Playwright storage-state JSON file, #200); `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested, and `request_user_agent` (the UA actually sent, when cheaply knowable — on `fetch` and every `bulk` line; #198). `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. `cookies=`/`extra_http_headers=` are Python-API-only (`render_session`/`RenderOptions`) — no CLI flag shape fits a cookie list or a repeatable header yet. Full flag list: [USING.md](../USING.md).
 

@@ -40,7 +40,7 @@ print(r.status, r.backend)  # e.g. 200 httpx — which tier answers depends on t
 - **Reactive three-tier fallback.** `httpx` → `curl_cffi` (Chrome TLS/JA3 impersonation) → Patchright (headless Chromium), escalating only on a real block; pin or bound it with `tier` / `min_tier` / `max_tier`.
 - **Typed error taxonomy.** Terminal statuses (`401/404/407/410/451`) raise typed exceptions; `429` and `500/502/503/504` retry, honouring `Retry-After`.
 - **Browser tier with DevTools capture.** Waits, screenshots, scripted actions, device/locale/colour-scheme emulation, video and HAR recording, headed launch, and console/network/JS-error capture — opt-in on `fetch`, always on in the interactive `render_session`.
-- **Requests and politeness.** Conditional GET (`etag`/`last_modified`), `json`/`content` request bodies, a per-host `Throttle`, and an opt-in robots.txt check.
+- **Requests and politeness.** Conditional GET (`etag`/`last_modified`), `json`/`content` request bodies, a per-host `Throttle`, an opt-in robots.txt check, and opt-in SSRF-safe connect pinning (`pinned_ip`/`pinned_host`, httpx/curl_cffi tiers).
 - **Structured-first discovery.** `discover(url)` reports sitemaps, RSS/Atom/iCal feeds, `llms.txt` and JSON-LD `@type`s, so consumers parse structured data instead of HTML.
 - **Library, CLI, or env-borrow** from another repo or agent ([`USING.md`](USING.md)).
 
