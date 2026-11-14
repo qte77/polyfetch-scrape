@@ -41,10 +41,14 @@ fetch onto an internal address.
 
 Two limits are deliberate, not oversights:
 
-- **Fail-open on an unresolvable name.** A hostname that does not resolve at all
+- **Fail-open on an unresolvable name — for** :func:`check_ssrf` **and**
+  :func:`resolve_pinned` **themselves.** A hostname that does not resolve at all
   (:class:`socket.gaierror`) passes through unchecked — the HTTP client cannot
   connect to an address that doesn't exist either, so refusing it here would
   only turn every offline/DNS-flaky run into a hard error for no security gain.
+  :func:`guarded_fetch` is the one exception: it *fails closed* instead, because
+  "nothing to pin" there would otherwise mean an unpinned fetch with no guard
+  on where a followed redirect lands (see its own docstring).
 - **`check_redirect` is preventive on `httpx`, post-hoc on `curl_cffi` and the
   browser tier — unless the caller goes through :func:`guarded_fetch`.**
   `httpx` does not follow redirects itself, so the unfollowed ``Location`` is
@@ -203,10 +207,35 @@ def guarded_fetch(
     verified-external addresses), so it is swallowable the same way a 404 is by the
     existing ``except FetchError: return None`` call sites, unlike the ``ValueError``
     a block raises.
+
+    **Fails closed when nothing can be pinned.** For an external seed, a hop whose
+    address :func:`resolve_pinned` cannot verify (a hostless URL, or a hostname that
+    does not resolve — both normally fail-open for :func:`check_ssrf`'s own direct
+    callers) raises ``FetchError`` here instead of falling through to an unpinned
+    fetch: unpinned, curl_cffi's own ``allow_redirects=True`` session default would
+    auto-follow a redirect chain with nothing checking where it landed, regressing on
+    the pre-#240 check-then-fetch-then-``check_redirect`` behaviour this replaces. An
+    internal seed keeps today's unpinned fail-open behaviour unchanged (see the
+    module docstring's escalation-only model) — ``check_ssrf``/``resolve_pinned``
+    themselves are unaffected either way.
+
+    **Defence in depth.** Even though the fetch itself is pinned (and, on curl_cffi,
+    cross-checked against the address actually connected to — see
+    ``_backends/curl_backend.py``), :func:`check_redirect` is still applied to the
+    landed response on every hop: re-checking ``Response.url`` and any unfollowed
+    301/308 ``Location`` guards against a pin bypass — a parser differential between
+    this guard's view of the URL and a backend's own, or any other path that reaches
+    a ``Response`` without going through this function's own redirect-hop check —
+    actually landing somewhere internal.
     """
     current = url
     for _ in range(max_redirects + 1):
         pin = resolve_pinned(current, seed_is_internal=seed_is_internal)
+        if pin is None and not seed_is_internal:
+            raise FetchError(
+                f"SSRF guard: no verified address to pin for {current!r} "
+                "(hostless URL or unresolvable host) — refusing to fetch unpinned"
+            )
         resp = fetch(
             current,
             max_tier=max_tier,
@@ -214,6 +243,7 @@ def guarded_fetch(
             pinned_ip=pin,
             pinned_host=urlsplit(current).hostname if pin else None,
         )
+        check_redirect(current, resp, seed_is_internal=seed_is_internal)
         target = resp.redirect_to
         if not target:
             return resp

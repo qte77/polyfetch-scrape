@@ -10,6 +10,8 @@ Both the fetch seam (``..._ssrf.fetch``) and the resolver seam
 convention as ``tests/utils/test_ssrf.py``.
 """
 
+import contextlib
+
 import pytest
 
 from polyfetch_scrape.errors import FetchError
@@ -131,3 +133,110 @@ def test_guarded_fetch_internal_seed_skips_the_resolver(monkeypatch: pytest.Monk
     monkeypatch.setattr(_FETCH, _fetch_stub)
 
     guarded_fetch("http://169.254.169.254/", seed_is_internal=True)  # must not raise
+
+
+# --------------------------------------------------------------------------- #
+# Fail closed: an external seed with nothing to pin must never fetch unpinned
+# --------------------------------------------------------------------------- #
+
+
+def test_guarded_fetch_fails_closed_when_the_derived_host_is_unresolvable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Unpinned, curl_cffi's own allow_redirects=True default would auto-follow
+    # a redirect chain with nothing checking where it landed — regressing on
+    # the pre-#240 check-then-fetch-then-check_redirect behaviour.
+    monkeypatch.setattr(_RESOLVER, lambda _h: [])  # unresolvable
+
+    def _fetch_stub(url: str, **_kwargs: object) -> Response:
+        raise AssertionError(f"must not fetch unpinned: {url}")
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    with pytest.raises(FetchError, match=r"nope\.invalid"):
+        guarded_fetch("https://nope.invalid/", seed_is_internal=False)
+
+
+def test_guarded_fetch_fails_closed_for_a_hostless_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fetch_stub(url: str, **_kwargs: object) -> Response:
+        raise AssertionError(f"must not fetch unpinned: {url}")
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    with pytest.raises(FetchError):
+        guarded_fetch("/relative/path", seed_is_internal=False)
+
+
+def test_guarded_fetch_internal_seed_with_unresolvable_host_still_fetches_unpinned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Fail-closed applies only to an external seed — an internal seed keeps
+    # today's unpinned behaviour unchanged, even when the host can't resolve.
+    def _never(_host: str) -> list[str]:
+        raise AssertionError("the resolver must not be reached for an internal seed")
+
+    monkeypatch.setattr(_RESOLVER, _never)
+
+    captured: dict[str, object] = {}
+
+    def _fetch_stub(url: str, **kwargs: object) -> Response:
+        captured["pinned_ip"] = kwargs.get("pinned_ip")
+        return _resp(url)
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    resp = guarded_fetch("http://nope.invalid/", seed_is_internal=True)
+
+    assert captured["pinned_ip"] is None
+    assert resp.status == 200
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://user:pass@public.test/",  # userinfo — urlsplit strips it from .hostname
+        "http://public.test\\@evil.test/",  # backslash-before-@ — Python parses host as evil.test
+        "http://%70ublic.test/",  # percent-encoded host char — urlsplit does not decode it
+    ],
+)
+def test_guarded_fetch_never_calls_fetch_unpinned_for_tricky_url_forms(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    # Whatever host urlsplit extracts for these parser-edge-case forms, guarded_fetch
+    # must either fetch it PINNED or refuse outright — never fall through unpinned.
+    answers = {"public.test": ["93.184.216.34"], "evil.test": ["127.0.0.1"]}
+    monkeypatch.setattr(_RESOLVER, lambda h: list(answers.get(h, ())))
+
+    def _fetch_stub(fetched_url: str, **kwargs: object) -> Response:
+        assert kwargs.get("pinned_ip") is not None, f"fetch called unpinned for {fetched_url!r}"
+        return _resp(fetched_url)
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    # Either it fetches pinned (asserted inside the stub above), or it refuses
+    # outright before ever calling fetch — both are acceptable.
+    with contextlib.suppress(ValueError, FetchError):
+        guarded_fetch(url, seed_is_internal=False)
+
+
+# --------------------------------------------------------------------------- #
+# Defence in depth: check_redirect still re-checks the landed response
+# --------------------------------------------------------------------------- #
+
+
+def test_guarded_fetch_defense_in_depth_catches_a_landed_url_without_redirect_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A backend quirk: Response.url differs from the requested URL and points
+    # internal, but redirect_to is unset, so the hop loop itself would not
+    # follow/re-check it — check_redirect (kept as defence in depth) must.
+    answers = {"public.test": ["93.184.216.34"], "evil.test": ["127.0.0.1"]}
+    monkeypatch.setattr(_RESOLVER, lambda h: list(answers.get(h, ())))
+
+    def _fetch_stub(url: str, **_kwargs: object) -> Response:
+        return _resp("http://evil.test/landed")
+
+    monkeypatch.setattr(_FETCH, _fetch_stub)
+
+    with pytest.raises(ValueError, match="SSRF"):
+        guarded_fetch("https://public.test/a", seed_is_internal=False)
