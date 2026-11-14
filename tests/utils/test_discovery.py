@@ -32,7 +32,7 @@ def _mapping_fetch(mapping: Mapping[str, Response]) -> Callable[..., Response]:
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, mapping: Mapping[str, Response]) -> None:
-    monkeypatch.setattr("polyfetch_scrape.utils.discovery.fetch", _mapping_fetch(mapping))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch(mapping))
 
 
 def test_robots_sitemap_lines_split_by_event(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,7 +70,7 @@ def test_soft_404_html_shell_is_not_counted(monkeypatch: pytest.MonkeyPatch) -> 
     def _always_shell(url: str, **_kwargs: object) -> Response:
         return _resp(_HTML_SHELL, url=url, ct="text/html")
 
-    monkeypatch.setattr("polyfetch_scrape.utils.discovery.fetch", _always_shell)
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _always_shell)
     _ = shell
 
     got = discover("https://ex.com")
@@ -183,21 +183,43 @@ def test_ssrf_allows_derived_redirect_when_seed_is_internal(
 def test_ssrf_blocks_probe_redirected_onto_internal_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The probed origin is public, but the tier followed a 30x onto an RFC1918
-    # host — discover() must refuse the landed response rather than parse it.
+    # The probed origin is public, but robots.txt's Location points at an
+    # RFC1918 host — guarded_fetch (#240) must block BEFORE that hop is ever
+    # fetched, not detect it post-hoc from a landed response.
     monkeypatch.setattr(
         _RESOLVER, lambda h: ["10.0.0.5"] if h == "intranet.test" else ["93.184.216.34"]
     )
-    landed = _resp("Sitemap: https://ex.com/sitemap.xml", url="http://intranet.test/robots.txt")
-    _patch(monkeypatch, {"https://ex.com/robots.txt": landed})
+    redirect = Response(
+        url="https://ex.com/robots.txt",
+        status=302,
+        headers={},
+        body=b"",
+        content_type=None,
+        backend="httpx",
+        redirect_to="http://intranet.test/robots.txt",
+    )
+    fetched: list[str] = []
+
+    def _fetch_stub(url: str, **_kwargs: object) -> Response:
+        fetched.append(url)
+        if url == "https://ex.com/robots.txt":
+            return redirect
+        raise AssertionError(f"must not be fetched: {url}")
+
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _fetch_stub)
 
     with pytest.raises(ValueError, match="SSRF"):
         discover("https://ex.com")
 
+    assert fetched == ["https://ex.com/robots.txt"]  # the intranet.test hop was never fetched
+
 
 @respx.mock
 def test_respx_integration_reads_robots_sitemap() -> None:
-    respx.get("https://ex.com/robots.txt").mock(
+    # guarded_fetch pins the connect to the resolved address (#240) — the suite-wide
+    # conftest stub resolves every host to 93.184.216.34, so that's the URL the httpx
+    # tier actually connects to; discover()'s results still read the original host.
+    respx.get("https://93.184.216.34/robots.txt").mock(
         return_value=httpx.Response(
             200,
             content=b"Sitemap: https://ex.com/sitemap.xml\n",
