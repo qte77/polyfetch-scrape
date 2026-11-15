@@ -662,8 +662,8 @@ def test_patchright_crash_mid_attempt_retries_into_a_fresh_context_and_succeeds(
     """#183: a renderer crash mid-attempt is retried instead of escaping as a raw Patchright
     error. On attempt 1 only, hooked in through ``_apply_waits`` (ordinary monkeypatching, no
     extra browser launch), the page is deterministically crashed by navigating it to
-    ``chrome://crash`` -- Chromium's own internal URL for exactly this (used the same way in
-    Playwright's own test suite). That navigation itself raises ``net::ERR_ABORTED``, not a
+    ``chrome://crash`` -- Chromium's own internal URL for exactly this, confirmed locally
+    (see probe scripts, not kept in-repo). That navigation itself raises ``net::ERR_ABORTED``, not a
     "crashed" message (suppressed here as noise); it's the NEXT page call that raises
     ``Error: Page.content: Target crashed`` -- confirmed locally before writing this test,
     and matching the task brief's own verified evidence that the crash surfaces on a later
