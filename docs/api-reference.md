@@ -109,11 +109,13 @@ RenderOptions(
 # RESOURCE NOTE: video recording (record_video_dir, above) is already opt-in — zero overhead
 #     unless requested. Headless Chromium itself still needs adequate memory and a workable
 #     /dev/shm; a starved host can crash the render target mid-navigation ("Target crashed" /
-#     "Page crashed") rather than failing cleanly — Chromium's own --disable-dev-shm-usage
-#     flag exists for a too-small /dev/shm (not plumbed through here; out of scope for #183's
-#     narrow retry fix). A crashed target is now retried like a navigation timeout inside the
-#     existing RetryPolicy loop; once every attempt crashes, fetch() raises BrowserCrashed
-#     (see "Exceptions", below) instead of a raw Patchright error (#183).
+#     "Page crashed") or take the whole browser process down with it (e.g. TargetClosedError)
+#     rather than failing cleanly — Chromium's own --disable-dev-shm-usage flag exists for a
+#     too-small /dev/shm (not plumbed through here; out of scope for #183's narrow retry fix).
+#     Either failure is now retried like a navigation timeout inside the existing RetryPolicy
+#     loop (a whole-browser death additionally relaunches the browser before the next
+#     attempt); once every attempt ends this way, fetch() raises BrowserCrashed (see
+#     "Exceptions", below) instead of a raw Patchright error (#183).
 # --- authenticated sessions (#200): set at new_context() time, both fetch() and
 #     render_session apply these the same way ---
 # storage_state=<path|dict> → Playwright storage state (cookies + localStorage); the context
@@ -282,7 +284,7 @@ GoneError  # 404 / 410
 LegalBlock  # 451 (RFC 7725) — never escalated to the fingerprint tiers
 ```
 
-`BrowserCrashed` (patchright tier only) is different: not a status at all. A crashed render target is retried like a navigation timeout inside the existing `RetryPolicy` loop (each attempt already gets a fresh context); only once every attempt crashes does `fetch()` raise `BrowserCrashed` instead of the raw Patchright error (#183).
+`BrowserCrashed` (patchright tier only) is different: not a status at all. A crashed render target is retried like a navigation timeout inside the existing `RetryPolicy` loop (each attempt already gets a fresh context, so this alone never relaunches the browser). A whole-browser-process death (detected via `browser.is_connected()`, since Patchright doesn't always name it "crashed" — e.g. `TargetClosedError`) is retried the same way but DOES relaunch the browser before the next attempt; a relaunch failure itself raises `BrowserCrashed`, chained. Only once every attempt ends one of these two ways does `fetch()` raise `BrowserCrashed` instead of the raw Patchright error (#183).
 
 Every `FetchError` (and subclass, including the internal `FingerprintBlock` — see architecture.md) carries three diagnostic attributes, all `None` when not captured:
 

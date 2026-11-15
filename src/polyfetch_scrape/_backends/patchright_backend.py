@@ -66,13 +66,15 @@ def attempt(
         browser = pw.chromium.launch(headless=opts.headless)
         try:
             for attempt_idx in range(policy.max_attempts):
-                last = _attempt_once(browser, url, headers, timeout_ms, opts, ctx_kwargs, policy)
+                last = _run_attempt_tolerating_disconnect(
+                    browser, url, headers, timeout_ms, opts, ctx_kwargs, policy
+                )
                 if last.response is not None:
                     return last.response
                 if last.soft_block:
                     break  # deterministic, not transient — retrying won't un-empty the body
                 if attempt_idx + 1 < policy.max_attempts:
-                    browser = _relaunch_if_crash_disconnected(pw, browser, opts, last.error)
+                    browser = _relaunch_if_disconnected(pw, browser, opts)
                     time.sleep(next_delay(last.retry_after, policy, attempt_idx))
         finally:
             browser.close()
@@ -92,24 +94,60 @@ def attempt(
     msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     if last.block_status in _FINGERPRINT_STATUSES:
         raise FingerprintBlock(msg, **diag) from last.error
-    if _is_crashed_target_error(last.error):
+    # A phrase-matched crash (browser usually still alive), OR the browser itself was left
+    # disconnected by the last attempt (TargetClosedError and friends, #183 review) -- either
+    # way the typed crash error is more useful than a generic FetchError.
+    if _is_crashed_target_error(last.error) or not browser.is_connected():
         raise BrowserCrashed(msg, **diag) from last.error
     raise FetchError(msg, **diag) from last.error
 
 
-def _relaunch_if_crash_disconnected(
-    pw: Any, browser: Any, opts: RenderOptions, error: Exception | None
-) -> Any:
-    """Relaunch the browser only when a crash took the whole process down with it (#183).
+def _run_attempt_tolerating_disconnect(
+    browser: Any,
+    url: str,
+    headers: Mapping[str, str] | None,
+    timeout_ms: int,
+    opts: RenderOptions,
+    ctx_kwargs: dict[str, Any],
+    policy: RetryPolicy,
+) -> "_Attempt":
+    """Run one attempt; a ``PwError`` escaping it is retryable ONLY if it took the browser
+    down with it (#183 review).
+
+    ``_run_page`` already converts a crash-phrase ``PwError`` into a retryable ``_Attempt``
+    without raising. This covers what slips past that: a whole-browser death without the
+    per-target crash phrase (``TargetClosedError``'s default message doesn't say "crashed"),
+    or ``_attempt_once``'s own ``context.close()`` raising on a dead connection and masking
+    whatever ``_run_page`` returned. Narrow on purpose: a ``PwError`` while the browser is
+    still connected is some OTHER failure and must keep propagating unchanged.
+    """
+    try:
+        return _attempt_once(browser, url, headers, timeout_ms, opts, ctx_kwargs, policy)
+    except PwError as exc:
+        if browser.is_connected():
+            raise
+        return _Attempt(None, None, exc)
+
+
+def _relaunch_if_disconnected(pw: Any, browser: Any, opts: RenderOptions) -> Any:
+    """Relaunch the browser only when it's no longer connected (#183).
 
     A crashed render target takes just ONE page/context down; the browser process usually
     survives, and the next attempt already gets a fresh context (``_attempt_once``) — so this
-    relaunches only in the rarer case where ``browser.is_connected()`` says the browser itself
-    is gone too. Returns the same ``browser`` unchanged otherwise.
+    relaunches only in the rarer case where the whole browser process went down with it.
+    Returns the same ``browser`` unchanged otherwise. A relaunch failure itself raises the
+    typed error, chained, instead of letting a raw Patchright error escape ``fetch()``.
     """
-    if _is_crashed_target_error(error) and not browser.is_connected():
+    if browser.is_connected():
+        return browser
+    with contextlib.suppress(PwError):  # best-effort; it's already disconnected
+        browser.close()
+    try:
         return pw.chromium.launch(headless=opts.headless)
-    return browser
+    except PwError as exc:
+        raise BrowserCrashed(
+            f"patchright: failed to relaunch the browser after a crash: {exc}"
+        ) from exc
 
 
 # Patchright's error messages embed Patchright's own call-log text, including the request
@@ -126,8 +164,9 @@ def _is_crashed_target_error(error: Exception | None) -> bool:
     Patchright/Chromium never raises a distinct exception type for this — it's the same
     ``PwError`` as any other Patchright failure, naming the crash only in its message (e.g.
     ``"Page.screenshot: Target crashed"``, confirmed locally against a real renderer crash).
-    ``page.on("crash")`` does not reliably fire for it either (also confirmed locally), so
-    detection here is by message substring, not by type or event.
+    Detection here is by message substring, not by type -- a whole-browser death without
+    this phrase (e.g. ``TargetClosedError``) is instead caught by
+    ``_run_attempt_tolerating_disconnect`` checking ``browser.is_connected()``.
     """
     if not isinstance(error, PwError):
         return False
@@ -419,8 +458,11 @@ def _read_content(page: Any, url: str, timeout_ms: int) -> str:
 
     On Patchright's "page is navigating" error, wait for the new document's load state and
     read once more — the same page ``--wait-until networkidle`` would have settled on. If it
-    is still unreadable, raise a ``FetchError`` naming the cause instead of the raw error.
-    Any other Patchright error propagates unchanged.
+    is still unreadable, raise a ``FetchError`` naming the cause instead of the raw error --
+    UNLESS a render target crashed during that wait/re-read (#183 review): that ``PwError``
+    is re-raised unwrapped so ``_run_page``'s own crash handling sees it and retries, instead
+    of it being buried inside a generic ``FetchError`` that would never be recognized as
+    retryable. Any other Patchright error propagates unchanged.
     """
     try:
         return page.content()
@@ -431,6 +473,8 @@ def _read_content(page: Any, url: str, timeout_ms: int) -> str:
         page.wait_for_load_state(timeout=timeout_ms)
         return page.content()
     except PwError as exc:
+        if _is_crashed_target_error(exc):
+            raise
         raise FetchError(
             "patchright: the page kept navigating while being read (client-side redirect);"
             f" try --wait-until networkidle: {url}"

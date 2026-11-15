@@ -696,6 +696,9 @@ def test_patchright_crash_mid_attempt_retries_into_a_fresh_context_and_succeeds(
             return  # the page is now dead; the next page.content() call surfaces the crash
         original_apply_waits(page, opts, timeout_ms)
 
+    # Deliberate exception to CONTRIBUTING.md:125 ("never mock internal functions in the
+    # same module"): there is no public hook to crash the page mid-attempt deterministically
+    # from outside the module, and this is the one e2e test that needs exactly that.
     monkeypatch.setattr(patchright_backend, "_apply_waits", _crash_once_then_wait)
 
     resp = fetch(local_fixture_server, tier="patchright", retry=RetryPolicy(max_attempts=2))

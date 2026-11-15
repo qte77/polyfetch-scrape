@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from patchright import sync_api as pw_sync
+from patchright._impl._errors import TargetClosedError
 
 from polyfetch_scrape._backends import FingerprintBlock, patchright_backend
 from polyfetch_scrape.errors import AuthRequired, BrowserCrashed, FetchError, GoneError, LegalBlock
@@ -402,6 +403,32 @@ def test_patchright_backend_does_not_swallow_other_content_errors(
             policy=RetryPolicy(max_attempts=1),
         )
     page.wait_for_load_state.assert_not_called()
+
+
+def test_patchright_backend_crash_during_navigating_recovery_retries_instead_of_wrapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#183 review: a crash surfacing inside the "still navigating" recovery branch (the
+    second page.content() call, after wait_for_load_state) must be re-raised unwrapped so
+    _run_page's own crash handling sees and retries it -- not buried inside the generic
+    FetchError that branch otherwise raises, which would escape unretried on attempt 1."""
+    page, _ = _make_pw_chain(monkeypatch)
+    page.content.side_effect = [
+        pw_sync.Error(_NAVIGATING),
+        pw_sync.Error("Page.content: Target crashed"),
+        "<html>ok</html>",
+    ]
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com/",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=2),
+    )
+
+    assert resp.body == b"<html>ok</html>"
+    assert page.goto.call_count == 2  # attempt 1 crashed mid-recovery; attempt 2 succeeded
 
 
 def test_patchright_backend_non_success_status_reads_body_after_redirect(
@@ -832,6 +859,105 @@ def test_patchright_backend_non_crash_pwerror_with_crashed_in_url_propagates_unc
         patchright_backend.attempt(
             method="GET",
             url="https://example.com/plane-crashed",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=2),
+        )
+
+    page.goto.assert_called_once()  # not retried -- escapes on the first attempt
+
+
+def test_patchright_backend_relaunch_failure_raises_browsercrashed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#183 review (BLOCKER): if the relaunch itself fails after a crash disconnected the
+    browser, a raw Patchright launch error must not escape fetch() -- it becomes the typed
+    BrowserCrashed, chained."""
+    page, _ = _make_pw_chain(
+        monkeypatch, goto_side_effect=pw_sync.Error("Page.goto: Target crashed")
+    )
+    page._test_browser.is_connected.return_value = False
+    launch_error = pw_sync.Error("BrowserType.launch: Failed to launch")
+    page._test_chromium.launch.side_effect = [page._test_browser, launch_error]
+
+    with pytest.raises(BrowserCrashed) as excinfo:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=2),
+        )
+
+    assert excinfo.value.__cause__ is launch_error
+    page.goto.assert_called_once()  # the second attempt never ran -- relaunch failed first
+    assert page._test_chromium.launch.call_count == 2  # initial launch + the failed relaunch
+
+
+def test_patchright_backend_whole_browser_disconnect_retries_and_relaunches_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#183 review (SHOULD-FIX 1): a whole-browser death can surface with no "crashed"
+    phrase at all -- TargetClosedError's own default message never says it. _attempt_once
+    itself raises the PwError (uncaught by _run_page's phrase match), and the browser is
+    disconnected -- attempt() must still retry it and relaunch, the same as a phrase-matched
+    crash."""
+    response_ok = MagicMock(spec=pw_sync.Response)
+    response_ok.status = 200
+    response_ok.all_headers.return_value = {"content-type": "text/html"}
+
+    page, _ = _make_pw_chain(monkeypatch, goto_side_effect=[TargetClosedError(), response_ok])
+    page._test_browser.is_connected.return_value = False
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=2),
+    )
+
+    assert resp.status == 200
+    assert page._test_chromium.launch.call_count == 2  # initial launch + exactly one relaunch
+
+
+def test_patchright_backend_raises_browsercrashed_when_browser_stays_disconnected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#183 review (SHOULD-FIX 1): if every attempt ends with the browser disconnected --
+    not just a phrase-matched crash -- fetch() still raises BrowserCrashed once attempts are
+    exhausted, chained from the TargetClosedError."""
+    page, _ = _make_pw_chain(monkeypatch, goto_side_effect=TargetClosedError())
+    page._test_browser.is_connected.return_value = False
+
+    with pytest.raises(BrowserCrashed) as excinfo:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=2),
+        )
+
+    assert isinstance(excinfo.value, FetchError)
+    assert isinstance(excinfo.value.__cause__, TargetClosedError)
+    assert page.goto.call_count == 2
+
+
+def test_patchright_backend_non_crash_pwerror_while_connected_propagates_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#183 review (SHOULD-FIX 1, narrow guard): a PwError escaping _attempt_once while the
+    browser is STILL connected is some other failure entirely and must keep propagating
+    unchanged, unretried -- disconnection, not the exception type, is what gates the new
+    whole-browser-crash retry path."""
+    page, _ = _make_pw_chain(monkeypatch, goto_side_effect=TargetClosedError())
+    page._test_browser.is_connected.return_value = True
+
+    with pytest.raises(TargetClosedError):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
             headers=None,
             timeout=5.0,
             policy=RetryPolicy(max_attempts=2),
