@@ -17,10 +17,12 @@ tier as designed (no per-hop pinning primitive there), so capping ``hunt()`` at
 ``curl_cffi`` to use it would silently remove its ability to detect JS-rendered content
 on a fingerprint-blocked external seed. DNS rebinding therefore remains out of scope
 here, and a redirect is still checked post-hoc via ``check_redirect`` rather than
-pinned per hop, pending an explicit owner decision on #240: either accept that
-residual gap (an attacker-triggered fingerprint block can escalate ``hunt()`` straight
-to the unpinned ``patchright`` tier) or cap ``max_tier="curl_cffi"`` here too and lose
-that capability. See ``utils/_ssrf.py`` for the guard this module still uses directly.
+pinned per hop. Owner decision on #240 (2026-11-14): keep the ``patchright`` tier and
+accept this documented residual gap (an attacker-triggered fingerprint block can
+escalate ``hunt()`` straight to the unpinned ``patchright`` tier) rather than cap
+``max_tier="curl_cffi"`` and lose that capability, until the opt-in browser route
+guard (#240 scope (b)) lands. See ``utils/_ssrf.py`` for the guard this module still
+uses directly.
 """
 
 from collections.abc import Iterable
