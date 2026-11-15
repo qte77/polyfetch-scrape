@@ -666,11 +666,11 @@ def test_patchright_crash_mid_attempt_retries_into_a_fresh_context_and_succeeds(
     Playwright's own test suite). That navigation itself raises ``net::ERR_ABORTED``, not a
     "crashed" message (suppressed here as noise); it's the NEXT page call that raises
     ``Error: Page.content: Target crashed`` -- confirmed locally before writing this test,
-    and matching the issue's own verified evidence that the crash surfaces on a later call,
-    not the one that caused it.
+    and matching the task brief's own verified evidence that the crash surfaces on a later
+    call, not the one that caused it.
 
-    The CDP ``context.new_cdp_session(page).send("Page.crash")`` command the issue suggests
-    was tried first and hangs indefinitely in this sandbox: Patchright's sync API waits
+    The CDP ``context.new_cdp_session(page).send("Page.crash")`` command the task brief
+    suggested was tried first and hangs indefinitely in this sandbox: Patchright's sync API waits
     synchronously for a protocol reply that never arrives once the renderer is gone, and that
     wait can't be run on a worker thread either (Patchright's sync wrapper is bound to one
     greenlet/thread) -- confirmed locally before switching to the ``chrome://crash`` approach,

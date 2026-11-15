@@ -112,6 +112,14 @@ def _relaunch_if_crash_disconnected(
     return browser
 
 
+# Patchright's error messages embed Patchright's own call-log text, including the request
+# URL -- a bare "crashed" substring check would misfire on an unrelated PwError whose URL
+# happens to contain that word (e.g. a path like "/plane-crashed"), retrying it and wrongly
+# surfacing BrowserCrashed instead of propagating it unchanged. Scoped to the two exact
+# phrases Patchright/Chromium actually use for this.
+_CRASH_PHRASES = ("target crashed", "page crashed")
+
+
 def _is_crashed_target_error(error: Exception | None) -> bool:
     """True for a Patchright ``Error`` naming a crashed render target (#183).
 
@@ -121,7 +129,10 @@ def _is_crashed_target_error(error: Exception | None) -> bool:
     ``page.on("crash")`` does not reliably fire for it either (also confirmed locally), so
     detection here is by message substring, not by type or event.
     """
-    return isinstance(error, PwError) and "crashed" in str(error).lower()
+    if not isinstance(error, PwError):
+        return False
+    message = str(error).lower()
+    return any(phrase in message for phrase in _CRASH_PHRASES)
 
 
 def available_devices() -> list[str]:

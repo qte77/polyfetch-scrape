@@ -813,6 +813,33 @@ def test_patchright_backend_non_crash_pwerror_from_goto_propagates_unchanged(
     page.goto.assert_called_once()  # not retried -- escapes on the first attempt
 
 
+def test_patchright_backend_non_crash_pwerror_with_crashed_in_url_propagates_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A word-collision regression: the crashed-target message substring must be scoped to
+    "target crashed" / "page crashed", not a bare "crashed" -- otherwise an unrelated
+    PwError whose URL (from Patchright's own call-log text) happens to contain "crashed"
+    (e.g. a path like /plane-crashed) is misdetected as a render-target crash, retried, and
+    wrongly surfaces as BrowserCrashed instead of propagating as-is."""
+    page, _ = _make_pw_chain(
+        monkeypatch,
+        goto_side_effect=pw_sync.Error(
+            "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://example.com/plane-crashed"
+        ),
+    )
+
+    with pytest.raises(pw_sync.Error, match="ERR_NAME_NOT_RESOLVED"):
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com/plane-crashed",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=2),
+        )
+
+    page.goto.assert_called_once()  # not retried -- escapes on the first attempt
+
+
 def test_patchright_backend_passes_wait_for_selector(monkeypatch: pytest.MonkeyPatch) -> None:
     page, _ = _make_pw_chain(monkeypatch)
 
