@@ -40,6 +40,12 @@ class _Attempt:
     headers: dict[str, str] | None = None
     body_excerpt: str | None = None
     soft_block: bool = False
+    # Recorded at the moment the browser was found disconnected (#183 review) -- NOT
+    # re-derived later from browser.is_connected(), because attempt()'s own `finally:
+    # browser.close()` flips a real Browser's is_connected() to False unconditionally,
+    # which would otherwise misreport every exhausted attempt (a persistent 5xx, a
+    # persistent timeout) as a browser crash once the loop exits and the browser is closed.
+    browser_disconnected: bool = False
 
 
 def attempt(
@@ -94,10 +100,12 @@ def attempt(
     msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     if last.block_status in _FINGERPRINT_STATUSES:
         raise FingerprintBlock(msg, **diag) from last.error
-    # A phrase-matched crash (browser usually still alive), OR the browser itself was left
-    # disconnected by the last attempt (TargetClosedError and friends, #183 review) -- either
-    # way the typed crash error is more useful than a generic FetchError.
-    if _is_crashed_target_error(last.error) or not browser.is_connected():
+    # A phrase-matched crash (browser usually still alive), OR the last attempt found the
+    # browser itself disconnected (TargetClosedError and friends, #183 review) -- either way
+    # the typed crash error is more useful than a generic FetchError. `last.browser_disconnected`
+    # is a snapshot taken WHILE the browser was still open -- `browser.is_connected()` here
+    # would be unconditionally False after the loop's own `finally: browser.close()`.
+    if _is_crashed_target_error(last.error) or last.browser_disconnected:
         raise BrowserCrashed(msg, **diag) from last.error
     raise FetchError(msg, **diag) from last.error
 
@@ -126,7 +134,7 @@ def _run_attempt_tolerating_disconnect(
     except PwError as exc:
         if browser.is_connected():
             raise
-        return _Attempt(None, None, exc)
+        return _Attempt(None, None, exc, browser_disconnected=True)
 
 
 def _relaunch_if_disconnected(pw: Any, browser: Any, opts: RenderOptions) -> Any:
@@ -161,9 +169,9 @@ _CRASH_PHRASES = ("target crashed", "page crashed")
 def _is_crashed_target_error(error: Exception | None) -> bool:
     """True for a Patchright ``Error`` naming a crashed render target (#183).
 
-    Patchright/Chromium never raises a distinct exception type for this — it's the same
-    ``PwError`` as any other Patchright failure, naming the crash only in its message (e.g.
-    ``"Page.screenshot: Target crashed"``, confirmed locally against a real renderer crash).
+    A real target crash, confirmed locally against a real renderer crash, surfaces to normal
+    page calls (``page.goto``, ``page.content``, ...) as a plain ``PwError``, not a distinct
+    type — naming the crash only in its message (e.g. ``"Page.screenshot: Target crashed"``).
     Detection here is by message substring, not by type -- a whole-browser death without
     this phrase (e.g. ``TargetClosedError``) is instead caught by
     ``_run_attempt_tolerating_disconnect`` checking ``browser.is_connected()``.

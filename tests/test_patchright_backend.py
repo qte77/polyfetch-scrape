@@ -705,6 +705,32 @@ def test_patchright_backend_raises_fetcherror_on_persistent_5xx(
     assert "status=503" in str(excinfo.value)
 
 
+def test_patchright_backend_persistent_5xx_is_not_browsercrashed_after_close_disconnects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#183 review regression: a real Browser.close() flips is_connected() to False
+    unconditionally (verified locally against a real browser) -- so checking
+    browser.is_connected() for the exhaustion raise AFTER attempt()'s own
+    `finally: browser.close()` has already run would misreport EVERY exhausted attempt
+    (a persistent 5xx here, unrelated to any crash) as BrowserCrashed. The disconnected
+    state must be captured on the _Attempt at the moment it happens, not re-queried from
+    the browser after it's been closed."""
+    page, _ = _make_pw_chain(monkeypatch, response_status=503)
+    browser = page._test_browser
+    browser.close.side_effect = lambda: setattr(browser.is_connected, "return_value", False)
+
+    with pytest.raises(FetchError) as excinfo:
+        patchright_backend.attempt(
+            method="GET",
+            url="https://example.com",
+            headers=None,
+            timeout=5.0,
+            policy=RetryPolicy(max_attempts=2),
+        )
+
+    assert type(excinfo.value) is FetchError
+
+
 def test_patchright_backend_honors_retry_after_on_5xx(monkeypatch: pytest.MonkeyPatch) -> None:
     delays: list[float] = []
     monkeypatch.setattr(
