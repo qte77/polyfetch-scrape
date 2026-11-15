@@ -57,10 +57,11 @@ def attempt(
     if pinned_ip is not None:
         # A pin that still honours a configured proxy is no pin at all — the
         # connection would go to the proxy, not the verified address. This also
-        # drops SSL_CERT_FILE/SSL_CERT_DIR/netrc for the pinned hop (httpx's
-        # trust_env controls all of those, not just proxies) — a custom CA bundle
-        # or netrc-based auth won't apply to a pinned HTTPS request. See the
-        # equivalent decision for curl in curl_backend._session_kwargs.
+        # drops the SSL_CERT_FILE/SSL_CERT_DIR overrides for the pinned hop (httpx's
+        # trust_env gates those as well as env proxies) — a custom CA bundle won't
+        # apply to a pinned HTTPS request; verification itself stays on with the
+        # default certifi store. See the equivalent decision for curl in
+        # curl_backend._session_kwargs.
         client_kwargs["trust_env"] = False
 
     with httpx.Client(**client_kwargs) as client:
