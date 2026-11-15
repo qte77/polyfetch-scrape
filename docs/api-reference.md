@@ -106,6 +106,14 @@ RenderOptions(
 # headless=True|False — launch Chromium headless (default) or headed. A headed launch is
 #     heavier but clears some anti-bot challenges a headless launch never does (#190); on a
 #     display-less host (e.g. CI) run it under `xvfb-run -a` to stay unattended.
+# RESOURCE NOTE: video recording (record_video_dir, above) is already opt-in — zero overhead
+#     unless requested. Headless Chromium itself still needs adequate memory and a workable
+#     /dev/shm; a starved host can crash the render target mid-navigation ("Target crashed" /
+#     "Page crashed") rather than failing cleanly — Chromium's own --disable-dev-shm-usage
+#     flag exists for a too-small /dev/shm (not plumbed through here; out of scope for #183's
+#     narrow retry fix). A crashed target is now retried like a navigation timeout inside the
+#     existing RetryPolicy loop; once every attempt crashes, fetch() raises BrowserCrashed
+#     (see "Exceptions", below) instead of a raw Patchright error (#183).
 # --- authenticated sessions (#200): set at new_context() time, both fetch() and
 #     render_session apply these the same way ---
 # storage_state=<path|dict> → Playwright storage state (cookies + localStorage); the context
@@ -273,6 +281,8 @@ AuthRequired  # 401 / 407
 GoneError  # 404 / 410
 LegalBlock  # 451 (RFC 7725) — never escalated to the fingerprint tiers
 ```
+
+`BrowserCrashed` (patchright tier only) is different: not a status at all. A crashed render target is retried like a navigation timeout inside the existing `RetryPolicy` loop (each attempt already gets a fresh context); only once every attempt crashes does `fetch()` raise `BrowserCrashed` instead of the raw Patchright error (#183).
 
 Every `FetchError` (and subclass, including the internal `FingerprintBlock` — see architecture.md) carries three diagnostic attributes, all `None` when not captured:
 

@@ -8,7 +8,7 @@ from polyfetch_scrape._backends import (
     httpx_backend,
     patchright_backend,
 )
-from polyfetch_scrape.errors import AuthRequired, FetchError, GoneError, LegalBlock
+from polyfetch_scrape.errors import AuthRequired, BrowserCrashed, FetchError, GoneError, LegalBlock
 from polyfetch_scrape.render_options import RenderAction, RenderOptions, Screenshot
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy
@@ -16,6 +16,7 @@ from polyfetch_scrape.throttle import Throttle
 
 __all__ = [
     "AuthRequired",
+    "BrowserCrashed",
     "FetchError",
     "GoneError",
     "LegalBlock",

@@ -23,7 +23,7 @@ from polyfetch_scrape._backends import (
     unsuccessful_status_error,
 )
 from polyfetch_scrape._platform import ensure_browser_tier_supported
-from polyfetch_scrape.errors import FetchError
+from polyfetch_scrape.errors import BrowserCrashed, FetchError
 from polyfetch_scrape.render_options import RenderAction, RenderOptions
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
@@ -72,6 +72,7 @@ def attempt(
                 if last.soft_block:
                     break  # deterministic, not transient — retrying won't un-empty the body
                 if attempt_idx + 1 < policy.max_attempts:
+                    browser = _relaunch_if_crash_disconnected(pw, browser, opts, last.error)
                     time.sleep(next_delay(last.retry_after, policy, attempt_idx))
         finally:
             browser.close()
@@ -91,7 +92,36 @@ def attempt(
     msg = f"patchright fetch failed after {policy.max_attempts} attempts ({detail}): {url}"
     if last.block_status in _FINGERPRINT_STATUSES:
         raise FingerprintBlock(msg, **diag) from last.error
+    if _is_crashed_target_error(last.error):
+        raise BrowserCrashed(msg, **diag) from last.error
     raise FetchError(msg, **diag) from last.error
+
+
+def _relaunch_if_crash_disconnected(
+    pw: Any, browser: Any, opts: RenderOptions, error: Exception | None
+) -> Any:
+    """Relaunch the browser only when a crash took the whole process down with it (#183).
+
+    A crashed render target takes just ONE page/context down; the browser process usually
+    survives, and the next attempt already gets a fresh context (``_attempt_once``) — so this
+    relaunches only in the rarer case where ``browser.is_connected()`` says the browser itself
+    is gone too. Returns the same ``browser`` unchanged otherwise.
+    """
+    if _is_crashed_target_error(error) and not browser.is_connected():
+        return pw.chromium.launch(headless=opts.headless)
+    return browser
+
+
+def _is_crashed_target_error(error: Exception | None) -> bool:
+    """True for a Patchright ``Error`` naming a crashed render target (#183).
+
+    Patchright/Chromium never raises a distinct exception type for this — it's the same
+    ``PwError`` as any other Patchright failure, naming the crash only in its message (e.g.
+    ``"Page.screenshot: Target crashed"``, confirmed locally against a real renderer crash).
+    ``page.on("crash")`` does not reliably fire for it either (also confirmed locally), so
+    detection here is by message substring, not by type or event.
+    """
+    return isinstance(error, PwError) and "crashed" in str(error).lower()
 
 
 def available_devices() -> list[str]:
@@ -287,73 +317,85 @@ def _run_page(
     network_capture: "_NetworkCapture | None",
     request_user_agent: str | None,
 ) -> _Attempt:
-    """Navigate, check status/retry conditions, run actions/waits, and build the ``_Attempt``."""
+    """Navigate, check status/retry conditions, run actions/waits, and build the ``_Attempt``.
+
+    Any ``PwError`` naming a crashed render target (goto, content read, actions/waits, or
+    screenshot capture — #183) is treated as a retryable failed attempt, the same as a
+    navigation timeout, instead of escaping raw; any other ``PwError`` is unaffected and
+    keeps propagating exactly as before (see ``_is_crashed_target_error``).
+    """
     try:
-        response = page.goto(url, wait_until=opts.wait_until, timeout=timeout_ms)
-    except PwTimeoutError as exc:
-        return _Attempt(None, None, exc)
+        try:
+            response = page.goto(url, wait_until=opts.wait_until, timeout=timeout_ms)
+        except PwTimeoutError as exc:
+            return _Attempt(None, None, exc)
 
-    if response is None:
-        return _Attempt(None, None, FetchError("patchright: no response object"))
+        if response is None:
+            return _Attempt(None, None, FetchError("patchright: no response object"))
 
-    status = int(response.status)
-    if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
-        headers_map = {str(k).lower(): str(v) for k, v in dict(response.all_headers()).items()}
-        # The navigation already completed (a response object exists) — page.content() reads
-        # the currently loaded DOM, including a challenge/error page, safely for a blocked status.
-        resp_headers, body_excerpt = bounded_diagnostics(
-            headers_map, _read_content(page, url, timeout_ms).encode("utf-8")
-        )
+        status = int(response.status)
+        if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
+            headers_map = {str(k).lower(): str(v) for k, v in dict(response.all_headers()).items()}
+            # The navigation already completed (a response object exists) — page.content()
+            # reads the currently loaded DOM, including a challenge/error page, safely for a
+            # blocked status.
+            resp_headers, body_excerpt = bounded_diagnostics(
+                headers_map, _read_content(page, url, timeout_ms).encode("utf-8")
+            )
+            return _Attempt(
+                None,
+                status,
+                None,
+                parse_retry_after(headers_map.get("retry-after")),
+                resp_headers,
+                body_excerpt,
+            )
+
+        raise_for_terminal_status(status, url)
+        if not is_success_status(status):
+            raise unsuccessful_status_error(
+                status,
+                url,
+                dict(response.all_headers()),
+                _read_content(page, url, timeout_ms).encode("utf-8"),
+            )
+        _apply_actions(page, opts.actions, timeout_ms)
+        _apply_waits(page, opts, timeout_ms)
+
+        body = _read_content(page, url, timeout_ms).encode("utf-8")
+        all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
+        content_type = all_headers.get("content-type")
+        if is_suspected_soft_block("GET", status, body, content_type):
+            resp_headers, _ = bounded_diagnostics(all_headers, body)
+            return _Attempt(None, status, None, None, resp_headers, None, soft_block=True)
+        screenshots = {s.name: capture_screenshot(page, s.target) or b"" for s in opts.screenshots}
         return _Attempt(
+            Response(
+                url=str(page.url),
+                status=status,
+                headers=all_headers,
+                body=body,
+                content_type=all_headers.get("content-type"),
+                backend="patchright",
+                permanent_redirect_to=permanent_redirect_target(status, all_headers),
+                screenshot=capture_screenshot(page, opts.screenshot),
+                console_errors=console_errors,
+                network_failures=network_failures,
+                screenshots=screenshots,
+                request_user_agent=request_user_agent,
+                redirect_to=redirect_target(status, all_headers),
+                network_log=network_capture.entries if network_capture is not None else [],
+                network_log_truncated=network_capture.truncated
+                if network_capture is not None
+                else False,
+            ),
             None,
-            status,
             None,
-            parse_retry_after(headers_map.get("retry-after")),
-            resp_headers,
-            body_excerpt,
         )
-
-    raise_for_terminal_status(status, url)
-    if not is_success_status(status):
-        raise unsuccessful_status_error(
-            status,
-            url,
-            dict(response.all_headers()),
-            _read_content(page, url, timeout_ms).encode("utf-8"),
-        )
-    _apply_actions(page, opts.actions, timeout_ms)
-    _apply_waits(page, opts, timeout_ms)
-
-    body = _read_content(page, url, timeout_ms).encode("utf-8")
-    all_headers = {str(k): str(v) for k, v in dict(response.all_headers()).items()}
-    content_type = all_headers.get("content-type")
-    if is_suspected_soft_block("GET", status, body, content_type):
-        resp_headers, _ = bounded_diagnostics(all_headers, body)
-        return _Attempt(None, status, None, None, resp_headers, None, soft_block=True)
-    screenshots = {s.name: capture_screenshot(page, s.target) or b"" for s in opts.screenshots}
-    return _Attempt(
-        Response(
-            url=str(page.url),
-            status=status,
-            headers=all_headers,
-            body=body,
-            content_type=all_headers.get("content-type"),
-            backend="patchright",
-            permanent_redirect_to=permanent_redirect_target(status, all_headers),
-            screenshot=capture_screenshot(page, opts.screenshot),
-            console_errors=console_errors,
-            network_failures=network_failures,
-            screenshots=screenshots,
-            request_user_agent=request_user_agent,
-            redirect_to=redirect_target(status, all_headers),
-            network_log=network_capture.entries if network_capture is not None else [],
-            network_log_truncated=network_capture.truncated
-            if network_capture is not None
-            else False,
-        ),
-        None,
-        None,
-    )
+    except PwError as exc:
+        if _is_crashed_target_error(exc):
+            return _Attempt(None, None, exc)
+        raise
 
 
 # Patchright's message when page.content() runs while a client-side redirect is replacing the

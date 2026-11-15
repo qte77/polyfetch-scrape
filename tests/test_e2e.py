@@ -4,6 +4,7 @@ Skipped by default (see `addopts = "-m 'not e2e'"` in pyproject.toml).
 Run via `make test_e2e` or `uv run pytest -m e2e`.
 """
 
+import contextlib
 import http.server
 import json
 import os
@@ -649,3 +650,55 @@ def test_capture_network_coexists_with_har_route_and_network_failures(
     assert har_path.exists()
     har = json.loads(har_path.read_text())
     assert len(har["log"]["entries"]) >= 1  # HAR recording intact
+
+
+# --- Layer G: a crashed render target (#183), induced deterministically -- a LOCAL fixture,
+# one browser launch, no outer retry loop. ---
+
+
+def test_patchright_crash_mid_attempt_retries_into_a_fresh_context_and_succeeds(
+    monkeypatch: pytest.MonkeyPatch, local_fixture_server: str
+) -> None:
+    """#183: a renderer crash mid-attempt is retried instead of escaping as a raw Patchright
+    error. On attempt 1 only, hooked in through ``_apply_waits`` (ordinary monkeypatching, no
+    extra browser launch), the page is deterministically crashed by navigating it to
+    ``chrome://crash`` -- Chromium's own internal URL for exactly this (used the same way in
+    Playwright's own test suite). That navigation itself raises ``net::ERR_ABORTED``, not a
+    "crashed" message (suppressed here as noise); it's the NEXT page call that raises
+    ``Error: Page.content: Target crashed`` -- confirmed locally before writing this test,
+    and matching the issue's own verified evidence that the crash surfaces on a later call,
+    not the one that caused it.
+
+    The CDP ``context.new_cdp_session(page).send("Page.crash")`` command the issue suggests
+    was tried first and hangs indefinitely in this sandbox: Patchright's sync API waits
+    synchronously for a protocol reply that never arrives once the renderer is gone, and that
+    wait can't be run on a worker thread either (Patchright's sync wrapper is bound to one
+    greenlet/thread) -- confirmed locally before switching to the ``chrome://crash`` approach,
+    which raises in well under a second instead.
+
+    Each attempt already gets a brand-new context/page (``_attempt_once``'s existing design,
+    unchanged by #183's fix) -- so attempt 2 navigates a clean page and this asserts SUCCESS ON
+    RETRY, not ``BrowserCrashed``: the crashed-page case recovers within the same browser, one
+    launch, no relaunch (the exhausted-after-every-attempt-crashes path and the
+    browser-disconnected relaunch path are already covered by mocked unit tests in
+    tests/test_patchright_backend.py, which can assert exact call counts a real browser can't).
+    """
+    from polyfetch_scrape._backends import patchright_backend
+
+    crashed = {"done": False}
+    original_apply_waits = patchright_backend._apply_waits
+
+    def _crash_once_then_wait(page: object, opts: RenderOptions, timeout_ms: int) -> None:
+        if not crashed["done"]:
+            crashed["done"] = True
+            with contextlib.suppress(Exception):  # the crash-navigation itself errors (expected)
+                page.goto("chrome://crash", timeout=2000)  # type: ignore[attr-defined]
+            return  # the page is now dead; the next page.content() call surfaces the crash
+        original_apply_waits(page, opts, timeout_ms)
+
+    monkeypatch.setattr(patchright_backend, "_apply_waits", _crash_once_then_wait)
+
+    resp = fetch(local_fixture_server, tier="patchright", retry=RetryPolicy(max_attempts=2))
+
+    assert resp.status == 200
+    assert crashed["done"] is True
