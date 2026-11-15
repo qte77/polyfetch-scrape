@@ -21,8 +21,10 @@ the same address the rest of this suite (e.g. ``tests/utils/test_ssrf.py``,
 ``tests/contrib/easter_hunt/test_hunt.py``) already uses as "obviously public".
 """
 
+import http.server
 import socket
-from collections.abc import Sequence
+import threading
+from collections.abc import Iterator, Sequence
 
 import pytest
 
@@ -30,6 +32,11 @@ _GETADDRINFO = "polyfetch_scrape.utils._ssrf.socket.getaddrinfo"
 _PUBLIC_ADDR = "93.184.216.34"  # long-standing public address of example.com/.org
 
 _AddrInfo = tuple[int, int, int, str, tuple[str, int]]
+
+# Captured at collection time, before the autouse fixture below ever runs, so tests
+# that need the REAL resolver (the loopback-pin proofs in test_curl_backend.py /
+# test_httpx_backend.py) can restore it for just their own test.
+REAL_GETADDRINFO = socket.getaddrinfo
 
 
 def _stub_getaddrinfo(*_args: object, **_kwargs: object) -> Sequence[_AddrInfo]:
@@ -39,3 +46,42 @@ def _stub_getaddrinfo(*_args: object, **_kwargs: object) -> Sequence[_AddrInfo]:
 @pytest.fixture(autouse=True)
 def _no_real_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_GETADDRINFO, _stub_getaddrinfo)
+
+
+class _LoopbackHandler(http.server.BaseHTTPRequestHandler):
+    """Always answers 200 'ok-from-loopback' — enough to prove a connection actually
+    reached THIS server (not a mock, not some other address)."""
+
+    def do_GET(self) -> None:
+        body = b"ok-from-loopback"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args: object) -> None:  # quiet: no per-request stderr noise
+        pass
+
+
+@pytest.fixture
+def loopback_server() -> Iterator[int]:
+    """A real HTTP server bound to 127.0.0.1 on an OS-assigned port.
+
+    Used by the real (no-mock) pin proofs in ``test_curl_backend.py`` and
+    ``test_httpx_backend.py`` (#295 round 4): a pin that doesn't genuinely take
+    effect would fail to connect here rather than returning this exact body, so a
+    passing test is real evidence, not an artifact of a mock's leniency. Loopback
+    only — no real network egress or DNS — so these stay plain unit tests, not the
+    opt-in ``e2e`` marker (CONTRIBUTING.md's "no network in make test" targets real
+    egress/DNS, which this deliberately has neither of).
+    """
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _LoopbackHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address[1]
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()

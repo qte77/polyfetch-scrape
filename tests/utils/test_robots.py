@@ -34,8 +34,9 @@ def _raising_fetch(exc: Exception) -> Callable[..., Response]:
 
 def _patch(monkeypatch: pytest.MonkeyPatch, mapping: Mapping[str, Response]) -> None:
     # is_allowed() fetches robots.txt via utils.discovery.fetch_robots_txt_status, which
-    # calls this module's `fetch` — reusing discovery's fetch+SSRF-guard pattern (#147).
-    monkeypatch.setattr("polyfetch_scrape.utils.discovery.fetch", _mapping_fetch(mapping))
+    # goes through guarded_fetch (#240) — reusing discovery's fetch+SSRF-guard pattern
+    # (#147) — so the seam to patch is guarded_fetch's own `fetch` call in utils._ssrf.
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch(mapping))
 
 
 def test_wildcard_disallow_blocks_matching_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,7 +84,7 @@ def test_robots_txt_itself_is_always_allowed(monkeypatch: pytest.MonkeyPatch) ->
     def _boom(*_a: object, **_kw: object) -> Response:
         raise AssertionError("fetch() must not be called for the /robots.txt path itself")
 
-    monkeypatch.setattr("polyfetch_scrape.utils.discovery.fetch", _boom)
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _boom)
 
     assert is_allowed("https://ex.com/robots.txt") is True
 
@@ -93,7 +94,7 @@ def test_4xx_status_allows_everything(monkeypatch: pytest.MonkeyPatch, status: i
     # RFC 9309 §2.3.1.3 "Unavailable" Status: any 4xx (incl. 404) means "the crawler MAY
     # access any resources on the server."
     monkeypatch.setattr(
-        "polyfetch_scrape.utils.discovery.fetch",
+        "polyfetch_scrape.utils._ssrf.fetch",
         _raising_fetch(FetchError(f"terminal HTTP {status}", status=status)),
     )
 
@@ -105,7 +106,7 @@ def test_5xx_status_disallows_everything(monkeypatch: pytest.MonkeyPatch, status
     # RFC 9309 §2.3.1.4 "Unreachable" Status: a 5xx response means "the robots.txt file is
     # undefined and the crawler MUST assume complete disallow."
     monkeypatch.setattr(
-        "polyfetch_scrape.utils.discovery.fetch",
+        "polyfetch_scrape.utils._ssrf.fetch",
         _raising_fetch(FetchError(f"server error {status}", status=status)),
     )
 
@@ -120,7 +121,7 @@ def test_network_failure_with_no_status_disallows_everything(
     # allow-all case. A FetchError with no status= models a transport-level failure (e.g. a
     # DNS/connection failure — see httpx_backend.py's TransportError handling).
     monkeypatch.setattr(
-        "polyfetch_scrape.utils.discovery.fetch",
+        "polyfetch_scrape.utils._ssrf.fetch",
         _raising_fetch(FetchError("connection failed")),
     )
 
@@ -130,16 +131,35 @@ def test_network_failure_with_no_status_disallows_everything(
 def test_ssrf_blocks_robots_txt_redirected_onto_internal_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The origin is public, but the tier followed a 30x onto an RFC1918 host — is_allowed()
-    # must refuse the landed response rather than parse it (same guard as discover(), #181).
+    # The origin is public, but robots.txt's Location points at an RFC1918 host —
+    # guarded_fetch (#240) must block BEFORE that hop is ever fetched, not detect
+    # it post-hoc from a landed response (same guard as discover()).
     monkeypatch.setattr(
         _RESOLVER, lambda h: ["10.0.0.5"] if h == "intranet.test" else ["93.184.216.34"]
     )
-    landed = _resp("User-agent: *\nAllow: /\n", url="http://intranet.test/robots.txt")
-    _patch(monkeypatch, {"https://ex.com/robots.txt": landed})
+    redirect = Response(
+        url="https://ex.com/robots.txt",
+        status=302,
+        headers={},
+        body=b"",
+        content_type=None,
+        backend="httpx",
+        redirect_to="http://intranet.test/robots.txt",
+    )
+    fetched: list[str] = []
+
+    def _fetch_stub(url: str, **_kwargs: object) -> Response:
+        fetched.append(url)
+        if url == "https://ex.com/robots.txt":
+            return redirect
+        raise AssertionError(f"must not be fetched: {url}")
+
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _fetch_stub)
 
     with pytest.raises(ValueError, match="SSRF"):
         is_allowed("https://ex.com/anything")
+
+    assert fetched == ["https://ex.com/robots.txt"]  # the intranet.test hop was never fetched
 
 
 def test_ssrf_allows_internal_seed_redirected_to_another_internal_address(

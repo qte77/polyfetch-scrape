@@ -52,7 +52,7 @@ def test_flat_sitemap_returns_loc_urls(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _mapping_fetch(
         {"https://ex.com/sitemap.xml": _resp(_urlset("https://ex.com/a", "https://ex.com/b"))}
     )
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", fake)
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", fake)
 
     assert fetch_sitemap_urls("https://ex.com") == ["https://ex.com/a", "https://ex.com/b"]
 
@@ -64,7 +64,7 @@ def test_sitemap_index_follows_children(monkeypatch: pytest.MonkeyPatch) -> None
             _urlset("https://ex.com/p1", "https://ex.com/p2"), url="https://ex.com/c1.xml"
         ),
     }
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch(mapping))
 
     assert fetch_sitemap_urls("https://ex.com") == ["https://ex.com/p1", "https://ex.com/p2"]
 
@@ -74,7 +74,7 @@ def test_gzip_sitemap_is_decompressed(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _mapping_fetch(
         {"https://ex.com/sitemap.xml": _resp(gz, content_type="application/gzip")}
     )
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", fake)
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", fake)
 
     assert fetch_sitemap_urls("https://ex.com") == ["https://ex.com/g"]
 
@@ -82,7 +82,7 @@ def test_gzip_sitemap_is_decompressed(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_max_urls_caps_result(monkeypatch: pytest.MonkeyPatch) -> None:
     locs = [f"https://ex.com/{i}" for i in range(5)]
     fake = _mapping_fetch({"https://ex.com/sitemap.xml": _resp(_urlset(*locs))})
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", fake)
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", fake)
 
     assert fetch_sitemap_urls("https://ex.com", max_urls=3) == locs[:3]
 
@@ -98,7 +98,7 @@ def test_max_urls_caps_across_index_children(monkeypatch: pytest.MonkeyPatch) ->
         ),
         "https://ex.com/c2.xml": _resp(_urlset("https://ex.com/c"), url="https://ex.com/c2.xml"),
     }
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch(mapping))
 
     assert fetch_sitemap_urls("https://ex.com", max_urls=2) == [
         "https://ex.com/a",
@@ -107,14 +107,14 @@ def test_max_urls_caps_across_index_children(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_missing_sitemap_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch({}))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch({}))
 
     assert fetch_sitemap_urls("https://ex.com") == []
 
 
 def test_malformed_xml_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _mapping_fetch({"https://ex.com/sitemap.xml": _resp(b"<not-xml <<< &")})
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", fake)
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", fake)
 
     assert fetch_sitemap_urls("https://ex.com") == []
 
@@ -126,7 +126,7 @@ def test_ssrf_allows_literal_internal_ip_domain_seed(
     # Escalation-only (#181, relaxed by owner decision 2026-09-30): the domain
     # seed itself is never blocked — fetch_sitemap_urls() may legitimately point
     # at a local dev server.
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch({}))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch({}))
 
     assert fetch_sitemap_urls(f"http://{host}") == []  # allowed through; no sitemap found
 
@@ -143,14 +143,14 @@ def test_ssrf_allows_internal_child_sitemap_when_seed_is_internal(
             _urlset("http://169.254.169.254/a"), url="http://169.254.169.254/child.xml"
         ),
     }
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch(mapping))
 
     assert fetch_sitemap_urls("http://127.0.0.1") == ["http://169.254.169.254/a"]
 
 
 def test_ssrf_blocks_internal_child_sitemap(monkeypatch: pytest.MonkeyPatch) -> None:
     mapping = {"https://ex.com/sitemap.xml": _resp(_index("http://169.254.169.254/child.xml"))}
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch(mapping))
 
     with pytest.raises(ValueError, match="SSRF"):
         fetch_sitemap_urls("https://ex.com")
@@ -167,7 +167,7 @@ def test_ssrf_allows_domain_seed_whose_host_resolves_internal(
     monkeypatch: pytest.MonkeyPatch, host: str, address: str
 ) -> None:
     monkeypatch.setattr(_RESOLVER, lambda _h: [address])
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch({}))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch({}))
 
     assert fetch_sitemap_urls(f"http://{host}") == []  # allowed through; no sitemap found
 
@@ -181,7 +181,7 @@ def test_ssrf_blocks_child_sitemap_whose_host_resolves_internal(
         _RESOLVER, lambda h: ["169.254.169.254"] if h == "imds.test" else ["93.184.216.34"]
     )
     mapping = {"https://ex.com/sitemap.xml": _resp(_index("https://imds.test/child.xml"))}
-    monkeypatch.setattr("polyfetch_scrape.utils.sitemap.fetch", _mapping_fetch(mapping))
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _mapping_fetch(mapping))
 
     with pytest.raises(ValueError, match="SSRF"):
         fetch_sitemap_urls("https://ex.com")
@@ -190,24 +190,43 @@ def test_ssrf_blocks_child_sitemap_whose_host_resolves_internal(
 def test_ssrf_blocks_sitemap_redirected_onto_internal_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The requested sitemap URL is public, but the serving tier followed a 30x
-    # onto the IMDS address — the landed body must not be parsed.
+    # The requested sitemap URL is public, but its Location points at the IMDS
+    # address — guarded_fetch (#240) must block BEFORE that hop is ever fetched,
+    # not detect it post-hoc from a landed response.
     monkeypatch.setattr(
         _RESOLVER, lambda h: ["169.254.169.254"] if h == "imds.test" else ["93.184.216.34"]
     )
-    landed = _resp(_urlset("https://ex.com/a"), url="http://imds.test/latest/meta-data/")
-    monkeypatch.setattr(
-        "polyfetch_scrape.utils.sitemap.fetch",
-        _mapping_fetch({"https://ex.com/sitemap.xml": landed}),
+    redirect = Response(
+        url="https://ex.com/sitemap.xml",
+        status=302,
+        headers={},
+        body=b"",
+        content_type=None,
+        backend="httpx",
+        redirect_to="http://imds.test/latest/meta-data/",
     )
+    fetched: list[str] = []
+
+    def _fetch_stub(url: str, **_kwargs: object) -> Response:
+        fetched.append(url)
+        if url == "https://ex.com/sitemap.xml":
+            return redirect
+        raise AssertionError(f"must not be fetched: {url}")
+
+    monkeypatch.setattr("polyfetch_scrape.utils._ssrf.fetch", _fetch_stub)
 
     with pytest.raises(ValueError, match="SSRF"):
         fetch_sitemap_urls("https://ex.com")
 
+    assert fetched == ["https://ex.com/sitemap.xml"]  # the imds.test hop was never fetched
+
 
 @respx.mock
 def test_respx_integration_real_fetch_chain() -> None:
-    respx.get("https://ex.com/sitemap.xml").mock(
+    # guarded_fetch pins the connect to the resolved address (#240) — the suite-wide
+    # conftest stub resolves every host to 93.184.216.34, so that's the URL the httpx
+    # tier actually connects to; Response.url is still restored to the original host.
+    respx.get("https://93.184.216.34/sitemap.xml").mock(
         return_value=httpx.Response(
             200, content=_urlset("https://ex.com/x"), headers={"content-type": "application/xml"}
         )

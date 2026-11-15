@@ -7,8 +7,20 @@ Security: the shared SSRF guard is **escalation-only** (:mod:`polyfetch_scrape.u
 Each seed is trusted outright — a literal internal IP or ``localhost`` seed is never
 blocked, so a caller can point ``hunt()`` at a local dev server. Only when a seed is
 external does a URL derived from it (a path, a redirect target) get checked; an
-internal seed means everything reachable from it is trusted too. DNS rebinding
-remains out of scope — see ``utils/_ssrf.py``.
+internal seed means everything reachable from it is trusted too.
+
+**Not yet pinned (#240).** Unlike ``utils.sitemap``/``utils.discovery`` (migrated to
+``utils._ssrf.guarded_fetch``, which pins + re-checks every hop), ``_safe_fetch`` still
+calls the bare ``fetch()`` with no ``max_tier``, so the full ``httpx`` → ``curl_cffi`` →
+``patchright`` chain stays active — ``guarded_fetch`` cannot reach the ``patchright``
+tier as designed (no per-hop pinning primitive there), so capping ``hunt()`` at
+``curl_cffi`` to use it would silently remove its ability to detect JS-rendered content
+on a fingerprint-blocked external seed. DNS rebinding therefore remains out of scope
+here, and a redirect is still checked post-hoc via ``check_redirect`` rather than
+pinned per hop, pending an explicit owner decision on #240: either accept that
+residual gap (an attacker-triggered fingerprint block can escalate ``hunt()`` straight
+to the unpinned ``patchright`` tier) or cap ``max_tier="curl_cffi"`` here too and lose
+that capability. See ``utils/_ssrf.py`` for the guard this module still uses directly.
 """
 
 from collections.abc import Iterable

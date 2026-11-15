@@ -2,6 +2,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -48,12 +49,25 @@ def attempt(
     *,
     json: Any | None = None,
     content: bytes | None = None,
+    pinned_ip: str | None = None,
+    pinned_host: str | None = None,
 ) -> Response:
     last = _Attempt(None, None, None)
+    client_kwargs: dict[str, Any] = {"timeout": timeout}
+    if pinned_ip is not None:
+        # A pin that still honours a configured proxy is no pin at all — the
+        # connection would go to the proxy, not the verified address. This also
+        # drops SSL_CERT_FILE/SSL_CERT_DIR/netrc for the pinned hop (httpx's
+        # trust_env controls all of those, not just proxies) — a custom CA bundle
+        # or netrc-based auth won't apply to a pinned HTTPS request. See the
+        # equivalent decision for curl in curl_backend._session_kwargs.
+        client_kwargs["trust_env"] = False
 
-    with httpx.Client(timeout=timeout) as client:
+    with httpx.Client(**client_kwargs) as client:
         for attempt_idx in range(policy.max_attempts):
-            last = _attempt_once(client, method, url, headers, policy, json, content)
+            last = _attempt_once(
+                client, method, url, headers, policy, json, content, pinned_ip, pinned_host
+            )
             if last.response is not None:
                 return last.response
             if last.soft_block:
@@ -92,10 +106,22 @@ def _attempt_once(
     policy: RetryPolicy,
     json: Any | None = None,
     content: bytes | None = None,
+    pinned_ip: str | None = None,
+    pinned_host: str | None = None,
 ) -> _Attempt:
     request_headers = _with_default_headers(headers)
+    connect_url, request_headers, extensions = _pinned_connect(
+        url, pinned_ip, pinned_host, request_headers
+    )
     try:
-        http_resp = client.request(method, url, headers=request_headers, json=json, content=content)
+        http_resp = client.request(
+            method,
+            connect_url,
+            headers=request_headers,
+            json=json,
+            content=content,
+            extensions=extensions,
+        )
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 
@@ -112,7 +138,8 @@ def _attempt_once(
         raise unsuccessful_status_error(
             http_resp.status_code, url, dict(http_resp.headers), http_resp.content
         )
-    resp = _to_response(http_resp, _header_value(request_headers, "user-agent"))
+    requested_url = url if pinned_ip is not None else None
+    resp = _to_response(http_resp, requested_url, _header_value(request_headers, "user-agent"))
     if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
         resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
         return _Attempt(None, resp.status, None, None, resp_headers, None, soft_block=True)
@@ -142,6 +169,38 @@ def _with_default_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
     return merged
 
 
+def _pinned_connect(
+    url: str,
+    pinned_ip: str | None,
+    pinned_host: str | None,
+    request_headers: dict[str, str],
+) -> tuple[str, dict[str, str], dict[str, Any]]:
+    """Build the (connect_url, headers, extensions) for an optionally-pinned request.
+
+    No pin → ``url``/``request_headers`` unchanged, no ``extensions`` — byte-for-byte
+    the unpinned path (#240 scope a). With a pin: the connect URL's host becomes the
+    pinned IP (bracketed for IPv6) so the TCP connect dials that exact
+    externally-verified address; ``extensions={"sni_hostname": ascii_host}`` keeps
+    SNI + certificate-hostname verification on the original name (httpcore forwards
+    ``server_hostname`` from it, not from the connect host); a ``Host`` header is
+    added only when the caller didn't already set one (case-insensitive), so the
+    origin server still sees the original name. ``pinned_host`` arrives as the raw,
+    possibly-unicode hostname ``urlsplit`` gave the caller; both the ``Host`` header
+    and ``sni_hostname`` use its IDNA/ASCII form instead — the form a real client
+    (and an HTTP header, which must be ASCII) actually sends on the wire.
+    """
+    if pinned_ip is None or pinned_host is None:
+        return url, request_headers, {}
+    parts = urlsplit(url)
+    host_literal = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+    netloc = host_literal if parts.port is None else f"{host_literal}:{parts.port}"
+    connect_url = urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    ascii_host = pinned_host.encode("idna").decode("ascii")
+    if not any(k.lower() == "host" for k in request_headers):
+        request_headers = {**request_headers, "Host": ascii_host}
+    return connect_url, request_headers, {"sni_hostname": ascii_host}
+
+
 def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
     """Case-insensitive lookup — ``headers`` may preserve the caller's own key casing."""
     if headers is None:
@@ -153,9 +212,14 @@ def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
     return None
 
 
-def _to_response(http_resp: httpx.Response, request_user_agent: str | None) -> Response:
+def _to_response(
+    http_resp: httpx.Response, requested_url: str | None, request_user_agent: str | None
+) -> Response:
+    """``requested_url`` overrides ``http_resp.url`` only for a pinned connect — the
+    connect URL's host was rewritten to the pinned IP, so ``http_resp.url`` would
+    otherwise report that IP instead of the originally requested host (#240)."""
     return Response(
-        url=str(http_resp.url),
+        url=requested_url if requested_url is not None else str(http_resp.url),
         status=http_resp.status_code,
         headers=dict(http_resp.headers),
         body=http_resp.content,

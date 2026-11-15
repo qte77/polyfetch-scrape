@@ -596,6 +596,53 @@ def test_fetch_body_with_max_tier_curl_never_reaches_patchright(
     assert calls["pw"] == 0
 
 
+def test_fetch_rejects_pin_on_the_patchright_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+    pw_called = False
+
+    def fake_pw(*_a: object, **_kw: object) -> Response:
+        nonlocal pw_called
+        pw_called = True
+        return _backend_response("patchright")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.patchright_backend.attempt", fake_pw)
+
+    with pytest.raises(FetchError):
+        fetch(
+            "https://example.com",
+            tier="patchright",
+            pinned_ip="1.2.3.4",
+            pinned_host="example.com",
+        )
+    assert pw_called is False
+
+
+def test_fetch_rejects_pinned_ip_without_pinned_host() -> None:
+    with pytest.raises(FetchError):
+        fetch("https://example.com", pinned_ip="1.2.3.4")
+
+
+def test_fetch_rejects_pinned_host_without_pinned_ip() -> None:
+    with pytest.raises(FetchError):
+        fetch("https://example.com", pinned_host="example.com")
+
+
+def test_fetch_forwards_pin_to_the_httpx_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_httpx(
+        *_a: object, pinned_ip: str | None = None, pinned_host: str | None = None, **_kw: object
+    ) -> Response:
+        captured["pinned_ip"] = pinned_ip
+        captured["pinned_host"] = pinned_host
+        return _backend_response("httpx")
+
+    monkeypatch.setattr("polyfetch_scrape._backends.httpx_backend.attempt", fake_httpx)
+
+    fetch("https://example.com", tier="httpx", pinned_ip="1.2.3.4", pinned_host="example.com")
+
+    assert captured == {"pinned_ip": "1.2.3.4", "pinned_host": "example.com"}
+
+
 def test_fetch_acquires_throttle_before_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[str] = []
 

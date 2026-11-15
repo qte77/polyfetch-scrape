@@ -12,10 +12,13 @@ downstream concern, per the README/architecture invariants).
 Security: the shared SSRF guard is **escalation-only** (:mod:`polyfetch_scrape.utils._ssrf`).
 ``url`` itself — the seed the caller passed in — is never blocked, including a literal
 internal IP or ``localhost``. Only a URL this module *derives* from that seed (a probed
-path, a redirect target) is checked, and only when the seed is external: an internal
-seed means the caller trusts everything reachable from it. Soft-404s are rejected — a
-site that returns a ``200`` HTML shell for every path (SPA) must not read as
-"``/llms.txt`` present", so probes sniff the content-type/body before counting an
+path, a redirect hop) is checked, and only when the seed is external: an internal
+seed means the caller trusts everything reachable from it. Every probe goes through
+:func:`polyfetch_scrape.utils._ssrf.guarded_fetch`, capped at the ``curl_cffi`` tier
+(structured sources never need JS) — each hop is checked, pinned, and connected to the
+verified address *before* it is fetched, not after landing (#240). Soft-404s are
+rejected — a site that returns a ``200`` HTML shell for every path (SPA) must not read
+as "``/llms.txt`` present", so probes sniff the content-type/body before counting an
 entrypoint.
 """
 
@@ -24,10 +27,9 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
-from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
-from polyfetch_scrape.utils._ssrf import check_redirect, check_ssrf, is_seed_internal
+from polyfetch_scrape.utils._ssrf import guarded_fetch, is_seed_internal
 
 # Arbitrary parsed JSON (``json.loads`` output). A recursive alias lets pyright-strict
 # narrow ``isinstance`` branches within the union — no ``Any`` and no casts needed.
@@ -92,14 +94,14 @@ def _origin(url: str) -> str:
 
 
 def _fetch(url: str, seed_internal: bool) -> Response | None:
-    """Fetch ``url`` (structured sources never need JS); None on 404 / fetch failure."""
-    check_ssrf(url, seed_is_internal=seed_internal)
+    """Fetch ``url`` (structured sources never need JS); None on 404 / fetch failure.
+
+    ``guarded_fetch`` pins + re-checks every hop before it is fetched (#240).
+    """
     try:
-        resp = fetch(url, max_tier="curl_cffi")
+        return guarded_fetch(url, seed_is_internal=seed_internal, max_tier="curl_cffi")
     except FetchError:
-        return None  # absent source — same swallow-to-None convention as utils.sitemap
-    check_redirect(url, resp, seed_is_internal=seed_internal)  # a public seed may 30x internal
-    return resp
+        return None  # absent source / too many redirects — same swallow-to-None convention
 
 
 def _head(body: bytes, size: int = 512) -> str:
@@ -168,14 +170,13 @@ def _fetch_status(url: str, seed_internal: bool) -> tuple[int | None, Response |
     """Status-preserving sibling of :func:`_fetch`, for :func:`fetch_robots_txt_status` only.
     ``status`` is ``None`` on a failure that carried no HTTP status at all (a pure
     transport/network failure); every other ``_fetch`` caller keeps swallowing to ``None``
-    and does not need this distinction.
+    and does not need this distinction. ``guarded_fetch`` pins + re-checks every hop
+    before it is fetched (#240).
     """
-    check_ssrf(url, seed_is_internal=seed_internal)
     try:
-        resp = fetch(url, max_tier="curl_cffi")
+        resp = guarded_fetch(url, seed_is_internal=seed_internal, max_tier="curl_cffi")
     except FetchError as exc:
         return exc.status, None
-    check_redirect(url, resp, seed_is_internal=seed_internal)
     return resp.status, resp
 
 
