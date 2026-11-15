@@ -947,6 +947,30 @@ def test_patchright_backend_whole_browser_disconnect_retries_and_relaunches_then
     assert page._test_chromium.launch.call_count == 2  # initial launch + exactly one relaunch
 
 
+def test_patchright_backend_context_close_raising_on_dead_browser_retries_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#183 follow-up: _attempt_once's own `finally: context.close()` raising on a dead
+    connection masks whatever _run_page returned. With the browser disconnected that PwError
+    is a retryable attempt (relaunch, then retry), not a raw error escaping fetch()."""
+    page, _ = _make_pw_chain(monkeypatch)
+    context = page._test_browser.new_context.return_value
+    context.close.side_effect = [TargetClosedError(), None]
+    page._test_browser.is_connected.return_value = False
+
+    resp = patchright_backend.attempt(
+        method="GET",
+        url="https://example.com",
+        headers=None,
+        timeout=5.0,
+        policy=RetryPolicy(max_attempts=2),
+    )
+
+    assert resp.status == 200
+    assert page.goto.call_count == 2  # the first attempt's result was masked, so retried
+    assert page._test_chromium.launch.call_count == 2  # initial launch + exactly one relaunch
+
+
 def test_patchright_backend_raises_browsercrashed_when_browser_stays_disconnected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
