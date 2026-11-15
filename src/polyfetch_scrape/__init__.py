@@ -2,6 +2,7 @@ import logging
 
 from polyfetch_scrape.client import (
     AuthRequired,
+    BrowserCrashed,
     FetchError,
     GoneError,
     LegalBlock,
@@ -20,6 +21,7 @@ logging.getLogger("polyfetch_scrape").addHandler(logging.NullHandler())
 
 __all__ = [
     "AuthRequired",
+    "BrowserCrashed",
     "FetchError",
     "GoneError",
     "LegalBlock",

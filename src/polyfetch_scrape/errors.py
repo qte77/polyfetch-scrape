@@ -26,6 +26,10 @@ class AuthRequired(FetchError):  # noqa: N818 — RFC status name, not an *Error
     """Terminal: 401 Unauthorized / 407 Proxy Authentication Required."""
 
 
+class BrowserCrashed(FetchError):  # noqa: N818 — past-tense state name, not an *Error suffix
+    """Patchright tier only: the render target crashed on every retry attempt (#183)."""
+
+
 class GoneError(FetchError):
     """Terminal: 404 Not Found / 410 Gone."""
 
