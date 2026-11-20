@@ -1,0 +1,11 @@
+// markdownlint-cli2 options only. The rules stay in .markdownlint.jsonc, which
+// markdownlint-cli2 still reads because this file sets no "config" key.
+{
+  "ignores": [
+    // scriv changelog fragments: they start with a comment and a "###" section
+    // heading by design, and `scriv collect` merges them into CHANGELOG.md
+    "changelog.d/**",
+    // Claude Code command and agent files: frontmatter plus prompt text, not docs
+    ".claude/**"
+  ]
+}
