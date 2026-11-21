@@ -1,7 +1,8 @@
 import ipaddress
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
@@ -18,6 +19,7 @@ from polyfetch_scrape._backends import (
     redirect_target,
     unsuccessful_status_error,
 )
+from polyfetch_scrape._backends._stream import read_excerpt, save_streamed_body
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
@@ -50,10 +52,13 @@ def attempt(
     content: bytes | None = None,
     pinned_ip: str | None = None,
     pinned_host: str | None = None,
+    stream_to: Path | None = None,
 ) -> Response:
     last = _Attempt(None, None, None)
     session_cls = cast(Any, curl_requests).Session
     session_kwargs = _session_kwargs(url, pinned_ip, pinned_host)
+    if stream_to is not None:
+        session_kwargs = _with_total_timeout(session_kwargs, timeout)
 
     with session_cls(impersonate=browser, **session_kwargs) as session:
         for attempt_idx in range(policy.max_attempts):
@@ -67,6 +72,7 @@ def attempt(
                 json,
                 content,
                 pinned_ip,
+                stream_to,
             )
             if last.response is not None:
                 return last.response
@@ -105,11 +111,16 @@ def _attempt_once(
     json: Any | None = None,
     content: bytes | None = None,
     pinned_ip: str | None = None,
+    stream_to: Path | None = None,
 ) -> _Attempt:
     # allow_redirects IS a .request() parameter (unlike curl_options, see
     # _session_kwargs) — False returns the raw 3xx for manual hop-by-hop following
     # instead of libcurl auto-following onto an unchecked address.
     request_kwargs: dict[str, Any] = {"allow_redirects": False} if pinned_ip is not None else {}
+    deadline = 0.0
+    if stream_to is not None:
+        request_kwargs["stream"] = True
+        deadline = time.monotonic() + timeout
     try:
         http_resp = session.request(
             method,
@@ -123,6 +134,33 @@ def _attempt_once(
     except Exception as exc:  # curl_cffi raises a wide error hierarchy
         return _Attempt(None, None, exc)
 
+    if stream_to is None:
+        return _settle(http_resp, method, url, headers, policy, pinned_ip)
+    try:
+        return _settle(
+            http_resp, method, url, headers, policy, pinned_ip, stream_to, deadline, timeout
+        )
+    except FetchError:
+        raise
+    except Exception as exc:  # mid-body transport error or the deadline: retried as transport
+        return _Attempt(None, None, exc)
+    finally:
+        http_resp.close()
+
+
+def _settle(
+    http_resp: Any,
+    method: str,
+    url: str,
+    headers: Mapping[str, str] | None,
+    policy: RetryPolicy,
+    pinned_ip: str | None,
+    stream_to: Path | None = None,
+    deadline: float = 0.0,
+    timeout: float = 0.0,
+) -> _Attempt:
+    """Classify a received response. When streaming, only a 2xx body is ever read in full,
+    and only into ``stream_to``; error bodies are read up to the diagnostics cap."""
     if pinned_ip is not None:
         _verify_connected_to_pin(http_resp, pinned_ip, url)
 
@@ -130,20 +168,72 @@ def _attempt_once(
     if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
         retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
         resp_headers, body_excerpt = bounded_diagnostics(
-            dict(http_resp.headers), bytes(http_resp.content)
+            dict(http_resp.headers), _diagnostic_body(http_resp, stream_to, deadline, timeout, url)
         )
         return _Attempt(None, status, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(status, url)
     if not is_success_status(status):
         raise unsuccessful_status_error(
-            status, url, dict(http_resp.headers), bytes(http_resp.content)
+            status,
+            url,
+            dict(http_resp.headers),
+            _diagnostic_body(http_resp, stream_to, deadline, timeout, url),
         )
-    resp = _to_response(http_resp, url, _header_value(headers, "user-agent"))
+    user_agent = _header_value(headers, "user-agent")
+    if stream_to is not None:
+        chunks = _within_deadline(http_resp.iter_content(), deadline, timeout, url)
+        return _settle_streamed(http_resp, method, url, user_agent, chunks, stream_to)
+    resp = _to_response(http_resp, url, user_agent, bytes(http_resp.content))
     if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
         resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
         return _Attempt(None, status, None, None, resp_headers, None, soft_block=True)
     return _Attempt(resp, None, None)
+
+
+def _settle_streamed(
+    http_resp: Any,
+    method: str,
+    url: str,
+    user_agent: str | None,
+    chunks: Iterable[bytes],
+    stream_to: Path,
+) -> _Attempt:
+    resp = _to_response(http_resp, url, user_agent, b"")
+    if not 200 <= resp.status < 300:  # an unfollowed 3xx: returned as-is, nothing saved (#260)
+        return _Attempt(resp, None, None)
+    saved = save_streamed_body(method, resp.status, resp.content_type, chunks, stream_to, url)
+    if saved is None:
+        resp_headers, _ = bounded_diagnostics(resp.headers, b"")
+        return _Attempt(None, resp.status, None, None, resp_headers, None, soft_block=True)
+    size, sha256 = saved
+    return _Attempt(
+        replace(resp, saved_to=stream_to, saved_size=size, saved_sha256=sha256), None, None
+    )
+
+
+def _within_deadline(
+    chunks: Iterable[bytes], deadline: float, timeout: float, url: str
+) -> Iterator[bytes]:
+    """Check the buffered total-transfer cap between chunks when streaming (#261).
+
+    libcurl's own ``CURLOPT_TIMEOUT_MS`` (:func:`_with_total_timeout`) is the primary
+    bound and also covers a stall, where no chunk arrives to check; this check keeps the
+    cap independent of curl_cffi honouring that option on every code path.
+    """
+    for chunk in chunks:
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"curl_cffi stream exceeded timeout={timeout}s: {url}")
+        yield chunk
+
+
+def _diagnostic_body(
+    http_resp: Any, stream_to: Path | None, deadline: float, timeout: float, url: str
+) -> bytes:
+    if stream_to is None:
+        return bytes(http_resp.content)
+    # An error/retry body is held to the same deadline as a 2xx one (#302 review).
+    return read_excerpt(_within_deadline(http_resp.iter_content(), deadline, timeout, url))
 
 
 def _session_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) -> dict[str, Any]:
@@ -191,6 +281,20 @@ def _session_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) ->
         "curl_options": {CurlOpt.RESOLVE: [f"{ascii_host}:{port}:{address}"]},
         "trust_env": False,
     }
+
+
+def _with_total_timeout(session_kwargs: dict[str, Any], timeout: float) -> dict[str, Any]:
+    """Add libcurl's whole-transfer ``CURLOPT_TIMEOUT_MS`` for a streamed session.
+
+    Measured on curl_cffi 0.17.0: a buffered request is capped at ``timeout`` overall, but
+    a ``stream=True`` one is not; a stall after the first bytes then ends only through
+    curl's low-speed abort, about ``timeout`` + 6 s later. As a ``Session`` constructor
+    ``curl_options`` entry it does apply to streamed transfers (stall-after-data ended at
+    ``timeout``). Merged with any pin options from :func:`_session_kwargs`.
+    """
+    options = dict(session_kwargs.get("curl_options", {}))
+    options[CurlOpt.TIMEOUT_MS] = max(1, int(timeout * 1000))
+    return {**session_kwargs, "curl_options": options}
 
 
 def _unmap(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Any:
@@ -248,12 +352,14 @@ def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
     return None
 
 
-def _to_response(http_resp: Any, fallback_url: str, request_user_agent: str | None) -> Response:
+def _to_response(
+    http_resp: Any, fallback_url: str, request_user_agent: str | None, body: bytes
+) -> Response:
     return Response(
         url=str(getattr(http_resp, "url", fallback_url)),
         status=int(http_resp.status_code),
         headers={str(k): str(v) for k, v in dict(http_resp.headers).items()},
-        body=bytes(http_resp.content),
+        body=body,
         content_type=dict(http_resp.headers).get("content-type"),
         backend="curl_cffi",
         permanent_redirect_to=permanent_redirect_target(

@@ -47,3 +47,10 @@ class Response:
     # a temporary redirect itself; None otherwise. httpx never follows redirects, so this is
     # how its 302 stays recoverable (#260). A superset of permanent_redirect_to.
     redirect_to: str | None = None
+    # fetch(stream_to=Path) (#261): the body went to this file instead of memory, so ``body``
+    # is b"". Set only after a complete, non-empty 2xx was moved onto the path; None otherwise.
+    saved_to: Path | None = None
+    saved_size: int | None = None
+    # Hex SHA-256 of the saved bytes, computed while streaming (the integrity check #261 asks
+    # for, without reading an installer-sized file back); None when nothing was saved.
+    saved_sha256: str | None = None
