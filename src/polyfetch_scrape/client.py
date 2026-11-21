@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Literal
 
 from polyfetch_scrape._backends import (
@@ -41,6 +42,13 @@ _BODY_ON_PATCHRIGHT_MSG = (
 # Patchright has no per-hop pinning primitive (#240 scope a is httpx/curl_cffi only;
 # see utils/_ssrf.py's module docstring) — a pin passed with tier="patchright" (or a
 # tier range that resolves to it) must fail loudly, not silently drop the pin.
+# The patchright tier renders a page in a browser; it has no body stream to write to
+# disk, so stream_to is confined to the httpx/curl_cffi tiers (#261).
+_STREAM_ON_PATCHRIGHT_MSG = (
+    "stream_to is not supported on the patchright tier (no body stream); "
+    "streamed downloads are limited to the httpx/curl_cffi tiers: {url}"
+)
+
 _PIN_ON_PATCHRIGHT_MSG = (
     "pinned_ip/pinned_host are not supported on the patchright tier (no per-hop "
     "pinning primitive): {url}"
@@ -75,11 +83,14 @@ def fetch(
     render: RenderOptions | None = None,
     pinned_ip: str | None = None,
     pinned_host: str | None = None,
+    stream_to: Path | None = None,
 ) -> Response:
     if json is not None and content is not None:
         raise FetchError("provide either json or content, not both")
     if (pinned_ip is None) != (pinned_host is None):
         raise FetchError("pass both pinned_ip and pinned_host, or neither")
+    if stream_to is not None:
+        _check_stream_target(stream_to)
     lo, hi = _resolve_tier_range(tier, min_tier, max_tier)
     policy = retry if retry is not None else RetryPolicy()
     headers = _with_conditional_headers(headers, etag, last_modified)
@@ -104,7 +115,16 @@ def fetch(
         content,
         pinned_ip,
         pinned_host,
+        stream_to,
     )
+
+
+def _check_stream_target(stream_to: Path) -> None:
+    """Fail before any request when the download could never be moved into place."""
+    if not stream_to.parent.is_dir():
+        raise FetchError(f"stream_to directory does not exist: {stream_to.parent}")
+    if stream_to.is_dir():
+        raise FetchError(f"stream_to is a directory, not a file path: {stream_to}")
 
 
 def _with_conditional_headers(
@@ -156,6 +176,7 @@ def _run_chain(
     content: bytes | None,
     pinned_ip: str | None,
     pinned_host: str | None,
+    stream_to: Path | None,
 ) -> Response:
     """Walk the active tier range: escalate on FingerprintBlock; the last tier's error surfaces."""
     *escalating, final = active
@@ -174,6 +195,7 @@ def _run_chain(
                 content,
                 pinned_ip,
                 pinned_host,
+                stream_to,
             )
         except FingerprintBlock:
             nxt = escalating[i + 1] if i + 1 < len(escalating) else final
@@ -191,6 +213,7 @@ def _run_chain(
         content,
         pinned_ip,
         pinned_host,
+        stream_to,
     )
 
 
@@ -207,6 +230,7 @@ def _dispatch(
     content: bytes | None,
     pinned_ip: str | None,
     pinned_host: str | None,
+    stream_to: Path | None,
 ) -> Response:
     """Call one backend. Patchright is GET-only and cannot carry a request body or a pin
     (no per-hop pinning primitive — see utils/_ssrf.py's module docstring)."""
@@ -221,6 +245,7 @@ def _dispatch(
             content=content,
             pinned_ip=pinned_ip,
             pinned_host=pinned_host,
+            stream_to=stream_to,
         )
     if tier == "curl_cffi":
         return curl_backend.attempt(
@@ -234,7 +259,10 @@ def _dispatch(
             content=content,
             pinned_ip=pinned_ip,
             pinned_host=pinned_host,
+            stream_to=stream_to,
         )
+    if stream_to is not None:
+        raise FetchError(_STREAM_ON_PATCHRIGHT_MSG.format(url=url))
     if json is not None or content is not None:
         raise FetchError(_BODY_ON_PATCHRIGHT_MSG.format(url=url))
     if pinned_ip is not None:

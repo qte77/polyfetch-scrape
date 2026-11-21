@@ -1,6 +1,7 @@
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -16,6 +17,7 @@ from polyfetch_scrape._backends import (
     redirect_target,
     unsuccessful_status_error,
 )
+from polyfetch_scrape._backends._stream import read_excerpt, save_streamed_body
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.response import Response
 from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, should_retry
@@ -51,6 +53,7 @@ def attempt(
     content: bytes | None = None,
     pinned_ip: str | None = None,
     pinned_host: str | None = None,
+    stream_to: Path | None = None,
 ) -> Response:
     last = _Attempt(None, None, None)
     client_kwargs: dict[str, Any] = {"timeout": timeout}
@@ -67,7 +70,16 @@ def attempt(
     with httpx.Client(**client_kwargs) as client:
         for attempt_idx in range(policy.max_attempts):
             last = _attempt_once(
-                client, method, url, headers, policy, json, content, pinned_ip, pinned_host
+                client,
+                method,
+                url,
+                headers,
+                policy,
+                json,
+                content,
+                pinned_ip,
+                pinned_host,
+                stream_to,
             )
             if last.response is not None:
                 return last.response
@@ -109,42 +121,103 @@ def _attempt_once(
     content: bytes | None = None,
     pinned_ip: str | None = None,
     pinned_host: str | None = None,
+    stream_to: Path | None = None,
 ) -> _Attempt:
     request_headers = _with_default_headers(headers)
     connect_url, request_headers, extensions = _pinned_connect(
         url, pinned_ip, pinned_host, request_headers
     )
     try:
-        http_resp = client.request(
-            method,
-            connect_url,
-            headers=request_headers,
-            json=json,
-            content=content,
-            extensions=extensions,
-        )
+        if stream_to is None:
+            http_resp = client.request(
+                method,
+                connect_url,
+                headers=request_headers,
+                json=json,
+                content=content,
+                extensions=extensions,
+            )
+        else:
+            request = client.build_request(
+                method,
+                connect_url,
+                headers=request_headers,
+                json=json,
+                content=content,
+                extensions=extensions,
+            )
+            http_resp = client.send(request, stream=True)
     except httpx.TransportError as exc:
         return _Attempt(None, None, exc)
 
-    if (
-        should_retry(http_resp.status_code, policy)
-        or http_resp.status_code in _FINGERPRINT_STATUSES
-    ):
-        retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
-        resp_headers, body_excerpt = bounded_diagnostics(dict(http_resp.headers), http_resp.content)
-        return _Attempt(None, http_resp.status_code, None, retry_after, resp_headers, body_excerpt)
+    try:
+        requested_url = url if pinned_ip is not None else None
+        return _settle(http_resp, method, url, policy, request_headers, requested_url, stream_to)
+    except httpx.TransportError as exc:  # mid-body, only possible when streaming
+        return _Attempt(None, None, exc)
+    finally:
+        http_resp.close()
 
-    raise_for_terminal_status(http_resp.status_code, url)
-    if not is_success_status(http_resp.status_code):
-        raise unsuccessful_status_error(
-            http_resp.status_code, url, dict(http_resp.headers), http_resp.content
+
+def _settle(
+    http_resp: httpx.Response,
+    method: str,
+    url: str,
+    policy: RetryPolicy,
+    request_headers: Mapping[str, str],
+    requested_url: str | None,
+    stream_to: Path | None,
+) -> _Attempt:
+    """Classify a received response. When streaming, only a 2xx body is ever read in full,
+    and only into ``stream_to``; error bodies are read up to the diagnostics cap."""
+    status = http_resp.status_code
+    if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
+        retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
+        resp_headers, body_excerpt = bounded_diagnostics(
+            dict(http_resp.headers), _diagnostic_body(http_resp, stream_to)
         )
-    requested_url = url if pinned_ip is not None else None
-    resp = _to_response(http_resp, requested_url, _header_value(request_headers, "user-agent"))
+        return _Attempt(None, status, None, retry_after, resp_headers, body_excerpt)
+
+    raise_for_terminal_status(status, url)
+    if not is_success_status(status):
+        raise unsuccessful_status_error(
+            status, url, dict(http_resp.headers), _diagnostic_body(http_resp, stream_to)
+        )
+    user_agent = _header_value(request_headers, "user-agent")
+    if stream_to is not None:
+        return _settle_streamed(http_resp, method, url, requested_url, user_agent, stream_to)
+    resp = _to_response(http_resp, requested_url, user_agent, http_resp.content)
     if is_suspected_soft_block(method, resp.status, resp.body, resp.content_type):
         resp_headers, _ = bounded_diagnostics(resp.headers, resp.body)
         return _Attempt(None, resp.status, None, None, resp_headers, None, soft_block=True)
     return _Attempt(resp, None, None)
+
+
+def _settle_streamed(
+    http_resp: httpx.Response,
+    method: str,
+    url: str,
+    requested_url: str | None,
+    user_agent: str | None,
+    stream_to: Path,
+) -> _Attempt:
+    resp = _to_response(http_resp, requested_url, user_agent, b"")
+    if not 200 <= resp.status < 300:  # an unfollowed 3xx: returned as-is, nothing saved (#260)
+        return _Attempt(resp, None, None)
+    saved = save_streamed_body(
+        method, resp.status, resp.content_type, http_resp.iter_bytes(), stream_to, url
+    )
+    if saved is None:
+        resp_headers, _ = bounded_diagnostics(resp.headers, b"")
+        return _Attempt(None, resp.status, None, None, resp_headers, None, soft_block=True)
+    size, sha256 = saved
+    return _Attempt(
+        replace(resp, saved_to=stream_to, saved_size=size, saved_sha256=sha256), None, None
+    )
+
+
+def _diagnostic_body(http_resp: httpx.Response, stream_to: Path | None) -> bytes:
+    return http_resp.content if stream_to is None else read_excerpt(http_resp.iter_bytes())
 
 
 _DEFAULT_ACCEPT = (
@@ -214,7 +287,10 @@ def _header_value(headers: Mapping[str, str] | None, name: str) -> str | None:
 
 
 def _to_response(
-    http_resp: httpx.Response, requested_url: str | None, request_user_agent: str | None
+    http_resp: httpx.Response,
+    requested_url: str | None,
+    request_user_agent: str | None,
+    body: bytes,
 ) -> Response:
     """``requested_url`` overrides ``http_resp.url`` only for a pinned connect — the
     connect URL's host was rewritten to the pinned IP, so ``http_resp.url`` would
@@ -223,7 +299,7 @@ def _to_response(
         url=requested_url if requested_url is not None else str(http_resp.url),
         status=http_resp.status_code,
         headers=dict(http_resp.headers),
-        body=http_resp.content,
+        body=body,
         content_type=http_resp.headers.get("content-type"),
         backend="httpx",
         permanent_redirect_to=permanent_redirect_target(http_resp.status_code, http_resp.headers),
