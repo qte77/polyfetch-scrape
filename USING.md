@@ -218,6 +218,7 @@ After a patchright upgrade (e.g. 1.63 = Chromium 153), run `polyfetch doctor --f
 
 ## Gotchas
 
+- **Large downloads**: `--show-body` and a plain `fetch()` hold the whole body in memory. From Python, `fetch(url, stream_to=Path(...))` writes it to disk in chunks and only ever leaves a complete file at that path (httpx/curl_cffi tiers; [`docs/api-reference.md` § `fetch`](docs/api-reference.md#fetch), [#261](https://github.com/qte77/polyfetch-scrape/issues/261)). The CLI has no streaming flag yet.
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.

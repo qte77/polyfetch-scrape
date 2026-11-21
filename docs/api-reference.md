@@ -10,7 +10,7 @@ fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       browser="chrome", wait_for_selector=None, tier=None,
       min_tier=None, max_tier=None, etag=None, last_modified=None,
       json=None, content=None, throttle=None, render=None,
-      pinned_ip=None, pinned_host=None) -> Response
+      pinned_ip=None, pinned_host=None, stream_to=None) -> Response
       # tier pins one backend: "httpx"|"curl_cffi"|"patchright" (≡ min_tier==max_tier)
       # min_tier / max_tier → bound the fallback range: max_tier="curl_cffi" caps escalation
       #   (never launches the browser); min_tier="patchright" forces the JS tier
@@ -20,6 +20,8 @@ fetch(url, *, method="GET", headers=None, timeout=30.0, retry=None,
       # render=RenderOptions(...) → patchright-tier wait/screenshot controls
       # pinned_ip / pinned_host → connect to pinned_ip, keep SNI/Host/Response.url on
       #   pinned_host (httpx/curl_cffi only; both-or-neither; #240)
+      # stream_to=Path → write a 2xx body to that file instead of memory (httpx/curl_cffi
+      #   only; #261)
 ```
 
 A single call runs the three-tier fallback chain (or the pinned `tier`) and returns a typed `Response` regardless of which backend succeeded.
@@ -27,6 +29,16 @@ A single call runs the three-tier fallback chain (or the pinned `tier`) and retu
 **Request bodies (`json` / `content`) use the httpx and curl_cffi tiers only.** The patchright tier is GET-only and cannot replay a body, so a body request that would otherwise escalate to patchright — or one pinned to `tier="patchright"` — raises `FetchError` instead of silently dropping the body. Passing both `json` and `content` also raises `FetchError`. POST is not idempotent, but body requests are still retried on the same connection/timeout + `retry_on_status` conditions as any other request.
 
 **`pinned_ip`/`pinned_host` are opt-in, never a default** (#240): plain `fetch(url)` is unguarded, unchanged. They connect to the externally-verified `pinned_ip` while keeping SNI, the `Host` header, and `Response.url` on `pinned_host` — supported on the httpx and curl_cffi tiers only; passing either without the other, or either with `tier="patchright"` (or a tier range resolving to it), raises `FetchError`. `polyfetch_scrape.utils._ssrf.guarded_fetch` (internal) is the caller that computes and threads these per hop — see `docs/architecture.md`'s `utils/_ssrf.py` entry.
+
+**`stream_to=Path` streams a 2xx body to disk instead of holding it in memory** (#261), for downloads too large to buffer. The body goes in chunks to a temp file in the target's own directory, which is moved onto the target with `os.replace` only after a complete, non-empty 2xx transfer. A failed transfer (a transport error mid-body, a retry, a tier escalation, an error status) removes the temp file and leaves the target absent, or as it was. On success `Response.body` is `b""` and `saved_to` / `saved_size` / `saved_sha256` describe the file. The rest of the contract is unchanged:
+
+- Tier choice and TLS impersonation work as usual. The patchright tier has no body stream, so `stream_to` with `tier="patchright"` (or an escalation that reaches it) raises `FetchError`; use `max_tier="curl_cffi"` to stay on the streaming tiers.
+- An unfollowed 3xx is returned as-is with `redirect_to` set and nothing saved (#260).
+- An empty HTML 2xx is still a suspected soft block (#237) and escalates. Any other empty body raises `FetchError`: there is nothing to save.
+- Error and retry responses are read only up to the 2 KB `body_excerpt`, never in full.
+- `timeout` keeps its buffered meaning on both tiers. curl_cffi caps the whole transfer at `timeout` when buffered; in stream mode it only times out a stalled read, so the curl_cffi tier enforces the same total deadline in its chunk loop. httpx's `timeout` is per read in both modes, unchanged. Size `timeout` to the whole download when it may land on curl_cffi: the default `30.0` caps a large file there, streamed or not.
+- The parent directory must exist and the target must not be a directory (`FetchError` before any request otherwise); an existing file at the target is replaced only by a complete download, and the saved file gets the same mode a plain write would. A local disk error (write, close, rename) raises `FetchError` and is not retried. There is no size cap, as with a buffered body.
+- Python API only for now; the CLI has no streaming flag yet (`--show-body` still buffers).
 
 CLI: `polyfetch fetch <url> [--device NAME] [--viewport WxH] [--color-scheme light|dark|no-preference] [--user-agent STR] [--locale STR] [--video-out DIR] [--har-out FILE] [--headed] [--storage-state FILE]` — the patchright-tier emulation/video/HAR/launch/session flags (`--headed` launches Chromium headed instead of headless; default headless — clears some anti-bot challenges a headless launch never does, #190; `--storage-state FILE` resumes a session from a saved Playwright storage-state JSON file, #200); `--json` additionally surfaces `screenshot_b64` (PNG), `video_path` and `har_path` (recordings) when requested, and `request_user_agent` (the UA actually sent, when cheaply knowable — on `fetch` and every `bulk` line; #198). `[--json-body VALUE | --data VALUE]` attach a request body (`VALUE` is a literal string, `@path`, or `@-` for stdin) — mutually exclusive, httpx/curl_cffi-tier only. `cookies=`/`extra_http_headers=` are Python-API-only (`render_session`/`RenderOptions`) — no CLI flag shape fits a cookie list or a repeatable header yet. Full flag list: [USING.md](../USING.md).
 
@@ -228,9 +240,14 @@ Response(
     redirect_to=None,
     network_log=[],
     network_log_truncated=False,
+    saved_to=None,
+    saved_size=None,
+    saved_sha256=None,
 )
 # permanent_redirect_to: Location target on a 301/308, so callers can update stored URLs
 # redirect_to: Location target on ANY unfollowed 3xx (incl. temporary 302/303/307), else None
+# saved_to / saved_size / saved_sha256: with fetch(stream_to=Path), the file the 2xx body was
+#   saved to, its byte count and hex SHA-256 (body is then b""); None otherwise (#261)
 # screenshot: PNG bytes when requested on the patchright tier, else None
 # video_path: Path to the recorded VP8 .webm when RenderOptions.record_video_dir was set
 #   (patchright tier), else None
