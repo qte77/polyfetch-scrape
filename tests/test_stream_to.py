@@ -57,6 +57,26 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(b"x" * 1024)
                 self.wfile.flush()
                 time.sleep(0.1)
+        elif self.path == "/error-drip":
+            # A 500 whose 1 KiB body arrives 64 B every 0.25 s (~4 s, 256 B/s: well above
+            # curl's own < 1 byte/s low-speed abort).
+            self.send_response(500)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "1024")
+            self.end_headers()
+            for _ in range(16):
+                self.wfile.write(b"e" * 64)
+                self.wfile.flush()
+                time.sleep(0.25)
+        elif self.path == "/stall-after-data":
+            # Some bytes, then silence: no further chunk ever arrives to check a deadline on.
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", "100000")
+            self.end_headers()
+            self.wfile.write(b"x" * 1000)
+            self.wfile.flush()
+            time.sleep(10)
         elif self.path == "/truncated":
             # Promise the whole payload, send a third of it, then drop the connection.
             self.send_response(200)
@@ -171,6 +191,40 @@ def test_stream_to_curl_keeps_the_total_timeout_of_a_buffered_fetch(
         fetch(f"{base_url}/drip", tier="curl_cffi", stream_to=target, timeout=2.0, retry=_ONE)
 
     assert time.monotonic() - started < 4.0
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_stream_to_curl_error_body_is_held_to_the_timeout_too(
+    base_url: str, tmp_path: Path
+) -> None:
+    # The excerpt of a streamed error/retry body is read under the same deadline as a
+    # 2xx body; buffered curl_cffi would end this ~4 s error drip at timeout=1.
+    target = tmp_path / "pkg.zip"
+    started = time.monotonic()
+
+    with pytest.raises(FetchError):
+        fetch(f"{base_url}/error-drip", tier="curl_cffi", stream_to=target, timeout=1.0, retry=_ONE)
+
+    assert time.monotonic() - started < 2.5
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_stream_to_curl_stall_after_data_ends_at_the_timeout(base_url: str, tmp_path: Path) -> None:
+    # Without a libcurl total timeout, curl_cffi's stream mode only ends this through its
+    # low-speed abort, about timeout + 6 s later (measured on curl_cffi 0.17.0).
+    target = tmp_path / "pkg.zip"
+    started = time.monotonic()
+
+    with pytest.raises(FetchError):
+        fetch(
+            f"{base_url}/stall-after-data",
+            tier="curl_cffi",
+            stream_to=target,
+            timeout=1.0,
+            retry=_ONE,
+        )
+
+    assert time.monotonic() - started < 3.0
     assert list(tmp_path.iterdir()) == []
 
 

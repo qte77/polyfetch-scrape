@@ -57,6 +57,8 @@ def attempt(
     last = _Attempt(None, None, None)
     session_cls = cast(Any, curl_requests).Session
     session_kwargs = _session_kwargs(url, pinned_ip, pinned_host)
+    if stream_to is not None:
+        session_kwargs = _with_total_timeout(session_kwargs, timeout)
 
     with session_cls(impersonate=browser, **session_kwargs) as session:
         for attempt_idx in range(policy.max_attempts):
@@ -115,9 +117,10 @@ def _attempt_once(
     # _session_kwargs) — False returns the raw 3xx for manual hop-by-hop following
     # instead of libcurl auto-following onto an unchecked address.
     request_kwargs: dict[str, Any] = {"allow_redirects": False} if pinned_ip is not None else {}
+    deadline = 0.0
     if stream_to is not None:
         request_kwargs["stream"] = True
-    deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + timeout
     try:
         http_resp = session.request(
             method,
@@ -165,14 +168,17 @@ def _settle(
     if should_retry(status, policy) or status in _FINGERPRINT_STATUSES:
         retry_after = parse_retry_after(http_resp.headers.get("retry-after"))
         resp_headers, body_excerpt = bounded_diagnostics(
-            dict(http_resp.headers), _diagnostic_body(http_resp, stream_to)
+            dict(http_resp.headers), _diagnostic_body(http_resp, stream_to, deadline, timeout, url)
         )
         return _Attempt(None, status, None, retry_after, resp_headers, body_excerpt)
 
     raise_for_terminal_status(status, url)
     if not is_success_status(status):
         raise unsuccessful_status_error(
-            status, url, dict(http_resp.headers), _diagnostic_body(http_resp, stream_to)
+            status,
+            url,
+            dict(http_resp.headers),
+            _diagnostic_body(http_resp, stream_to, deadline, timeout, url),
         )
     user_agent = _header_value(headers, "user-agent")
     if stream_to is not None:
@@ -209,11 +215,11 @@ def _settle_streamed(
 def _within_deadline(
     chunks: Iterable[bytes], deadline: float, timeout: float, url: str
 ) -> Iterator[bytes]:
-    """Keep a buffered fetch's total-transfer cap when streaming.
+    """Check the buffered total-transfer cap between chunks when streaming (#261).
 
-    Measured on curl_cffi 0.17.0: a buffered request raises once the whole transfer
-    passes ``timeout``, but a ``stream=True`` one only times out a stalled read, so a
-    server dripping bytes slowly would hold it open indefinitely (#261).
+    libcurl's own ``CURLOPT_TIMEOUT_MS`` (:func:`_with_total_timeout`) is the primary
+    bound and also covers a stall, where no chunk arrives to check; this check keeps the
+    cap independent of curl_cffi honouring that option on every code path.
     """
     for chunk in chunks:
         if time.monotonic() > deadline:
@@ -221,10 +227,13 @@ def _within_deadline(
         yield chunk
 
 
-def _diagnostic_body(http_resp: Any, stream_to: Path | None) -> bytes:
+def _diagnostic_body(
+    http_resp: Any, stream_to: Path | None, deadline: float, timeout: float, url: str
+) -> bytes:
     if stream_to is None:
         return bytes(http_resp.content)
-    return read_excerpt(http_resp.iter_content())
+    # An error/retry body is held to the same deadline as a 2xx one (#302 review).
+    return read_excerpt(_within_deadline(http_resp.iter_content(), deadline, timeout, url))
 
 
 def _session_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) -> dict[str, Any]:
@@ -272,6 +281,20 @@ def _session_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) ->
         "curl_options": {CurlOpt.RESOLVE: [f"{ascii_host}:{port}:{address}"]},
         "trust_env": False,
     }
+
+
+def _with_total_timeout(session_kwargs: dict[str, Any], timeout: float) -> dict[str, Any]:
+    """Add libcurl's whole-transfer ``CURLOPT_TIMEOUT_MS`` for a streamed session.
+
+    Measured on curl_cffi 0.17.0: a buffered request is capped at ``timeout`` overall, but
+    a ``stream=True`` one is not; a stall after the first bytes then ends only through
+    curl's low-speed abort, about ``timeout`` + 6 s later. As a ``Session`` constructor
+    ``curl_options`` entry it does apply to streamed transfers (stall-after-data ended at
+    ``timeout``). Merged with any pin options from :func:`_session_kwargs`.
+    """
+    options = dict(session_kwargs.get("curl_options", {}))
+    options[CurlOpt.TIMEOUT_MS] = max(1, int(timeout * 1000))
+    return {**session_kwargs, "curl_options": options}
 
 
 def _unmap(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Any:
