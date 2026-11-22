@@ -155,6 +155,7 @@ with render_session(url) as s:
   when `--har-out FILE` recorded one on the patchright tier; absent otherwise. See the security
   note above before sharing this file.
 - `redirect_to` (fetch **and** every `bulk` line) = the `Location` target of **any** unfollowed 3xx (`301`/`302`/`303`/`307`/`308`), so you can follow a temporary redirect yourself; absent otherwise. The httpx tier never follows redirects. `fetch --show-body` on an unfollowed redirect writes nothing to stdout, prints `unfollowed HTTP <status> redirect to <url>` to **stderr**, and exits `1`, instead of an empty body with exit `0` ([#260](https://github.com/qte77/polyfetch-scrape/issues/260)).
+- `error_type: "NotSaved"` and `message` (fetch `--output --json` only) = present, next to the usual summary fields, when the response saved nothing (an unfollowed redirect or a `304`; exit `1`); `message` is the reason also printed to stderr. Absent when the file was saved.
 - `saved_to`, `saved_size`, `saved_sha256` (fetch `--output` only) = the file the body was streamed to, its size in bytes and its SHA-256 hex digest; `bytes` then equals `saved_size`. Absent otherwise.
 - `permanent_redirect_to` (fetch **and** every `bulk` line) = the `Location` target of a **permanent**
   redirect (301/308), present **only** when the response was one; absent otherwise. polyfetch does not
