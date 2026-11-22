@@ -9,6 +9,7 @@ real socket on 127.0.0.1. No real DNS or egress.
 
 import hashlib
 import http.server
+import json
 import socket
 import threading
 import time
@@ -16,8 +17,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from click.testing import Result
+from typer.testing import CliRunner
 
 from polyfetch_scrape._backends import FingerprintBlock, curl_backend, httpx_backend
+from polyfetch_scrape.cli import app
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
 from polyfetch_scrape.retry import RetryPolicy
@@ -46,6 +50,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", "/ok")
             self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif self.path == "/not-modified":
+            self.send_response(304)
             self.end_headers()
         elif self.path == "/drip":
             # 1 KiB every 0.1 s (~10 KiB/s) for ~6 s.
@@ -383,3 +390,77 @@ def test_stream_to_rejects_a_directory_before_any_request(base_url: str, tmp_pat
         fetch(f"{base_url}/ok", tier="httpx", stream_to=tmp_path)
 
     assert _Handler.requests == 0
+
+
+# --- CLI: `polyfetch fetch URL --output FILE` (#303), same real loopback server ---
+
+_CLI = CliRunner()
+
+
+def _cli_fetch(url: str, *extra: str) -> Result:
+    return _CLI.invoke(app, ["fetch", url, "--tier", "httpx", "--max-attempts", "1", *extra])
+
+
+def test_cli_output_streams_the_body_to_the_file(base_url: str, tmp_path: Path) -> None:
+    target = tmp_path / "pkg.zip"
+
+    result = _cli_fetch(f"{base_url}/ok", "--output", str(target), "--json")
+
+    assert result.exit_code == 0, result.output
+    assert target.read_bytes() == _PAYLOAD
+    payload = json.loads(result.stdout)
+    assert payload["saved_to"] == str(target)
+    assert payload["saved_size"] == len(_PAYLOAD)
+    assert payload["saved_sha256"] == hashlib.sha256(_PAYLOAD).hexdigest()
+    assert payload["bytes"] == len(_PAYLOAD)
+    assert _leftovers(tmp_path, target) == []
+
+
+@pytest.mark.parametrize("path", ["/error", "/truncated"])
+def test_cli_output_failure_exits_nonzero_and_keeps_the_old_file(
+    base_url: str, tmp_path: Path, path: str
+) -> None:
+    target = tmp_path / "pkg.zip"
+    target.write_bytes(b"previous good copy")
+
+    result = _cli_fetch(f"{base_url}{path}", "--output", str(target))
+
+    assert result.exit_code == 1
+    assert target.read_bytes() == b"previous good copy"
+    assert _leftovers(tmp_path, target) == []
+
+
+def test_cli_output_unfollowed_redirect_exits_nonzero_without_a_file(
+    base_url: str, tmp_path: Path
+) -> None:
+    target = tmp_path / "pkg.zip"
+
+    result = _cli_fetch(f"{base_url}/redirect", "--output", str(target))
+
+    assert result.exit_code == 1
+    assert "302" in result.stderr
+    assert "/ok" in result.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cli_output_and_show_body_are_mutually_exclusive(base_url: str, tmp_path: Path) -> None:
+    result = _cli_fetch(f"{base_url}/ok", "--output", str(tmp_path / "x"), "--show-body")
+
+    assert result.exit_code == 2
+    assert _Handler.requests == 0
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cli_output_not_modified_exits_nonzero_and_keeps_the_old_file(
+    base_url: str, tmp_path: Path
+) -> None:
+    # A conditional GET's 304 saves nothing: exit 1, so a script never mistakes it for a download.
+    target = tmp_path / "pkg.zip"
+    target.write_bytes(b"cached copy")
+
+    result = _cli_fetch(f"{base_url}/not-modified", "--output", str(target), "--etag", '"v1"')
+
+    assert result.exit_code == 1
+    assert "304" in result.stderr
+    assert target.read_bytes() == b"cached copy"
+    assert _leftovers(tmp_path, target) == []

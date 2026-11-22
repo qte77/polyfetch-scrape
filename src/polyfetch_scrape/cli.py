@@ -123,16 +123,23 @@ def _summarize(resp: Response) -> dict[str, Any]:
     if resp.redirect_to is not None:
         # Any unfollowed 3xx (temporary ones too), so a CLI consumer can follow it (#260).
         payload["redirect_to"] = resp.redirect_to
+    if resp.saved_to is not None:
+        # fetch(stream_to=...) / --output: the body is on disk, not in resp.body (#303).
+        payload["bytes"] = resp.saved_size
+        payload["saved_to"] = str(resp.saved_to)
+        payload["saved_size"] = resp.saved_size
+        payload["saved_sha256"] = resp.saved_sha256
     return payload
 
 
 def _format_text(payload: dict[str, Any]) -> str:
     if "error_type" in payload:
         return f"{payload['url']}  →  ERROR  {payload['error_type']}: {payload['message']}"
+    saved = f"  saved to {payload['saved_to']}" if "saved_to" in payload else ""
     return (
         f"{payload['url']}  →  {payload['status']} [{payload['backend']}]  "
         f"{payload['bytes']} bytes  {payload['content_type'] or ''}"
-    ).rstrip()
+    ).rstrip() + saved
 
 
 def _error_payload(url: str, exc: FetchError) -> dict[str, Any]:
@@ -419,8 +426,19 @@ def fetch_cmd(
         bool,
         typer.Option("--show-body", help="Print the raw response body instead of the summary"),
     ] = False,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Stream a 2xx body to FILE instead of memory (httpx/curl_cffi tiers). "
+            "Exit 1 and no partial file on any failure; an existing FILE stays as it was.",
+        ),
+    ] = None,
 ) -> None:
     """Fetch a single URL through the fallback chain."""
+    if output is not None and show_body:
+        raise typer.BadParameter("use --output or --show-body, not both")
     policy = RetryPolicy(max_attempts=max_attempts)
     body_json, body_content = _resolve_body(json_body, data)
     _ensure_output_dirs(screenshot_out, video_out, har_out)
@@ -454,6 +472,7 @@ def fetch_cmd(
             json=body_json,
             content=body_content,
             render=render,
+            stream_to=output,
         )
     except ValueError as exc:  # bad argument (e.g. unknown device preset) — not a fetch failure
         raise typer.BadParameter(str(exc)) from exc
@@ -464,6 +483,24 @@ def fetch_cmd(
             typer.echo(f"{type(exc).__name__}: {exc}", err=True)
         raise typer.Exit(1) from exc
 
+    _emit_fetch_result(
+        resp,
+        json_output=json_output,
+        show_body=show_body,
+        output=output,
+        screenshot_out=screenshot_out,
+    )
+
+
+def _emit_fetch_result(
+    resp: Response,
+    *,
+    json_output: bool,
+    show_body: bool,
+    output: Path | None,
+    screenshot_out: Path | None,
+) -> None:
+    """Everything ``fetch`` prints or writes once the fetch has succeeded."""
     if screenshot_out is not None and resp.screenshot is not None:
         screenshot_out.write_bytes(resp.screenshot)
 
@@ -472,6 +509,8 @@ def fetch_cmd(
         return
 
     payload = _summarize(resp)
+    if output is not None and resp.saved_to is None:
+        _report_not_saved(resp, output, payload if json_output else None)
     if json_output and resp.screenshot is not None:
         # Surface the patchright-tier PNG inline so env-borrow / agent consumers get it in
         # the JSON without --screenshot-out writing a file (#105). Absent when no screenshot.
@@ -498,6 +537,19 @@ def _write_body(resp: Response) -> None:
     # non-TTY stdout (redirect/pipe) and mangled binary bodies (#66).
     sys.stdout.buffer.write(resp.body)
     sys.stdout.buffer.flush()
+
+
+def _report_not_saved(resp: Response, output: Path, payload: dict[str, Any] | None) -> None:
+    """``--output``: a non-2xx result (an unfollowed redirect, a 304) saved nothing: exit 1
+    rather than exit 0 with no file, the same rule as ``--show-body`` (#260, #303)."""
+    if payload is not None:
+        typer.echo(json.dumps(payload))
+    if resp.redirect_to is not None:
+        reason = f"unfollowed HTTP {resp.status} redirect to {resp.redirect_to}"
+    else:
+        reason = f"HTTP {resp.status}"
+    typer.echo(f"{reason}: nothing saved to {output}", err=True)
+    raise typer.Exit(1)
 
 
 # Bind 'fetch' as the command name (function name kept distinct from the import)

@@ -97,13 +97,14 @@ with render_session(url) as s:
 |---|---|
 | `polyfetch fetch <url> --json` | one URL → JSON summary (below) |
 | `polyfetch fetch <url> --show-body` | raw response **bytes** to stdout (binary-safe; takes precedence over `--json`) |
+| `polyfetch fetch <url> --output FILE` | stream a 2xx body to `FILE` instead of memory; exit `1` and no partial file on any failure |
 | `polyfetch bulk <file> [--workers N]` | one URL per line (`#`/blank skipped) → JSON-lines |
 | `polyfetch discover <url> [--json]` | structured entrypoints (sitemaps/feeds/`llms.txt`/JSON-LD `@type`s) → JSON |
 | `polyfetch doctor [--fix] [--headed]` | check the browser-tier Chromium is installed (exit non-zero if missing); `--fix` installs it. `--headed` probes a headed launch instead, to verify a display (e.g. `xvfb-run -a`) actually works. Handy when borrowing this venv — the Chromium cache can get wiped |
 | `polyfetch devices` | list the device presets usable with `fetch --device`, one per line |
 | `polyfetch --help` / `polyfetch --version` | discover the surface / print version |
 
-`fetch` flags: `--tier httpx|curl_cffi|patchright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|patchright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`.
+`fetch` flags: `--tier httpx|curl_cffi|patchright` (pin one backend, skip fallback), `--min-tier`/`--max-tier httpx|curl_cffi|patchright` (bound the fallback range; `--max-tier curl_cffi` never launches a browser), `--max-attempts N`, `--timeout S`, `--browser chrome|firefox`, `--method`, `--etag STR` / `--if-modified-since STR` (conditional GET → `If-None-Match` / `If-Modified-Since`; `304` on a match), `--json`, `--show-body`, `--output FILE` / `-o FILE`.
 
 `fetch` **request body flags:** `--json-body VALUE` (parsed with `json.loads`, sent as `fetch()`'s `json=`) or `--data VALUE` (sent raw as `fetch()`'s `content=`) — mutually exclusive (`exit 2` if both are given). `VALUE` is a literal string, `@path` to read a file, or `@-` to read stdin — handy for a large payload. Invalid JSON in `--json-body` exits `2` with a parse-error message. Both flags are httpx/curl_cffi-tier only: the patchright tier is GET-only and raises a clear `FetchError` if either is combined with `--tier patchright` (or an auto-escalation would reach it).
 
@@ -154,6 +155,7 @@ with render_session(url) as s:
   when `--har-out FILE` recorded one on the patchright tier; absent otherwise. See the security
   note above before sharing this file.
 - `redirect_to` (fetch **and** every `bulk` line) = the `Location` target of **any** unfollowed 3xx (`301`/`302`/`303`/`307`/`308`), so you can follow a temporary redirect yourself; absent otherwise. The httpx tier never follows redirects. `fetch --show-body` on an unfollowed redirect writes nothing to stdout, prints `unfollowed HTTP <status> redirect to <url>` to **stderr**, and exits `1`, instead of an empty body with exit `0` ([#260](https://github.com/qte77/polyfetch-scrape/issues/260)).
+- `saved_to`, `saved_size`, `saved_sha256` (fetch `--output` only) = the file the body was streamed to, its size in bytes and its SHA-256 hex digest; `bytes` then equals `saved_size`. Absent otherwise.
 - `permanent_redirect_to` (fetch **and** every `bulk` line) = the `Location` target of a **permanent**
   redirect (301/308), present **only** when the response was one; absent otherwise. polyfetch does not
   auto-follow redirects (SSRF-safe, transparent), so on a 301 you get `status:301, bytes:0` — read this
@@ -218,7 +220,7 @@ After a patchright upgrade (e.g. 1.63 = Chromium 153), run `polyfetch doctor --f
 
 ## Gotchas
 
-- **Large downloads**: `--show-body` and a plain `fetch()` hold the whole body in memory. From Python, `fetch(url, stream_to=Path(...))` writes it to disk in chunks and only ever leaves a complete file at that path (httpx/curl_cffi tiers; [`docs/api-reference.md` § `fetch`](docs/api-reference.md#fetch), [#261](https://github.com/qte77/polyfetch-scrape/issues/261)). The CLI has no streaming flag yet.
+- **Large downloads**: `--show-body` and a plain `fetch()` hold the whole body in memory. From Python, `fetch(url, stream_to=Path(...))` writes it to disk in chunks and only ever leaves a complete file at that path (httpx/curl_cffi tiers; [`docs/api-reference.md` § `fetch`](docs/api-reference.md#fetch), [#261](https://github.com/qte77/polyfetch-scrape/issues/261)). The CLI does the same with `polyfetch fetch <url> --output FILE` (also `-o`; httpx/curl_cffi tiers, so add `--max-tier curl_cffi` to keep an escalation from reaching the browser tier, which cannot stream). It exits `1` on any failure, an unfollowed redirect or a `304` included (the reason goes to stderr), and never leaves a partial file: an existing `FILE` stays as it was. It cannot be combined with `--show-body` (exit `2`). With `--json` the summary carries `saved_to`, `saved_size` and `saved_sha256` ([#303](https://github.com/qte77/polyfetch-scrape/issues/303)).
 - **Extra deps for an in-clone script**: `uv run --directory <polyfetch> --with <dep> python /abs/script.py` — ephemeral, never touches the clone's lock.
 - **Harmless warning** when run from inside your own activated venv: `VIRTUAL_ENV=… does not match the project environment … will be ignored`. Informational.
 - **Editor/type support without installing**: point pyright `extraPaths` at `<polyfetch>/src`; execute via `uv run --directory`.
