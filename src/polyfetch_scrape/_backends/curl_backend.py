@@ -1,4 +1,5 @@
 import ipaddress
+import math
 import time
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, replace
@@ -27,6 +28,9 @@ from polyfetch_scrape.retry import RetryPolicy, next_delay, parse_retry_after, s
 Browser = Literal["chrome", "firefox"]
 
 _FINGERPRINT_STATUSES: frozenset[int] = frozenset({403})
+
+# This module's own clock reference, so a test can drive it without moving the global one.
+_monotonic = time.monotonic
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +124,7 @@ def _attempt_once(
     deadline = 0.0
     if stream_to is not None:
         request_kwargs["stream"] = True
-        deadline = time.monotonic() + timeout
+        deadline = _monotonic() + timeout if _total_timeout_ms(timeout) > 0 else math.inf
     try:
         http_resp = session.request(
             method,
@@ -222,7 +226,7 @@ def _within_deadline(
     cap independent of curl_cffi honouring that option on every code path.
     """
     for chunk in chunks:
-        if time.monotonic() > deadline:
+        if _monotonic() > deadline:
             raise TimeoutError(f"curl_cffi stream exceeded timeout={timeout}s: {url}")
         yield chunk
 
@@ -283,6 +287,13 @@ def _session_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) ->
     }
 
 
+def _total_timeout_ms(timeout: float) -> int:
+    """The whole-transfer limit in ms, computed as curl_cffi does for a buffered request:
+    0 (``timeout`` under 1 ms included) means no whole-transfer limit, not an instant one;
+    libcurl rejects a negative value, as it does for a buffered request."""
+    return int(timeout * 1000)
+
+
 def _with_total_timeout(session_kwargs: dict[str, Any], timeout: float) -> dict[str, Any]:
     """Add libcurl's whole-transfer ``CURLOPT_TIMEOUT_MS`` for a streamed session.
 
@@ -293,7 +304,8 @@ def _with_total_timeout(session_kwargs: dict[str, Any], timeout: float) -> dict[
     ``timeout``). Merged with any pin options from :func:`_session_kwargs`.
     """
     options = dict(session_kwargs.get("curl_options", {}))
-    options[CurlOpt.TIMEOUT_MS] = max(1, int(timeout * 1000))
+    if _total_timeout_ms(timeout) > 0:  # 0 is libcurl's "no limit", as for a buffered request
+        options[CurlOpt.TIMEOUT_MS] = _total_timeout_ms(timeout)
     return {**session_kwargs, "curl_options": options}
 
 
