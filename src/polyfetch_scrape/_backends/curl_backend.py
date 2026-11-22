@@ -289,7 +289,8 @@ def _session_kwargs(url: str, pinned_ip: str | None, pinned_host: str | None) ->
 
 def _total_timeout_ms(timeout: float) -> int:
     """The whole-transfer limit in ms, computed as curl_cffi does for a buffered request:
-    ``timeout <= 0`` (or under 1 ms) means no limit, not an instant one."""
+    0 (``timeout`` under 1 ms included) means no whole-transfer limit, not an instant one;
+    libcurl rejects a negative value, as it does for a buffered request."""
     return int(timeout * 1000)
 
 
