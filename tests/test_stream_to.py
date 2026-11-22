@@ -7,9 +7,11 @@ surface a lenient mock would let a wrong kwarg slip through (see the #295 note i
 real socket on 127.0.0.1. No real DNS or egress.
 """
 
+import errno
 import hashlib
 import http.server
 import json
+import os
 import socket
 import threading
 import time
@@ -20,7 +22,7 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from polyfetch_scrape._backends import FingerprintBlock, curl_backend, httpx_backend
+from polyfetch_scrape._backends import FingerprintBlock, _stream, curl_backend, httpx_backend
 from polyfetch_scrape.cli import app
 from polyfetch_scrape.client import fetch
 from polyfetch_scrape.errors import FetchError
@@ -51,6 +53,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", "/ok")
             self.send_header("Content-Length", "0")
             self.end_headers()
+        elif self.path == "/forbidden":
+            self._send(403, "text/plain", b"blocked")
         elif self.path == "/not-modified":
             self.send_response(304)
             self.end_headers()
@@ -235,21 +239,6 @@ def test_stream_to_curl_stall_after_data_ends_at_the_timeout(base_url: str, tmp_
     assert list(tmp_path.iterdir()) == []
 
 
-def test_curl_stream_deadline_stops_a_transfer_that_never_stalls(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    clock = iter([10.0, 10.5, 11.5])  # monotonic() before chunks 1, 2, 3
-    monkeypatch.setattr(curl_backend.time, "monotonic", lambda: next(clock))
-    chunks = curl_backend._within_deadline(  # pyright: ignore[reportPrivateUsage]
-        iter([b"a", b"b", b"c"]), deadline=11.0, timeout=1.0, url="http://x/"
-    )
-
-    assert next(chunks) == b"a"
-    assert next(chunks) == b"b"
-    with pytest.raises(TimeoutError, match=r"stream exceeded timeout=1\.0s"):
-        next(chunks)
-
-
 @pytest.mark.parametrize("tier", ["httpx", "curl_cffi"])
 def test_stream_to_failed_download_keeps_an_existing_target_intact(
     base_url: str, tmp_path: Path, tier: str
@@ -392,6 +381,222 @@ def test_stream_to_rejects_a_directory_before_any_request(base_url: str, tmp_pat
     assert _Handler.requests == 0
 
 
+def test_stream_to_fsyncs_the_temp_file_before_it_replaces_the_target(
+    base_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(fd: int) -> None:
+        events.append("fsync")
+        real_fsync(fd)
+
+    def replace(src: Path, dst: Path) -> None:
+        events.append("replace")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(_stream.os, "fsync", fsync)
+    monkeypatch.setattr(_stream.os, "replace", replace)
+
+    fetch(f"{base_url}/ok", tier="httpx", stream_to=tmp_path / "pkg.zip", retry=_ONE)
+
+    assert events == ["fsync", "replace"]
+
+
+def test_stream_to_fsync_failure_is_a_fetcherror_and_leaves_no_file(
+    base_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fsync(_fd: int) -> None:
+        raise OSError(errno.EIO, "input/output error")
+
+    monkeypatch.setattr(_stream.os, "fsync", fsync)
+    target = tmp_path / "pkg.zip"
+
+    with pytest.raises(FetchError, match="flushing"):
+        fetch(f"{base_url}/ok", tier="httpx", stream_to=target, retry=RetryPolicy())
+
+    assert _Handler.requests == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("tier", ["httpx", "curl_cffi"])
+def test_stream_to_replaces_a_symlinked_target_and_leaves_its_referent_alone(
+    base_url: str, tmp_path: Path, tier: str
+) -> None:
+    referent = tmp_path / "referent.bin"
+    referent.write_bytes(b"untouched")
+    target = tmp_path / "link.zip"
+    target.symlink_to(referent)
+
+    fetch(f"{base_url}/ok", tier=tier, stream_to=target, retry=_ONE)  # type: ignore[arg-type]
+
+    assert not target.is_symlink()
+    assert target.read_bytes() == _PAYLOAD
+    assert referent.read_bytes() == b"untouched"
+
+
+class _FullDisk:
+    """A file whose writes fail like a full disk."""
+
+    def __init__(self, real: object) -> None:
+        self._real = real
+
+    def write(self, _data: bytes) -> int:
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._real, name)
+
+
+@pytest.mark.parametrize("tier", ["httpx", "curl_cffi"])
+def test_stream_to_write_time_disk_error_is_a_fetcherror_and_not_retried(
+    base_url: str, tmp_path: Path, tier: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_open = Path.open
+    monkeypatch.setattr(Path, "open", lambda self, mode="r": _FullDisk(real_open(self, mode)))
+    target = tmp_path / "pkg.zip"
+
+    with pytest.raises(FetchError, match=r"writing .*No space left"):
+        fetch(f"{base_url}/ok", tier=tier, stream_to=target, retry=RetryPolicy())  # type: ignore[arg-type]
+
+    assert _Handler.requests == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("tier", ["httpx", "curl_cffi"])
+def test_stream_to_create_time_disk_error_is_a_fetcherror_and_not_retried(
+    base_url: str, tmp_path: Path, tier: str
+) -> None:
+    # A target name at the filesystem limit is creatable, but the dotted temp name beside
+    # it is longer than the limit, so creating the temp file fails with ENAMETOOLONG.
+    target = tmp_path / ("a" * 250)
+
+    with pytest.raises(FetchError, match="creating a temp file"):
+        fetch(f"{base_url}/ok", tier=tier, stream_to=target, retry=RetryPolicy())  # type: ignore[arg-type]
+
+    assert _Handler.requests == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+def _chunks_then(exc: BaseException) -> Iterator[bytes]:
+    yield b"partial"
+    raise exc
+
+
+@pytest.mark.parametrize("exc", [KeyboardInterrupt(), SystemExit(2)])
+def test_stream_to_baseexception_mid_stream_leaves_no_temp_file(
+    tmp_path: Path, exc: BaseException
+) -> None:
+    target = tmp_path / "pkg.zip"
+
+    with pytest.raises(type(exc)):
+        _stream.save_streamed_body(
+            "GET", 200, "application/zip", _chunks_then(exc), target, "http://x/"
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_stream_to_temp_file_removal_failure_is_reported_like_a_disk_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(_self: Path, missing_ok: bool = False) -> None:
+        raise PermissionError("cannot unlink")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+
+    with pytest.raises(FetchError, match="removing the temp file"):
+        _stream.save_streamed_body(
+            "GET",
+            200,
+            "application/zip",
+            _chunks_then(ConnectionError("dropped")),
+            tmp_path / "pkg.zip",
+            "http://x/",
+        )
+
+
+def test_stream_to_curl_unfollowed_redirect_is_returned_without_a_file(
+    base_url: str, tmp_path: Path
+) -> None:
+    # curl_cffi follows redirects itself unless pinned (guarded fetches pin); pinned, the
+    # raw 3xx comes back and nothing is saved.
+    host = "pin-test-redirect.invalid"
+    port = base_url.rsplit(":", 1)[1]
+    target = tmp_path / "pkg.zip"
+
+    resp = fetch(
+        f"http://{host}:{port}/redirect",
+        tier="curl_cffi",
+        stream_to=target,
+        retry=_ONE,
+        pinned_ip="127.0.0.1",
+        pinned_host=host,
+    )
+
+    assert resp.status == 302
+    assert resp.saved_to is None
+    assert resp.body == b""
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_stream_to_escalation_reaching_patchright_fails_without_a_file(
+    base_url: str, tmp_path: Path
+) -> None:
+    # httpx 403 -> curl_cffi 403 -> patchright, which has no body stream: FetchError, no file.
+    target = tmp_path / "pkg.zip"
+
+    with pytest.raises(FetchError, match="patchright"):
+        fetch(f"{base_url}/forbidden", stream_to=target, retry=_ONE)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_curl_stream_deadline_uses_the_modules_own_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Patches curl_backend's own clock reference: patching time.monotonic itself would
+    # also move every other caller's clock (retry loop, httpx, the test runner).
+    clock = iter([10.0, 10.5, 11.5])  # before chunks 1, 2, 3
+    monkeypatch.setattr(curl_backend, "_monotonic", lambda: next(clock))
+    chunks = curl_backend._within_deadline(  # pyright: ignore[reportPrivateUsage]
+        iter([b"a", b"b", b"c"]), deadline=11.0, timeout=1.0, url="http://x/"
+    )
+
+    assert next(chunks) == b"a"
+    assert next(chunks) == b"b"
+    with pytest.raises(TimeoutError, match=r"stream exceeded timeout=1\.0s"):
+        next(chunks)
+
+
+def test_stream_to_curl_deadline_wrapper_alone_ends_a_steady_drip(
+    base_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Drop libcurl's whole-transfer timeout: the ~6 s drip at ~10 KiB/s never trips curl's
+    # low-speed abort, so only the between-chunks deadline can end it at timeout=2.
+    monkeypatch.setattr(curl_backend, "_with_total_timeout", lambda kwargs, _timeout: kwargs)
+    target = tmp_path / "pkg.zip"
+    started = time.monotonic()
+
+    with pytest.raises(FetchError, match=r"(?i)timeout"):
+        fetch(f"{base_url}/drip", tier="curl_cffi", stream_to=target, timeout=2.0, retry=_ONE)
+
+    assert time.monotonic() - started < 4.5
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_stream_to_curl_zero_timeout_means_no_limit_like_a_buffered_fetch(
+    base_url: str, tmp_path: Path
+) -> None:
+    # Buffered curl_cffi maps timeout=0 to libcurl's "no timeout"; streamed must agree.
+    target = tmp_path / "pkg.zip"
+
+    resp = fetch(f"{base_url}/ok", tier="curl_cffi", stream_to=target, timeout=0, retry=_ONE)
+
+    assert resp.saved_size == len(_PAYLOAD)
+    assert target.read_bytes() == _PAYLOAD
+
+
 # --- CLI: `polyfetch fetch URL --output FILE` (#303), same real loopback server ---
 
 _CLI = CliRunner()
@@ -464,3 +669,70 @@ def test_cli_output_not_modified_exits_nonzero_and_keeps_the_old_file(
     assert "304" in result.stderr
     assert target.read_bytes() == b"cached copy"
     assert _leftovers(tmp_path, target) == []
+
+
+def test_cli_output_not_saved_json_carries_the_error_type_and_reason(
+    base_url: str, tmp_path: Path
+) -> None:
+    target = tmp_path / "pkg.zip"
+
+    result = _cli_fetch(f"{base_url}/redirect", "--output", str(target), "--json")
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == 302
+    assert payload["redirect_to"] == "/ok"
+    assert payload["error_type"] == "NotSaved"
+    assert payload["message"] in result.stderr
+    assert "unfollowed HTTP 302 redirect to /ok" in payload["message"]
+
+
+def test_cli_output_not_modified_json_carries_the_error_type_and_reason(
+    base_url: str, tmp_path: Path
+) -> None:
+    result = _cli_fetch(
+        f"{base_url}/not-modified", "--output", str(tmp_path / "x"), "--etag", '"v1"', "--json"
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "NotSaved"
+    assert payload["message"] in result.stderr
+    assert "304" in payload["message"]
+
+
+def test_cli_output_text_summary_ends_with_the_saved_to_suffix(
+    base_url: str, tmp_path: Path
+) -> None:
+    target = tmp_path / "pkg.zip"
+
+    result = _cli_fetch(f"{base_url}/ok", "--output", str(target))
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().endswith(
+        f"{len(_PAYLOAD)} bytes  application/zip  saved to {target}"
+    )
+
+
+def test_cli_short_o_is_an_alias_for_output(base_url: str, tmp_path: Path) -> None:
+    target = tmp_path / "pkg.zip"
+
+    result = _cli_fetch(f"{base_url}/ok", "-o", str(target))
+
+    assert result.exit_code == 0, result.output
+    assert target.read_bytes() == _PAYLOAD
+
+
+def test_cli_output_escalating_to_patchright_exits_nonzero_without_a_file(
+    base_url: str, tmp_path: Path
+) -> None:
+    # Default tier range: httpx 403 -> curl_cffi 403 -> patchright cannot stream.
+    target = tmp_path / "pkg.zip"
+
+    result = _CLI.invoke(
+        app, ["fetch", f"{base_url}/forbidden", "--max-attempts", "1", "--output", str(target)]
+    )
+
+    assert result.exit_code == 1
+    assert "patchright" in result.stderr
+    assert list(tmp_path.iterdir()) == []

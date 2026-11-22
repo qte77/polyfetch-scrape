@@ -541,14 +541,17 @@ def _write_body(resp: Response) -> None:
 
 def _report_not_saved(resp: Response, output: Path, payload: dict[str, Any] | None) -> None:
     """``--output``: a non-2xx result (an unfollowed redirect, a 304) saved nothing: exit 1
-    rather than exit 0 with no file, the same rule as ``--show-body`` (#260, #303)."""
-    if payload is not None:
-        typer.echo(json.dumps(payload))
+    rather than exit 0 with no file. ``--show-body`` agrees for an unfollowed redirect but
+    still exits 0 on a 304; here there is no body to show either way, so no exception (#260,
+    #303). ``--json`` keeps the summary fields and adds ``error_type`` and ``message``."""
     if resp.redirect_to is not None:
         reason = f"unfollowed HTTP {resp.status} redirect to {resp.redirect_to}"
     else:
         reason = f"HTTP {resp.status}"
-    typer.echo(f"{reason}: nothing saved to {output}", err=True)
+    message = f"{reason}: nothing saved to {output}"
+    if payload is not None:
+        typer.echo(json.dumps({**payload, "error_type": "NotSaved", "message": message}))
+    typer.echo(message, err=True)
     raise typer.Exit(1)
 
 
