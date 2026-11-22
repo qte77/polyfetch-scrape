@@ -1,8 +1,11 @@
 # 008 — Post-v0.7.0 high-ROI enhancements
 
-> Status: **partially shipped (2026-07-21).** Item 2 (full_page) → #184, item 3a (estate doc)
-> → #185 (both merged); items 1 & 3c verified done; op2 closed (no org account). **Only op1
-> (release-commit signing) remains.** Base was `main` @ `dfbba22`; now @ `2677b50` — the
+> Status: **CLOSED (2026-11-22).** Item 2 (full_page) → #184, item 3a (estate doc)
+> → #185 (both merged); items 1 & 3c verified done; op2 closed (no org account). **op1
+> (release-commit signing) decided 2026-11-22: rely on GitHub-signed (web-flow) squash merges**,
+> no bot GPG key or import-gpg action. The bump workflow's `createCommitOnBranch` step already
+> commits through the API, which GitHub signs. Item 3b stays deferred (AHA), item 4 is
+> estate-level. Historical planning record. Base was `main` @ `dfbba22`; now @ `2677b50` — the
 > line numbers below are pre-#184/#185 and may have drifted; re-grep before editing.
 > Handoff: `docs/handoffs/008-post-v070-enhancements.md`. The **Source map** means the next
 > session need not re-explore.
@@ -28,7 +31,7 @@ extending these over new surfaces.
 | 3b | `#144` minimal ui-check helper | M | M | Defer (AHA — needs ≥2 repos + stable API) |
 | 3c | Verify decidable-line / no-pydantic in architecture.md | — | — | Check-only (landed in #161) |
 | 4 | Badge/workflow templating across estate | M | — | Cross-repo; out of this tree |
-| op1 | Item 3 — self-signing release commits | H | M | Recommended; blocked on your GPG secret |
+| op1 | Item 3 — self-signing release commits | H | M | **Decided 2026-11-22:** rely on web-flow signed squash merges; no GPG secret needed |
 | op2 | Org-level Actions policy (allow-list reset) | M | L | Investigate; API-only |
 
 Recommended first slice: **3a (estate doc)** + **op1 (signing, once secret exists)**; then **2**
@@ -116,7 +119,7 @@ polyfetch's badges + CodeQL + `lint-md-links` calls are aligned to the sibling c
 
 ## Operational wins (fold in if desired)
 
-**op1 — Self-signing release commits (recommended; removes per-release toil).** `main` enforces
+**op1 — DECIDED 2026-11-22: rely on web-flow signed squash merges; plan closed. The text below is the original proposal, kept as history.** **Self-signing release commits (was: recommended; removes per-release toil).** `main` enforces
 **signed commits via a ruleset**; the `bump-my-version` Docker action commits **unsigned**, so every
 release PR is BLOCKED until manually re-signed (`git checkout -B bump-N-main origin/bump-N-main; git
 commit --amend --no-edit --reset-author; git push --force-with-lease`). Fix:

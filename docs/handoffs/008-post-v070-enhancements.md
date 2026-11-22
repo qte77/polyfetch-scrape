@@ -1,5 +1,7 @@
 # Handoff — 008 · Post-v0.7.0 high-ROI enhancements
 
+> **Closed (2026-11-22):** op1 decided: rely on web-flow signed squash merges; plan 008 is closed.
+>
 > **Update (2026-07-21):** items 2 (full_page → #184) and 3a (estate doc → #185) shipped and
 > merged; items 1 & 3c verified done; op2 closed (no org account, so no org-level policy to
 > fix). **Only op1 (release-commit signing, graphql approach) remains.** The "nothing started"
