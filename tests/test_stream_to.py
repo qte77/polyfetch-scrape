@@ -507,12 +507,24 @@ def test_stream_to_temp_file_removal_failure_is_reported_like_a_disk_error(
 
     with pytest.raises(FetchError, match="removing the temp file"):
         _stream.save_streamed_body(
-            "GET",
-            200,
-            "application/zip",
-            _chunks_then(ConnectionError("dropped")),
-            tmp_path / "pkg.zip",
-            "http://x/",
+            "GET", 200, "application/zip", iter([]), tmp_path / "pkg.zip", "http://x/"
+        )
+
+
+@pytest.mark.parametrize("error", [ConnectionError("dropped"), KeyboardInterrupt()])
+def test_stream_to_failed_cleanup_never_hides_the_error_already_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    # A transport error must stay retryable and an interrupt must stay an interrupt,
+    # even when removing the temp file fails on the way out.
+    def refuse(_self: Path, missing_ok: bool = False) -> None:
+        raise PermissionError("cannot unlink")
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+
+    with pytest.raises(type(error)):
+        _stream.save_streamed_body(
+            "GET", 200, "application/zip", _chunks_then(error), tmp_path / "pkg.zip", "http://x/"
         )
 
 

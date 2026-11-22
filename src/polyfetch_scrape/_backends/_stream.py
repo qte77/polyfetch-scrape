@@ -10,7 +10,7 @@ import hashlib
 import os
 import secrets
 from collections.abc import Generator, Iterable
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from polyfetch_scrape._backends import is_suspected_soft_block
@@ -81,9 +81,14 @@ def _write_atomically(chunks: Iterable[bytes], target: Path) -> tuple[int, str]:
             # is left untouched.
             with _disk_errors(f"moving the download onto {target}"):
                 os.replace(tmp_path, target)
-    finally:
-        with _disk_errors(f"removing the temp file {tmp_path}"):
+    except BaseException:
+        # Best effort: a failed cleanup must not replace the error already on its way
+        # out (a retryable transport error, an interrupt).
+        with suppress(OSError):
             tmp_path.unlink(missing_ok=True)
+        raise
+    with _disk_errors(f"removing the temp file {tmp_path}"):
+        tmp_path.unlink(missing_ok=True)
     return size, digest.hexdigest()
 
 
